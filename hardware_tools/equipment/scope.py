@@ -2,6 +2,8 @@ import numpy as np
 import pyvisa
 import time
 
+# TODO [Future] add more scopes and other instrument types
+
 class Scope:
 
   settings = [
@@ -53,6 +55,7 @@ class Scope:
 
     rm = pyvisa.ResourceManager()
     self.instrument = rm.open_resource(addr)
+    # TODO add TCP socket connection type
 
   def __str__(self) -> str:
     '''!@brief Get a string representation of the Scope

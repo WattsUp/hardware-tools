@@ -27,16 +27,14 @@ class MDO4000(Scope):
 
     # Add specific settings and commands
     self.settings.extend([])
+    # TODO add other trigger options
+    # TODO add acquire modes settings
+    # TODO add other channel operations: RF
     self.channels = [
       'CH1',
       'CH2',
       'CH3',
-      'CH4',
-      'MATH',
-      'REF1',
-      'REF2',
-      'REF3',
-      'REF4',
+      'CH4'
     ]
     self.channelSettings.extend([])
     self.commands.extend([
