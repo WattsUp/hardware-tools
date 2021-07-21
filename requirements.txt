@@ -1,4 +1,3 @@
 numpy
 pyvisa
-time
-struct
+cython

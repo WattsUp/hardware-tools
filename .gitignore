@@ -9,3 +9,5 @@ build
 *.egg-info
 .eggs
 dist
+*.c
+version.py
