@@ -127,27 +127,32 @@ class Scope:
     @param raw True will return raw ADC values, False (default) will transform into real-world units
     @return tuple[np.array(dtype=float), dict]
         Samples are columns [[t0, t1,..., tn], [y0, y1,..., yn]]
-        Diction are units ['tUnit', 'yUnit']:str and scales ['tIncr', 'yIncr']:float
+        Dictionary are units ['tUnit', 'yUnit']:str and scales ['tIncr', 'yIncr']:float
     '''
     raise Exception('readWaveform called on base Scope')
 
   def waitForReply(
-    self, cmd: str, states: list[str], timeout: float = 1) -> str:
+    self, cmd: str, states: list[str], timeout: float = 1, repeatSend: str = None) -> str:
     '''!@brief Send a command to the Scope and wait repeat until reply is desired
 
     @param cmd Command string to self.ask
     @param states Desired states. Returns if reply matches any element
     @param timeout Time in seconds to wait until giving up
+    @param repeatSend Additional command string to send before each ask
     @return str Last reply
     '''
     interval = 0.05
     timeout = int(timeout / interval)
 
     seenStates = []
+    if repeatSend:
+      self.send(repeatSend)
     state = self.ask(cmd)
     seenStates.append(state)
     while (state not in states and timeout >= 0):
       time.sleep(interval)
+      if repeatSend:
+        self.send(repeatSend)
       state = self.ask(cmd)
       seenStates.append(state)
       timeout -= 1

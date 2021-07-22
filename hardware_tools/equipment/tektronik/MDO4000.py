@@ -220,11 +220,9 @@ class MDO4000(Scope):
       self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
       self.send('ACQUIRE:STOPAFTER SEQUENCE')
       self.send('ACQUIRE:STATE RUN')
-      time.sleep(0.5)
-
-      if self.waitForReply(
-        'TRIGGER:STATE?', ['ARMED', 'AUTO', 'SAVE'], timeout=timeout) != 'SAVE':
-        self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
+      time.sleep(0.1)
+      self.waitForReply('ACQUIRE:STATE?', ['0'], timeout=timeout)
+      self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
       self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
       return
     elif command == 'SINGLE_FORCE':
@@ -232,23 +230,19 @@ class MDO4000(Scope):
       self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
       self.send('ACQUIRE:STOPAFTER SEQUENCE')
       self.send('ACQUIRE:STATE RUN')
-      time.sleep(0.5)
-
-      if self.waitForReply(
-        'TRIGGER:STATE?', ['ARMED', 'AUTO', 'SAVE'], timeout=timeout) == 'SAVE':
+      time.sleep(0.1)
+      try:
+        self.waitForReply('ACQUIRE:STATE?', ['0'], timeout=timeout, repeatSend='TRIGGER FORCE')
+        self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
         self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
         return
+      except Exception:
+        pass
 
-      reply = self.waitForReply(
-          'TRIGGER:STATE?', ['TRIGGER', 'READY', 'SAVE'], timeout=timeout)
-      if reply == 'SAVE':
-        self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
-        return
-      if reply == 'READY':
-        self.send('TRIGGER FORCE')
-        self.waitForReply(
-            'TRIGGER:STATE?', [
-                'TRIGGER', 'SAVE'], timeout=timeout)
+      # Needs a more help
+      self.waitForReply('TRIGGER:STATE?', ['READY'], timeout=timeout)
+      self.waitForReply('TRIGGER:STATE?', ['TRIGGER', 'SAVE'], timeout=timeout, repeatSend='TRIGGER FORCE')
+      self.waitForReply('ACQUIRE:STATE?', ['0'], timeout=timeout)
       self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
       self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
       return
@@ -263,6 +257,9 @@ class MDO4000(Scope):
 
       if not silent:
         print(f'Autoscaling channel \'{channel}\'')
+
+      originalNumPoints = self.ask(f'HORIZONTAL:RECORDLENGTH?')
+      self.configure("TIME_POINTS", 10e3)
 
       attempts = 10
       while attempts > 0:
@@ -330,6 +327,8 @@ class MDO4000(Scope):
 
         break
 
+      self.configure("TIME_POINTS", originalNumPoints)
+
       if attempts == 0:
         raise Exception(
           f'{self.name}@{self.addr} failed to autoscale channel \'{channel}\'')
@@ -355,9 +354,17 @@ class MDO4000(Scope):
     self.send('DATA:WIDTH 1')
     self.send('DATA:ENC RPB')
 
-    xIncr = float(self.ask('WFMOUTPRE:XINCR?'))
-    xZero = float(self.ask('WFMOUTPRE:XZERO?'))
-    xUnit = self.ask('WFMOUTPRE:XUNIT?').replace('"', '')
+    self.send('HEADER 1')
+    interpretInfo = [i.split(' ', maxsplit=1)
+                     for i in self.ask('WFMOUTPRE?')[11:].split(';')]
+    interpretInfo = {i[0]: i[1] for i in interpretInfo}
+    # for k, v in interpretInfo.items():
+    #   print(f'{k:10}: {v}')
+    self.send('HEADER 0')
+
+    xIncr = float(interpretInfo['XINCR'])
+    xZero = float(interpretInfo['XZERO'])
+    xUnit = interpretInfo['XUNIT'].replace('"', '')
 
     infoDict = {
       'tUnit': xUnit,
@@ -373,24 +380,29 @@ class MDO4000(Scope):
     wave = np.array(unpack('%sB' % len(wave), wave))
     x = np.arange(xZero, xIncr * len(wave) + xZero, xIncr)
 
-    if raw:
-      return (np.array([x, wave]), infoDict)
+    if np.amax(wave) == 255:
+      print('Wave clipping top')
+    if np.amin(wave) == 0:
+      print('Wave clipping top')
 
-    yMult = float(self.ask('WFMOUTPRE:YMULT?'))
-    yZero = float(self.ask('WFMOUTPRE:YZERO?'))
-    yOff = float(self.ask('WFMOUTPRE:YOFF?'))
-    yUnit = self.ask('WFMOUTPRE:YUNIT?').replace('"', '')
+    if raw:
+      return (np.array([x, wave]).astype(np.float32), infoDict)
+
+    yMult = float(interpretInfo['YMULT'])
+    yZero = float(interpretInfo['YZERO'])
+    yOff = float(interpretInfo['YOFF'])
+    yUnit = interpretInfo['YUNIT'].replace('"', '')
     y = (wave - yOff) * yMult + yZero
 
     infoDict['yUnit'] = yUnit
     infoDict['yIncr'] = yMult
 
     if interpolate == 1:
-      return (np.array([x, y]), infoDict)
+      return (np.array([x, y]).astype(np.float32), infoDict)
 
     infoDict['tIncr'] = xIncr * interpolate
     infoDict['yIncr'] = None
 
     xNew = np.arange(xZero, xIncr * len(wave) + xZero, xIncr / interpolate)
     yNew = math.interpolate(x, y, xNew)
-    return (np.array([xNew, yNew]), infoDict)
+    return (np.array([xNew, yNew]).astype(np.float32), infoDict)

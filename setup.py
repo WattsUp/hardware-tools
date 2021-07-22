@@ -74,6 +74,7 @@ setup(
     packages=find_packages(),
     package_data={'hardware_tools': []},
     install_requires=required,
+    test_requires=['json'],
     test_suite='tests',
     scripts=[],
     author='Bradley Davis',

@@ -3,7 +3,10 @@ from unittest import TestCase
 from hardware_tools.equipment import *
 
 import matplotlib.pyplot as pyplot
+import json
 # from scipy.fft import fft, fftfreq
+
+import numpy as np
 
 def test() -> None:
   for r in utility.getAvailableEquipment():
@@ -95,3 +98,52 @@ def test() -> None:
   pyplot.plot(data10[0], data10[1])
   pyplot.xlim([0, 30e-9])
   pyplot.show()
+
+def collectTestData():
+  for r in utility.getAvailableEquipment():
+    if r.startswith('USB'):
+      s = tektronik.MDO3000(r)
+      break
+
+  s.configure('TIME_SCALE', 0.1e-9)
+  s.configure('TIME_OFFSET', 0e-9)
+  s.configure('TIME_POINTS', 10e6)
+  s.configure('TRIGGER_MODE', 'NORMAL')
+  s.configure('TRIGGER_SOURCE', 'CH1')
+  s.configure('TRIGGER_COUPLING', 'DC')
+  s.configure('TRIGGER_POLARITY', 'RISE')
+  s.configure('ACQUIRE_MODE', 'SAMPLE')
+
+  s.configureChannel('CH1', 'SCALE', 10e-6)
+  s.configureChannel('CH1', 'OFFSET', 0)
+  s.configureChannel('CH1', 'POSITION', 0)
+  s.configureChannel('CH1', 'LABEL', '')
+  s.configureChannel('CH1', 'BANDWIDTH', 'FULL')
+  s.configureChannel('CH1', 'INVERT', 'OFF')
+  # s.configureChannel('CH1', 'TRIGGER_LEVEL', 10e-6)
+  s.configureChannel('CH1', 'TRIGGER_LEVEL', -1000)
+  s.configureChannel('CH1', 'ACTIVE', 1)
+  s.configureChannel('CH2', 'ACTIVE', 0)
+  s.configureChannel('CH3', 'ACTIVE', 0)
+  s.configureChannel('CH4', 'ACTIVE', 0)
+
+  s.command('AUTOSCALE', 'CH1')
+
+  waveforms = []
+
+  s.command('SINGLE_FORCE')
+  data, info = s.readWaveform('CH1', interpolate=1)
+
+  waveforms.append(data)
+
+  for i in range(1, 10):
+    # Dither capture
+    s.configureChannel('CH1', 'OFFSET', i * info['yIncr'] * 3 / 10)
+    s.command('SINGLE_FORCE')
+    data, _ = s.readWaveform('CH1', interpolate=1)
+    waveforms.append(data)
+
+  waveforms = np.array(waveforms)
+  np.save('data/waveforms.npy', waveforms)
+  with open('data/waveformInfo.json', 'w') as file:
+    json.dump(info, file)

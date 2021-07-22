@@ -1,3 +1,6 @@
 numpy
 pyvisa
 cython
+colorama
+matplotlib
+scipy
