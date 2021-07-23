@@ -404,5 +404,5 @@ class MDO4000(Scope):
     infoDict['yIncr'] = None
 
     xNew = np.arange(xZero, xIncr * len(wave) + xZero, xIncr / interpolate)
-    yNew = math.interpolate(x, y, xNew)
+    yNew = math.interpolateSinc(x, y, xNew)
     return (np.array([xNew, yNew]).astype(np.float32), infoDict)

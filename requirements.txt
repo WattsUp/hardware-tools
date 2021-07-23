@@ -4,3 +4,4 @@ cython
 colorama
 matplotlib
 scipy
+sklearn

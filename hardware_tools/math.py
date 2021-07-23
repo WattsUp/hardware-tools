@@ -1,9 +1,11 @@
+from __future__ import annotations
 import datetime
 import numpy as np
 from scipy import optimize
+from sklearn.mixture import GaussianMixture
 from typing import Iterable, Union
 
-def interpolate(x, y, xNew) -> np.ndarray:
+def interpolateSinc(x, y, xNew) -> np.ndarray:
   '''!@brief Resample a time series using sinc interpolation
 
   @param x Input sample points
@@ -77,6 +79,30 @@ class Point:
     '''
     return f"({self.x}, {self.y})"
 
+  def inRectangle(self, start: Point, end: Point):
+    '''!@brief Check if point lies in rectangle formed by start and stop
+
+    @param start Point of line segment
+    @param end Point of line segment
+    @return bool True if self is within all edges of rectangle
+    '''
+    if ((self.x <= max(start.x, end.x)) and (self.x >= min(start.x, end.x)) and
+            (self.y <= max(start.y, end.y)) and (self.y >= min(start.y, end.y))):
+      return True
+    return False
+
+  @staticmethod
+  def orientation(p: Point, q: Point, r: Point) -> int:
+    '''!@brief Compute the orientation of three points
+
+    @param p Point 1
+    @param q Point 2
+    @param r Point 3
+    @return int -1=anticlockwise, 0=colinear, 1=clockwise
+    '''
+    val = ((q.y - p.y) * (r.x - q.x)) - ((q.x - p.x) * (r.y - q.y))
+    return np.sign(val)
+
 class Line:
   def __init__(self, x1, y1, x2, y2) -> None:
     '''!@brief Create a new Point
@@ -96,17 +122,121 @@ class Line:
     '''
     return f"({self.p}, {self.q})"
 
+  def intersecting(self, l: Line) -> bool:
+    '''!@brief Check if two line segments intersect
+
+    @param l Second line segment
+    @return bool True if line segments intersect, false otherwise
+    '''
+    return self.intersectingPQ(l.p, l.q)
+
+  def intersectingPQ(self, p: Point, q: Point) -> bool:
+    '''!@brief Check if two line segments intersect
+
+    @param p First Point of second line segment
+    @param q Second Point of second line segment
+    @return bool True if line segments intersect, false otherwise
+    '''
+    # 4 Combinations of points
+    o1 = Point.orientation(self.p, self.q, p)
+    o2 = Point.orientation(self.p, self.q, q)
+    o3 = Point.orientation(p, q, self.p)
+    o4 = Point.orientation(p, q, self.q)
+
+    # General case
+    if (o1 != o2) and (o3 != o4):
+      return True
+
+    # self.p, self.q, p are colinear and p2 lies in self
+    if (o1 == 0) and p.inRectangle(self.p, self.q):
+      return True
+
+    # self.p, self.q, q are colinear and q2 lies in self
+    if (o2 == 0) and q.inRectangle(self.p, self.q):
+      return True
+
+    # p, q, self.p are colinear and self.p lies in pq
+    if (o3 == 0) and self.p.inRectangle(p, q):
+      return True
+
+    # p, q, self.q are colinear and self.q lies in pq
+    if (o4 == 0) and self.q.inRectangle(p, q):
+      return True
+
+    return False
+
+  def intersection(self, l: Line) -> Point:
+    '''!@brief Get the intersection of two lines [not line segments]
+
+    @param l Second line
+    @return Point Intersection point, None if lines do not intersect aka parallel
+    '''
+    return self.intersectionPQ(l.p, l.q)
+
+  def intersectionPQ(self, p: Point, q: Point) -> Point:
+    '''!@brief Get the intersection of two lines [not line segments]
+
+    @param p First Point of second line
+    @param q Second Point of second line
+    @return Point Intersection point, None if lines do not intersect aka parallel
+    '''
+    def lineParams(p: Point, q: Point):
+      A = p.y - q.y
+      B = q.x - p.x
+      C = p.x * q.y - q.x * p.y
+      return A, B, -C
+    l1 = lineParams(self.p, self.q)
+    l2 = lineParams(p, q)
+    det = l1[0] * l2[1] - l1[1] * l2[0]
+    detX = l2[1] * l1[2] - l2[2] * l1[1]
+    detY = l1[0] * l2[2] - l1[2] * l2[0]
+    if det == 0:
+      return None
+    return Point(detX / det, detY / det)
+
+
 def gaussian(x: np.ndarray, amplitude: float, mean: float,
              stddev: float) -> np.ndarray:
   '''!@brief Gaussian function
 
   @param x
-  @param amplitude peak value, not normalized with stddev
+  @param amplitude peak value
   @param mean
   @param stddev
   @return np.ndarray gaussian calculated at x values
   '''
-  return amplitude * np.exp(-((x - mean) / stddev)**2 / 2)
+  return amplitude * np.exp(-((x - mean) / stddev) **
+                            2 / 2) / (stddev * np.sqrt(2 * np.pi))
+
+def gaussianMix(x: np.ndarray, components: list[float]) -> np.ndarray:
+  '''!@brief Gaussian function
+
+  @param x
+  @return list of components [amplitude: float, mean: float, stddev: float]
+  @return np.ndarray gaussian calculated at x values
+  '''
+  y = np.array([gaussian(x, *components[i]) for i in range(len(components))])
+  return np.dot(y.T, [1] * len(components))
+
+def gaussianMixCenter(components: list[float]) -> float:
+  '''!@brief Compute the center of a gaussian mix distribution
+
+  Returns exact results for n=1. Approximate for n>1 cause math is hard
+
+  @param list of components [amplitude: float, mean: float, stddev: float]
+  @return float Center of gaussian where peak occurs
+  '''
+  if len(components) == 1:
+    return components[0][1]
+  xMin = min([c[1] for c in components])
+  xMax = max([c[1] for c in components])
+  x = np.linspace(xMin, xMax, 1000)
+  y = gaussianMix(x, components)
+  x = x[np.argmax(y)]
+  x = np.linspace(x - (xMax - xMin) / 1000, x + (xMax - xMin) / 1000, 1000)
+  y = gaussianMix(x, components)
+  return x[np.argmax(y)]
+
 
 def fitGaussian(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
   '''!@brief Fit a gaussian function to data
@@ -115,7 +245,7 @@ def fitGaussian(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
   @param y Y values
   @return amplitude: float, mean: float, stddev: float
   '''
-  sumY = np.sum(y)
+  sumY = np.max(y)
   y = y / sumY
 
   guessMean = np.average(x, weights=y)
@@ -126,14 +256,25 @@ def fitGaussian(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
   opt[0] = opt[0] * sumY
   return opt
 
+def binLinear(values: Iterable, binCount: int = 100) -> tuple[list, list]:
+  '''!@brief Bin values with equal width bins
 
-def binExact(values: Iterable,
-             split: bool = True) -> Union[tuple[list, list], dict]:
+  @param values Values iterable over
+  @param binCount Number of equal width bins
+  @return tuple[list, list] (bins: list, counts: list)
+  '''
+  minValue = min(values)
+  maxValue = max(values)
+  edges = np.linspace(minValue, maxValue, binCount + 1)
+  counts, _ = np.histogram(values, edges)
+  bins = edges[:-1] + (edges[1] - edges[0]) / 2
+  return bins, counts
+
+def binExact(values: Iterable) -> tuple[list, list]:
   '''!@brief Bin values with exact indices
 
   @param values Values iterable over
-  @param split True will sort bins and return bins[list], counts[list]. False will return dictionary with value indices keys
-  @return tuple[list, list] or dict See split
+  @return tuple[list, list] (bins: list, counts: list)
   '''
   counts = {}
   for e in values:
@@ -141,8 +282,44 @@ def binExact(values: Iterable,
       counts[e] += 1
     else:
       counts[e] = 1
-  if not split:
-    return counts
   bins = sorted(counts.keys())
   counts = [counts[b] for b in bins]
   return bins, counts
+
+def fitGaussianMix(
+  x: list, nMax: int = 10, tol: float = 1e-3) -> list[tuple[float, float, float]]:
+  '''!@brief Fit a mixture of gaussian curves, returning the best combination
+
+  @param x Samples
+  @param nMax Maximum number of components
+  @param tol Tolerance of curve fitting (normalized units)
+  @return list of components sorted by amplitude [amplitude: float, mean: float, stddev: float]
+  '''
+  xMax = np.average(x)
+  x = np.array(x).reshape(-1, 1) / xMax
+
+  models = []
+  for i in range(nMax):
+    models.append(GaussianMixture(i + 1, tol=tol).fit(x))
+
+  aic = [m.aic(x) for m in models]
+  mBest = models[np.argmin(aic)]
+
+  # xRange = np.linspace(np.amin(x), np.amax(x), 1000)
+  # logprob = mBest.score_samples(xRange.reshape(-1, 1))
+  # responsibilities = mBest.predict_proba(xRange.reshape(-1, 1))
+  # pdf = np.exp(logprob)
+  # pdf_individual = responsibilities * pdf[:, np.newaxis]
+
+  # pyplot.hist(x * xMax, 30, density=True, histtype='stepfilled', alpha=0.4)
+  # pyplot.plot(xRange * xMax, pdf / xMax, '-k')
+  # pyplot.plot(xRange * xMax, pdf_individual / xMax, '--k')
+  # pyplot.show()
+
+  components = []
+  for i in range(mBest.n_components):
+    amplitude = mBest.weights_[i]
+    mean = mBest.means_[i][0] * xMax
+    stddev = abs(np.sqrt(mBest.covariances_[i][0][0]) * xMax)
+    components.append([amplitude, mean, stddev])
+  return sorted(components, key=lambda c: -c[0])

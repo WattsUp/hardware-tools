@@ -1,4 +1,4 @@
-from hardware_tools.measurement.eyediagram import EyeDiagram
+from hardware_tools.measurement.eyediagram import EyeDiagram, MaskDecagon
 from hardware_tools.measurement import *
 
 import json
@@ -12,9 +12,22 @@ def test() -> None:
   with open('data/waveformInfo.json', 'r') as file:
     waveformInfo = json.load(file)
 
-  e = EyeDiagram(waveforms, waveformInfo)
+  m = MaskDecagon(0.18, 0.29, 0.35, 0.35, 0.38, 0.4, 0.55)
+  e = EyeDiagram(waveforms, waveformInfo, mask=m)
   try:
     # e.calculate(nThreads=1)
     e.calculate()
+
+    # import cProfile
+    # cProfile.runctx('e.calculate()', {'e': e, 'calculate': e.calculate}, {})
+    # import cProfile
+    # import pstats
+    # profiler = cProfile.Profile()
+    # profiler.enable()
+    # e.calculate()
+    # profiler.disable()
+    # stats = pstats.Stats(profiler).sort_stats('tottime')
+    # stats.print_stats()
+
   except KeyboardInterrupt:
     os.kill(0, 9)
