@@ -323,3 +323,32 @@ def fitGaussianMix(
     stddev = abs(np.sqrt(mBest.covariances_[i][0][0]) * xMax)
     components.append([amplitude, mean, stddev])
   return sorted(components, key=lambda c: -c[0])
+
+def layerNumpyImageRGBA(below: np.ndarray, above: np.ndarray) -> np.ndarray:
+  '''!@brief Layer a RGBA image on top of another using alpha compositing
+
+  @param below Image on bottom of stack
+  @param above Image on top of stack
+  @return np.ndarray Alpha composited image
+  '''
+  if below.shape != above.shape:
+    raise Exception(
+      f'Cannot layer images of different shapes {below.shape} vs. {above.shape}')
+  if below.shape[2] != 4 or above.shape[2] != 4:
+    raise Exception(f'Image is not RGBA')
+
+  alphaA = above[:, :, 3]
+  alphaB = below[:, :, 3]
+  alphaOut = alphaA + np.multiply(alphaB, 1 - alphaA)
+  out = np.zeros(below.shape, dtype=below.dtype)
+  out[:, :, 0] = np.divide(np.multiply(above[:, :, 0], alphaA) +
+                           np.multiply(np.multiply(below[:, :, 0], alphaB), 1 -
+                                       alphaA), alphaOut, where=alphaOut != 0)
+  out[:, :, 1] = np.divide(np.multiply(above[:, :, 1], alphaA) +
+                           np.multiply(np.multiply(below[:, :, 1], alphaB), 1 -
+                                       alphaA), alphaOut, where=alphaOut != 0)
+  out[:, :, 2] = np.divide(np.multiply(above[:, :, 2], alphaA) +
+                           np.multiply(np.multiply(below[:, :, 2], alphaB), 1 -
+                                       alphaA), alphaOut, where=alphaOut != 0)
+  out[:, :, 3] = alphaOut
+  return out

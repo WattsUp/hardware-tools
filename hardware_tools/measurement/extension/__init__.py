@@ -1,15 +1,17 @@
-from .extensionSlow import getEdgesSlow, getCrossingSlow, getHitsSlow
+from .extensionSlow import getEdgesSlow, getCrossingSlow, getHitsSlow, isHittingSlow
 getEdges = getEdgesSlow
 getCrossing = getCrossingSlow
 getHits = getHitsSlow
+isHitting = isHittingSlow
 
 import numpy as np
 
 try:
-  from .extension import getEdgesFast, getCrossingFast, getHitsFast
+  from .extension import getEdgesFast, getCrossingFast, getHitsFast, isHittingFast
   getEdges = getEdgesFast
   getCrossing = getCrossingFast
   getHits = getHitsFast
+  isHitting = isHittingFast
 except ImportError:
   print('The cython version of the measurement extension is not available')
 

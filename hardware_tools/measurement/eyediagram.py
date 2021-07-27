@@ -1,20 +1,24 @@
 from __future__ import annotations
-from re import A
-from hardware_tools.measurement.extension.extensionSlow import getCrossingSlow
 import colorama
 from colorama import Fore
 import datetime
+import matplotlib
+matplotlib.use('WXAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.ticker import FuncFormatter
 from multiprocessing import Pool, cpu_count
 import numpy as np
 import numpy.polynomial.polynomial as poly
+import os
+from PIL import Image
 from scipy.signal import argrelextrema
+import skimage.draw
 
 import sys
 
 from ..math import *
-from .extension import getEdgesNumpy, getCrossing, getHits
+from .extension import getEdgesNumpy, getCrossing, getHits, isHitting
+from . import brescount
 
 colorama.init(autoreset=True)
 
@@ -134,8 +138,8 @@ class MaskDecagon(Mask):
     return MaskDecagon(x1, x2, x3, y1, y2, y3, y4)
 
 class EyeDiagram:
-  def __init__(self, waveforms: np.ndarray, waveformInfo,
-               mask=None, resolution=2000, nBitsMax=5) -> None:
+  def __init__(self, waveforms: np.ndarray, waveformInfo: dict, mask: Mask = None, resolution: int = 2000,
+               nBitsMax: int = 5, method: str = 'average', resample: int = 50, yLevels: list = None) -> None:
     '''!@brief Create a new EyeDiagram from a collection of waveforms
 
     Assumes signal has two levels
@@ -148,6 +152,9 @@ class EyeDiagram:
     @param mask Mask object for hit detection, None will not check a mask
     @param resolution Resolution of square eye diagram image
     @param nBitsMax Maximum number of consecutive bits of the same state allowed before an exception is raised
+    @param method Method for deciding on values 'average' runs a simple average, 'peak' will find the peak of a gaussian curve fit
+    @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
+    @param yLevels Manually specify fixed levels for state identification, None will auto calculate levels
     '''
     if len(waveforms.shape) != 3:
       raise Exception(
@@ -159,9 +166,11 @@ class EyeDiagram:
     self.resolution = resolution
     self.mask = mask
     self.nBitsMax = nBitsMax
+    self.method = method
+    self.resample = resample
+    self.manualYLevels = yLevels
     self.calculated = False
-
-    # TODO add options for selecting peak vs average method and interpolation or not, and move resolution, nBitsMax in
+    self.hysteresis = 0.1
 
   def calculate(self, verbose: bool = True, plot: bool = False,
                 nThreads: int = 0) -> dict:
@@ -208,34 +217,30 @@ class EyeDiagram:
     # if verbose:
     #   print(f'  Number of bits: {Fore.CYAN}{self.nBits}')
 
+    self.calculated = True
     if verbose:
       print(f'{elapsedStr(start)} {Fore.YELLOW}Measuring waveform')
-    self.__measureWaveform(
-        plot=False,
-        printProgress=verbose,
-        nThreads=nThreads, method='average')
+    self.__measureWaveform(plot=plot, printProgress=verbose, nThreads=nThreads)
     if verbose:
       self.printMeasures()
+    self.calculated = False
 
-    # import cProfile
-    # import pstats
-    # profiler = cProfile.Profile()
-    # profiler.enable()
-
-    # profiler.disable()
-    # stats = pstats.Stats(profiler).sort_stats('tottime')
-    # stats.print_stats()
+    if verbose:
+      print(f'{elapsedStr(start)} {Fore.YELLOW}Generating images')
+    self.__generateImages(printProgress=verbose, nThreads=nThreads)
 
     if verbose:
       print(f'{elapsedStr(start)} {Fore.GREEN}Complete')
 
-  def __calculateLevels(self, plot: bool = True, nThreads: int = 0) -> None:
+    self.calculated = True
+
+  def __calculateLevels(self, plot: bool = True, nThreads: int = 1) -> None:
     '''!@brief Calculate high/low levels and crossing thresholds
 
     Assumes signal has two levels
 
     @param plot True will create plots during calculation (histograms and such). False will not
-    @param multithreaded Specify number of threads to use, 0=all, 1=single, or n
+    @param nThreads Specify number of threads to use
     '''
     # Histogram vertical values for all waveforms
     minValue = np.amin(np.amin(self.waveforms, axis=2).T[1])
@@ -265,14 +270,22 @@ class EyeDiagram:
     countsOnes = counts[middleIndex:]
 
     optZero = fitGaussian(binsZero, countsZero)
-    self.yZero = optZero[1]
-    yZeroStdDev = abs(optZero[2])
+    if self.manualYLevels:
+      self.yZero = self.manualYLevels[0]
+      yZeroStdDev = 0
+    else:
+      self.yZero = optZero[1]
+      yZeroStdDev = abs(optZero[2])
 
     optOne = fitGaussian(binsOnes, countsOnes)
-    self.yOne = optOne[1]
-    yOneStdDev = abs(optOne[2])
+    if self.manualYLevels:
+      self.yOne = self.manualYLevels[1]
+      yOneStdDev = 0
+    else:
+      self.yOne = optOne[1]
+      yOneStdDev = abs(optOne[2])
 
-    hys = 0.4
+    hys = 0.5 - self.hysteresis
     self.thresholdRise = self.yOne * (1 - hys) + self.yZero * hys
     self.thresholdFall = self.yOne * hys + self.yZero * (1 - hys)
     self.thresholdHalf = (self.yOne + self.yZero) / 2
@@ -316,13 +329,13 @@ class EyeDiagram:
     if errorStr:
       raise Exception(errorStr)
 
-  def __calculatePeriod(self, plot: bool = True, nThreads: int = 0) -> None:
+  def __calculatePeriod(self, plot: bool = True, nThreads: int = 1) -> None:
     '''!@brief Calculate period for a single bit
 
     Assumes shortest period is a single bit
 
     @param plot True will create plots during calculation (histograms and such). False will not
-    @param multithreaded Specify number of threads to use, 0=all, 1=single, or n
+    @param nThreads Specify number of threads to use
     '''
     # Histogram horizontal periods for all waveforms
     with Pool(nThreads) as p:
@@ -461,11 +474,11 @@ class EyeDiagram:
 
       pyplot.show()
 
-  def __extractBitCenters(self, plot: bool = True, nThreads: int = 0) -> None:
+  def __extractBitCenters(self, plot: bool = True, nThreads: int = 1) -> None:
     '''!@brief Extract center positions of bits
 
     @param plot True will create plots during calculation (histograms and such). False will not
-    @param multithreaded Specify number of threads to use, 0=all, 1=single, or n
+    @param nThreads Specify number of threads to use
     '''
     # Padding to artificially add to pulses to meet 50% duty
     tHighOffset = self.tBit - self.tHigh
@@ -514,11 +527,12 @@ class EyeDiagram:
       hw = int((self.tBit / self.tDelta) + 0.5)
       n = hw * 2 + 1
 
-      for i in range(min(20, len(self.bitCentersT[0]))):
-        cT = self.bitCentersT[0][i]
-        cY = self.bitCentersY[0][i]
+      waveformIndex = 0
+      for i in range(min(20, len(self.bitCentersT[waveformIndex]))):
+        cT = self.bitCentersT[waveformIndex][i]
+        cY = self.bitCentersY[waveformIndex][i]
         plotX = np.linspace(cT - hw * self.tDelta, cT + hw * self.tDelta, n)
-        plotY = self.waveforms[0][1][cY - hw: cY + hw + 1]
+        plotY = self.waveforms[waveformIndex][1][cY - hw: cY + hw + 1]
         pyplot.plot(plotX, plotY)
 
       pyplot.axvline(x=(-self.tBit / 2), color='g')
@@ -541,13 +555,12 @@ class EyeDiagram:
       pyplot.show()
 
   def __measureWaveform(self, plot: bool = True,
-                        printProgress: bool = True, nThreads: int = 0, method='peak') -> None:
+                        printProgress: bool = True, nThreads: int = 1) -> None:
     '''!@brief Extract center positions of bits
 
     @param plot True will create plots during calculation (histograms and such). False will not
     @param printProgress True will print progress statements. False will not
-    @param multithreaded Specify number of threads to use, 0=all, 1=single, or n
-    @param method Method for deciding on values 'average' runs a simple average, 'peak' will find the peak of a gaussian curve fit
+    @param nThreads Specify number of threads to use
     '''
     self.measures = {}
     m = self.measures
@@ -600,7 +613,7 @@ class EyeDiagram:
       print(
         f'  {elapsedStr(start)} {Fore.YELLOW}Computing \'0\', \'0.5\', \'1\' statistics')
 
-    if method == 'peak' or plot:
+    if self.method == 'peak' or plot:
       componentsZero = fitGaussianMix(valuesY['zero'], nMax=3)
       if printProgress:
         print(
@@ -616,16 +629,16 @@ class EyeDiagram:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}yOne has {len(componentsOne)} modes')
 
-    if method == 'peak':
+    if self.method == 'peak':
       m['yZero'] = gaussianMixCenter(componentsZero)
       m['yCrossing'] = gaussianMixCenter(componentsCross)
       m['yOne'] = gaussianMixCenter(componentsOne)
-    elif method == 'average':
+    elif self.method == 'average':
       m['yZero'] = np.average(valuesY['zero'])
       m['yCrossing'] = np.average(valuesY['cross'])
       m['yOne'] = np.average(valuesY['one'])
     else:
-      raise Exception(f'Unrecognized measure method: {method}')
+      raise Exception(f'Unrecognized measure method: {self.method}')
     m['yZeroStdDev'] = np.std(valuesY['zero'])
     m['yCrossingStdDev'] = np.std(valuesY['cross'])
     m['yOneStdDev'] = np.std(valuesY['one'])
@@ -701,6 +714,15 @@ class EyeDiagram:
     m['fBit'] = 1 / self.tBit
     m['fBitStdDev'] = m['tBitStdDev'] * m['fBit'] / m['tBit']
 
+    if self.manualYLevels is None:
+      self.yZero = m['yZero']
+      self.yOne = m['yOne']
+
+      hys = 0.5 - self.hysteresis
+      self.thresholdRise = self.yOne * (1 - hys) + self.yZero * hys
+      self.thresholdFall = self.yOne * hys + self.yZero * (1 - hys)
+      self.thresholdHalf = (self.yOne + self.yZero) / 2
+
     with Pool(nThreads) as p:
       results = [p.apply_async(
         _runnerCollectValuesT,
@@ -710,8 +732,8 @@ class EyeDiagram:
             self.bitCentersY[i],
             self.tDelta,
             self.tBit,
-            m['yZero'],
-            m['eyeAmplitude']]) for i in range(self.waveforms.shape[0])]
+            self.yZero,
+            self.yOne]) for i in range(self.waveforms.shape[0])]
       output = [p.get() for p in results]
 
     # output = [
@@ -740,7 +762,7 @@ class EyeDiagram:
     if printProgress:
       print(f'  {elapsedStr(start)} {Fore.YELLOW}Computing edges statistics')
 
-    if method == 'peak' or plot:
+    if self.method == 'peak' or plot:
       componentsRise20 = fitGaussianMix(valuesT['rise20'], nMax=3)
       if printProgress:
         print(
@@ -771,14 +793,14 @@ class EyeDiagram:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tFall80 has {len(componentsFall80)} modes')
 
-    if method == 'peak':
+    if self.method == 'peak':
       m["tRise20"] = gaussianMixCenter(componentsRise20)
       m["tRise50"] = gaussianMixCenter(componentsRise50)
       m["tRise80"] = gaussianMixCenter(componentsRise80)
       m["tFall20"] = gaussianMixCenter(componentsFall20)
       m["tFall50"] = gaussianMixCenter(componentsFall50)
       m["tFall80"] = gaussianMixCenter(componentsFall80)
-    elif method == 'average':
+    elif self.method == 'average':
       m["tRise20"] = np.average(valuesT['rise20'])
       m["tRise50"] = np.average(valuesT['rise50'])
       m["tRise80"] = np.average(valuesT['rise80'])
@@ -786,7 +808,7 @@ class EyeDiagram:
       m["tFall50"] = np.average(valuesT['fall50'])
       m["tFall80"] = np.average(valuesT['fall80'])
     else:
-      raise Exception(f'Unrecognized measure method: {method}')
+      raise Exception(f'Unrecognized measure method: {self.method}')
     m["tRise20StdDev"] = np.std(valuesT['rise20'])
     m["tRise50StdDev"] = np.std(valuesT['rise50'])
     m["tRise80StdDev"] = np.std(valuesT['rise80'])
@@ -990,9 +1012,10 @@ class EyeDiagram:
             self.bitCentersY[i],
             self.tDelta,
             self.tBit,
-            m['yZero'],
-            m['eyeAmplitude'],
-            self.mask]) for i in range(self.waveforms.shape[0])]
+            self.yZero,
+            self.yOne,
+            self.mask,
+            self.resample]) for i in range(self.waveforms.shape[0])]
         output = [p.get() for p in results]
 
       # output = [
@@ -1004,36 +1027,419 @@ class EyeDiagram:
       #         self.tBit,
       #         m['yZero'],
       #         m['eyeAmplitude'],
-      #         self.mask) for i in range(self.waveforms.shape[0])]
+      #         self.mask,
+      #         self.resample) for i in range(self.waveforms.shape[0])]
 
-      offenders = []
-      hits = []
+      self.offenders = []
+      self.hits = []
       offenderCount = 0
       for o in output:
-        offenders.append(o[0])
+        self.offenders.append(o[0])
         offenderCount += len(o[0])
-        hits.extend(o[1])
+        self.hits.extend(o[1])
 
       m['offenderCount'] = offenderCount
       m['ber'] = m['offenderCount'] / m['nBits']
 
-      # TODO test mask margin
-      # If offenders, start at 0 and those bad bits
-      # else start at +1 and all bits
-      # decrement margin by 0.0001 until no bits fail
-      # only need to look at the bits that last failed so can step through the bits and decrement until that bit passes then move to the next
-      # Combine the waveforms margin using min
-      m['maskMargin'] = -900
+      if printProgress:
+        print(f'  {elapsedStr(start)} {Fore.YELLOW}Finding mask margin')
+
+      with Pool(nThreads) as p:
+        results = [p.apply_async(
+          _runnerAdjustMaskMargin,
+          args=[
+            self.waveforms[i][1],
+            self.bitCentersT[i],
+            self.bitCentersY[i],
+            self.tDelta,
+            self.tBit,
+            self.yZero,
+            self.yOne,
+            self.mask,
+            self.resample,
+            self.offenders[i]]) for i in range(self.waveforms.shape[0])]
+        output = [p.get() for p in results]
+
+      # output = [
+      #     _runnerAdjustMaskMargin(
+      #         self.waveforms[i][1],
+      #         self.bitCentersT[i],
+      #         self.bitCentersY[i],
+      #         self.tDelta,
+      #         self.tBit,
+      #         m['yZero'],
+      #         m['eyeAmplitude'],
+      #         self.mask,
+      #         self.resample,
+      #         self.offenders[i]) for i in range(self.waveforms.shape[0])]
+
+      output = [(output[i], i) for i in range(len(output))]
+      output = sorted(output, key=lambda o: o[0])
+      self.maskMarginPair = output[0]
+      m['maskMargin'] = 100 * self.maskMarginPair[0][0]
+
+      if plot:
+        # Plot mask
+        for path in self.mask.paths:
+          x = [p[0] for p in path]
+          y = [p[1] for p in path]
+
+          pyplot.plot(x, y, linestyle='-', color='m')
+
+        # Plot margin mask
+        for path in self.mask.adjust(self.maskMarginPair[0][0]).paths:
+          x = [p[0] for p in path]
+          y = [p[1] for p in path]
+
+          pyplot.plot(x, y, linestyle=':', color='m')
+
+        # Plot subset of mask hits
+        x = [p[0] for p in self.hits][:1000]
+        y = [p[1] for p in self.hits][:1000]
+
+        pyplot.scatter(x, y, marker='.', color='b')
+
+        iBitWidth = int((self.tBit / self.tDelta) + 0.5)
+        tBitWidthUI = (iBitWidth * self.tDelta / self.tBit)
+
+        t0 = np.linspace(
+            0.5 - tBitWidthUI,
+            0.5 + tBitWidthUI,
+            iBitWidth * 2 + 1)
+        factor = int(np.ceil(self.resample / iBitWidth))
+        if factor > 1:
+          # Expand to 3 bits for better sinc interpolation at the edges
+          iBitWidth = int((self.tBit / self.tDelta * 1.5) + 0.5)
+          tBitWidthUI = (iBitWidth * self.tDelta / self.tBit)
+          t0 = np.linspace(
+            0.5 - tBitWidthUI,
+            0.5 + tBitWidthUI,
+            iBitWidth * 2 + 1)
+          tNew = np.linspace(
+              0.5 - tBitWidthUI,
+              0.5 + tBitWidthUI,
+              iBitWidth * 2 * factor + 1)
+
+          T = t0[1] - t0[0]
+          sincM = np.tile(tNew, (len(t0), 1)) - \
+              np.tile(t0[:, np.newaxis], (1, len(tNew)))
+          referenceSinc = np.sinc(sincM / T)
+
+        # Plot subset of offenders
+        for i in range(len(self.offenders)):
+          waveformY = (self.waveforms[i][1] -
+                       self.yZero) / (self.yOne - self.yZero)
+          waveformY = waveformY.tolist()
+          for o in self.offenders[i][:1]:
+            cY = self.bitCentersY[i][o]
+            cT = self.bitCentersT[i][o] / self.tBit
+
+            if factor > 0:
+              t = (tNew + cT).tolist()
+              yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+              y = np.dot(yOriginal, referenceSinc).tolist()
+            else:
+              t = (t0 + cT).tolist()
+              y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+
+            pyplot.plot(t, y, linestyle='-', color='b')
+
+        # Plot worst offender
+        waveformIndex = self.maskMarginPair[1]
+        i = self.maskMarginPair[0][1]
+        waveformY = (self.waveforms[waveformIndex]
+                     [1] - self.yZero) / (self.yOne - self.yZero)
+        waveformY = waveformY.tolist()
+
+        cY = self.bitCentersY[waveformIndex][i]
+        cT = self.bitCentersT[waveformIndex][i] / self.tBit
+
+        if factor > 0:
+          t = (tNew + cT).tolist()
+          yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+          y = np.dot(yOriginal, referenceSinc).tolist()
+        else:
+          t = (t0 + cT).tolist()
+          y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+
+        pyplot.plot(t, y, linestyle=':', color='k')
+
+        # Make sure worst offender has hits plotted
+        hits = getHits(t, y, self.mask.paths)
+        x = [p[0] for p in hits]
+        y = [p[1] for p in hits]
+        pyplot.scatter(x, y, marker='.', color='b')
+
+        pyplot.xlim(-0.5, 1.5)
+        pyplot.ylim(-1, 2)
+        pyplot.show()
 
     else:
       m['offenderCount'] = None
+      m['ber'] = None
       m['maskMargin'] = None
 
     if printProgress:
       print(f'  {elapsedStr(start)} {Fore.GREEN}Complete measurement')
 
-  def printMeasures(self):
+  def __generateImages(self, printProgress: bool = True,
+                       nThreads: int = 1) -> None:
+    '''!@brief Extract center positions of bits
+
+    @param printProgress True will print progress statements. False will not
+    @param nThreads Specify number of threads to use
+    '''
+    start = datetime.datetime.now()
+    if printProgress:
+      print(f'  {elapsedStr(start)} {Fore.GREEN}Starting image generation')
+
+    heatMap = np.zeros((self.resolution, self.resolution), dtype=np.int32)
+
+    if printProgress:
+      print(f'  {elapsedStr(start)} {Fore.YELLOW}Layering bit waveforms')
+
+    with Pool(nThreads) as p:
+      results = [p.apply_async(
+        _runnerGenerateHeatMap,
+        args=[
+            self.waveforms[i][1],
+            self.bitCentersT[i],
+            self.bitCentersY[i],
+            self.tDelta,
+            self.tBit,
+            self.yZero,
+            self.yOne,
+            self.resample,
+            self.resolution]) for i in range(self.waveforms.shape[0])]
+      output = [p.get() for p in results]
+
+    # output = [
+    #     _runnerGenerateHeatMap(
+    #         self.waveforms[i][1],
+    #         self.bitCentersT[i],
+    #         self.bitCentersY[i],
+    #         self.tDelta,
+    #         self.tBit,
+    #         self.yZero,
+    #         self.yOne,
+    #         self.resample,
+    #         self.resolution) for i in range(self.waveforms.shape[0])]
+
+    for o in output:
+      heatMap += o
+
+    if printProgress:
+      print(f'  {elapsedStr(start)} {Fore.YELLOW}Transforming into heatmap')
+
+    heatMap = heatMap.T[::-1, :]
+    heatMap = heatMap.astype(np.float32)
+
+    # Replace 0s with nan to be colored transparent
+    heatMap[heatMap == 0] = np.nan
+
+    # Normalize heatmap to 0 to 1
+    heatMapMax = np.nanmax(heatMap)
+    heatMap = heatMap / heatMapMax
+
+    npImageClean = pyplot.cm.jet(heatMap)
+    self.imageClean = Image.fromarray((255 * npImageClean).astype('uint8'))
+
+    if printProgress:
+      print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing grid')
+
+    imageMin = -0.5
+    imageMax = 1.5
+    zero = int(((0 - imageMin) / (imageMax - imageMin)) * self.resolution)
+    half = int(((0.5 - imageMin) / (imageMax - imageMin)) * self.resolution)
+    one = int(((1 - imageMin) / (imageMax - imageMin)) * self.resolution)
+
+    # Draw a grid for reference levels
+    npImageGrid = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
+    npImageGrid[:, :, 0: 2] = 1.0
+    npImageGrid[zero, :, 3] = 1.0
+    npImageGrid[half, ::4, 3] = 1.0
+    npImageGrid[one, :, 3] = 1.0
+    npImageGrid[:, zero, 3] = 1.0
+    npImageGrid[::4, half, 3] = 1.0
+    npImageGrid[:, one, 3] = 1.0
+    for i in range(1, 8, 2):
+      pos = int(i / 8 * self.resolution)
+      npImageGrid[pos, ::10, 3] = 1.0
+      npImageGrid[::10, pos, 3] = 1.0
+    npImageGrid = np.flip(npImageGrid, axis=0)
+
+    npImage = layerNumpyImageRGBA(npImageClean, npImageGrid)
+    self.imageGrid = Image.fromarray((255 * npImage).astype('uint8'))
+
+    if self.mask:
+      npImageMargin = npImage.copy()
+
+      if printProgress:
+        print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing mask')
+
+      # Draw mask
+      npImageMask = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
+      for path in self.mask.paths:
+        x = [((p[0] - imageMin) / (imageMax - imageMin))
+             * self.resolution for p in path]
+        y = [((p[1] - imageMin) / (imageMax - imageMin))
+             * self.resolution for p in path]
+        x = [max(0, min(self.resolution - 1, v)) for v in x]
+        y = [max(0, min(self.resolution - 1, v)) for v in y]
+        polygon = skimage.draw.polygon(y, x)
+        npImageMask[polygon] = [1.0, 0.0, 1.0, 0.5]
+      npImageMask = np.flip(npImageMask, axis=0)
+
+      npImage = layerNumpyImageRGBA(npImage, npImageMask)
+      self.imageMask = Image.fromarray((255 * npImage).astype('uint8'))
+
+      if printProgress:
+        print(
+          f'  {elapsedStr(start)} {Fore.YELLOW}Drawing hits and subset of offending bit waveforms')
+
+      # Draw hits and offending bit waveforms
+      npImageHits = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
+      npImageHits[:, :, 0] = 1.0
+      for h in self.hits:
+        x = int(((h[0] - imageMin) / (imageMax - imageMin)) * self.resolution)
+        y = int(((h[1] - imageMin) / (imageMax - imageMin)) * self.resolution)
+        x = max(0, min(self.resolution - 1, x))
+        y = max(0, min(self.resolution - 1, y))
+        radius = int(max(3, self.resolution / 500))
+        rr, cc = skimage.draw.circle_perimeter(y, x, radius)
+        npImageHits[rr, cc, 3] = 1
+
+      # Plot subset of offenders
+      for i in range(len(self.offenders)):
+        self.__drawBits(npImageHits, i, self.offenders[i][:1])
+
+      npImageHits = np.flip(npImageHits, axis=0)
+
+      npImage = layerNumpyImageRGBA(npImage, npImageHits)
+      self.imageHits = Image.fromarray((255 * npImage).astype('uint8'))
+
+      if printProgress:
+        print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing mask at margin')
+
+      # Draw margin mask
+      npImageMask = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
+      for path in self.mask.adjust(self.maskMarginPair[0][0]).paths:
+        x = [((p[0] - imageMin) / (imageMax - imageMin))
+             * self.resolution for p in path]
+        y = [((p[1] - imageMin) / (imageMax - imageMin))
+             * self.resolution for p in path]
+        x = [max(0, min(self.resolution - 1, v)) for v in x]
+        y = [max(0, min(self.resolution - 1, v)) for v in y]
+        polygon = skimage.draw.polygon(y, x)
+        npImageMask[polygon] = [1.0, 0.0, 1.0, 0.5]
+      npImageMask = np.flip(npImageMask, axis=0)
+
+      npImageMargin = layerNumpyImageRGBA(npImageMargin, npImageMask)
+
+      if printProgress:
+        print(
+          f'  {elapsedStr(start)} {Fore.YELLOW}Drawing worst offending bit waveform')
+
+      # Draw hits and offending bit waveforms
+      npImageHits = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
+      npImageHits[:, :, 0] = 1.0
+      for h in self.maskMarginPair[0][2]:
+        x = int(((h[0] - imageMin) / (imageMax - imageMin)) * self.resolution)
+        y = int(((h[1] - imageMin) / (imageMax - imageMin)) * self.resolution)
+        x = max(0, min(self.resolution - 1, x))
+        y = max(0, min(self.resolution - 1, y))
+        radius = int(max(3, self.resolution / 500))
+        rr, cc = skimage.draw.circle_perimeter(y, x, radius)
+        npImageHits[rr, cc, 3] = 1
+
+      # Plot subset worst offender
+      self.__drawBits(
+          npImageHits, self.maskMarginPair[1], [
+              self.maskMarginPair[0][1]])
+
+      npImageHits = np.flip(npImageHits, axis=0)
+
+      npImageMargin = layerNumpyImageRGBA(npImageMargin, npImageHits)
+      self.imageMargin = Image.fromarray((255 * npImageMargin).astype('uint8'))
+
+    else:
+      self.imageMask = None
+      self.imageHits = None
+      self.imageMargin = None
+
+    if printProgress:
+      print(f'  {elapsedStr(start)} {Fore.GREEN}Complete image generation')
+
+  def __drawBits(self, image: np.ndarray, waveformIndex: int,
+                 bitIndices: list[int]) -> None:
+    '''!@brief Draw bit waveforms on image
+
+    @param image RGBA image to draw on
+    @param waveformIndex Index of self.waveforms
+    @param bitIndices Index of self.bitCentersT
+    '''
+    iBitWidth = int((self.tBit / self.tDelta) + 0.5)
+    tBitWidthUI = (iBitWidth * self.tDelta / self.tBit)
+
+    t0 = np.linspace(
+        0.5 - tBitWidthUI,
+        0.5 + tBitWidthUI,
+        iBitWidth * 2 + 1)
+    factor = int(np.ceil(self.resample / iBitWidth))
+    if factor > 1:
+      # Expand to 3 bits for better sinc interpolation at the edges
+      iBitWidth = int((self.tBit / self.tDelta * 1.5) + 0.5)
+      tBitWidthUI = (iBitWidth * self.tDelta / self.tBit)
+      t0 = np.linspace(
+        0.5 - tBitWidthUI,
+        0.5 + tBitWidthUI,
+        iBitWidth * 2 + 1)
+      tNew = np.linspace(
+          0.5 - tBitWidthUI,
+          0.5 + tBitWidthUI,
+          iBitWidth * 2 * factor + 1)
+
+      T = t0[1] - t0[0]
+      sincM = np.tile(tNew, (len(t0), 1)) - \
+          np.tile(t0[:, np.newaxis], (1, len(tNew)))
+      referenceSinc = np.sinc(sincM / T)
+
+    waveformY = (self.waveforms[waveformIndex][1] -
+                 self.yZero) / (self.yOne - self.yZero)
+    waveformY = waveformY
+    imageMin = -0.5
+    imageMax = 1.5
+    for i in bitIndices:
+      cY = self.bitCentersY[waveformIndex][i]
+      cT = self.bitCentersT[waveformIndex][i] / self.tBit
+
+      if factor > 0:
+        t = (tNew + cT)
+        yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+        y = np.dot(yOriginal, referenceSinc)
+      else:
+        t = (t0 + cT)
+        y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+
+      t = (((t - imageMin) / (imageMax - imageMin))
+           * self.resolution).astype(np.int32)
+      y = (((y - imageMin) / (imageMax - imageMin))
+           * self.resolution).astype(np.int32)
+
+      for ii in range(1, len(t)):
+        if t[ii - 1] < 0 or t[ii] > self.resolution:
+          continue
+        if min(y[ii], y[ii - 1]) < 0 or max(y[ii],
+                                            y[ii - 1]) > self.resolution:
+          continue
+        rr, cc, val = skimage.draw.line_aa(y[ii], t[ii], y[ii - 1], t[ii - 1])
+        image[rr, cc, 3] = val + (1 - val) * image[rr, cc, 3]
+
+  def printMeasures(self) -> None:
     '''!@brief Print measures to console'''
+    if not self.calculated:
+      raise Exception(
+        'Eye diagram must be calculated before printing measures')
     print(
       f'  yZero:        {Fore.CYAN}{metricPrefix(self.measures["yZero"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yZeroStdDev"], self.yUnit)}')
     print(
@@ -1069,6 +1475,27 @@ class EyeDiagram:
       print(
         f'  nBadBits:     {Fore.CYAN}{metricPrefix(self.measures["offenderCount"], "b")}       {Fore.BLUE}{self.measures["ber"]:9.2e}')
       print(f'  maskMargin:   {Fore.CYAN}{self.measures["maskMargin"]:6.2f}%')
+
+  def saveImages(self, dir: str = '.') -> None:
+    '''!@brief Save generated images to a directory
+
+    self.imageClean => dir/eye-diagram-clean.png
+    self.imageGrid => dir/eye-diagram-grid.png
+    self.imageMask => dir/eye-diagram-mask-clean.png
+    self.imageHits => dir/eye-diagram-mask-hits.png
+    self.imageMargin => dir/eye-diagram-mask-margin.png
+
+    @param dir Directory to save to
+    '''
+    if not self.calculated:
+      raise Exception('Eye diagram must be calculated before saving images')
+    os.makedirs(dir, exist_ok=True)
+    self.imageClean.save(os.path.join(dir, 'eye-diagram-clean.png'))
+    self.imageGrid.save(os.path.join(dir, 'eye-diagram-grid.png'))
+    if self.mask:
+      self.imageMask.save(os.path.join(dir, 'eye-diagram-mask-clean.png'))
+      self.imageHits.save(os.path.join(dir, 'eye-diagram-mask-hits.png'))
+      self.imageMargin.save(os.path.join(dir, 'eye-diagram-mask-margin.png'))
 
 
 def _runnerBitExtract(edges: tuple[list, list], tZero: float, tDelta: float, tBit: float,
@@ -1203,7 +1630,7 @@ def _runnerCollectValuesY(
   return values
 
 def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int],
-                          tDelta: float, tBit: float, yZero: float, yAmplitude: float) -> dict:
+                          tDelta: float, tBit: float, yZero: float, yOne: float) -> dict:
   '''!@brief Collect values from waveform: rise/fall times @ 20%, 50%, 80%
 
   @param waveformY Waveform data array [y0, y1,..., yn]
@@ -1212,14 +1639,14 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
   @param tDelta Time between samples
   @param tBit Time for a single bit
   @param yZero Vertical value for a '0'
-  @param yAmplitude Vertical value for separation between '1' and '0'
+  @param yOne Vertical value for a '1'
   @return dict Dictionary of collected values: rise20, rise50, rise80, fall20, fall50, fall80
   '''
   hw = int((tBit / tDelta) + 0.5)
   n = hw * 2 + 1
   t0 = np.linspace(-hw * tDelta, hw * tDelta, n).tolist()
 
-  waveformY = (waveformY - yZero) / yAmplitude
+  waveformY = (waveformY - yZero) / (yOne - yZero)
   waveformY = waveformY.tolist()
 
   # Collect time for edges at 20%, 50%, and 80% values
@@ -1278,7 +1705,7 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
   return values
 
 def _runnerCollectMaskHits(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int],
-                           tDelta: float, tBit: float, yZero: float, yAmplitude: float, mask: Mask, resample: int = 50) -> tuple[list[int], list[Point]]:
+                           tDelta: float, tBit: float, yZero: float, yOne: float, mask: Mask, resample: int = 50) -> tuple[list[int], list[tuple]]:
   '''!@brief Collect mask hits between waveform and mask
 
   @param waveformY Waveform data array [y0, y1,..., yn]
@@ -1287,29 +1714,34 @@ def _runnerCollectMaskHits(waveformY: np.ndarray, bitCentersT: list[float], bitC
   @param tDelta Time between samples
   @param tBit Time for a single bit
   @param yZero Vertical value for a '0'
-  @param yAmplitude Vertical value for separation between '1' and '0'
+  @param yOne Vertical value for a '1'
   @param mask Mask to check against
   @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
-  @return tuple[list[int], list[Point]] Tuple of (list of offending bit indices:int, list of mask hits:Point)
+  @return tuple[list[int], list[tuple]] Tuple of (list of offending bit indices:int, list of mask hits:tuple)
   '''
   iBitWidth = int((tBit / tDelta) + 0.5)
   tBitWidthUI = (iBitWidth * tDelta / tBit)
 
   t0 = np.linspace(0.5 - tBitWidthUI, 0.5 + tBitWidthUI, iBitWidth * 2 + 1)
 
-  waveformY = (waveformY - yZero) / yAmplitude
+  waveformY = (waveformY - yZero) / (yOne - yZero)
   waveformY = waveformY.tolist()
 
   offenders = []
   hits = []
   factor = int(np.ceil(resample / iBitWidth))
   if factor > 1:
-
+    # Expand to 3 bits for better sinc interpolation at the edges
+    iBitWidth = int((tBit / tDelta * 1.5) + 0.5)
+    tBitWidthUI = (iBitWidth * tDelta / tBit)
+    t0 = np.linspace(
+      0.5 - tBitWidthUI,
+      0.5 + tBitWidthUI,
+      iBitWidth * 2 + 1)
     tNew = np.linspace(
         0.5 - tBitWidthUI,
         0.5 + tBitWidthUI,
         iBitWidth * 2 * factor + 1)
-    waveformY = waveformY
 
     T = t0[1] - t0[0]
     sincM = np.tile(tNew, (len(t0), 1)) - \
@@ -1318,9 +1750,6 @@ def _runnerCollectMaskHits(waveformY: np.ndarray, bitCentersT: list[float], bitC
 
   for i in range(len(bitCentersT)):
     cY = bitCentersY[i]
-    # Only look at transitions at t=0
-    if (waveformY[cY - iBitWidth] > 0.5) == (waveformY[cY] > 0.5):
-      continue
     cT = bitCentersT[i] / tBit
 
     if factor > 0:
@@ -1337,3 +1766,170 @@ def _runnerCollectMaskHits(waveformY: np.ndarray, bitCentersT: list[float], bitC
       hits.extend(waveformHits)
 
   return offenders, hits
+
+def _runnerAdjustMaskMargin(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int], tDelta: float, tBit: float,
+                            yZero: float, yOne: float, mask: Mask, resample: int = 50, initialOffenders: list = []) -> tuple[float, int, list[tuple]]:
+  '''!@brief Collect mask hits between waveform and mask
+
+  @param waveformY Waveform data array [y0, y1,..., yn]
+  @param bitCentersT list of centerTs. Using np.linspace(center - sliceHalfWidth * tDelta, c + shw * td, shw * 2 + 1)
+  @param bitCentersY list of center indices. Use y[sliceCenter - sliceHalfWidth : c + shw + 1]
+  @param tDelta Time between samples
+  @param tBit Time for a single bit
+  @param yZero Vertical value for a '0'
+  @param yOne Vertical value for a '1'
+  @param mask Mask to check against
+  @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
+  @param initialOffenders Empty list will start at margin=+1 and check all bits. Non-empty list will start at margin=0 and check the bits in the list
+  @return tuple[float, int, list[tuple]] Tuple of (mask margin:float, worst offending bit indice:int, worst offending bit mask hits:tuple)
+  '''
+  iBitWidth = int((tBit / tDelta) + 0.5)
+  tBitWidthUI = (iBitWidth * tDelta / tBit)
+
+  t0 = np.linspace(0.5 - tBitWidthUI, 0.5 + tBitWidthUI, iBitWidth * 2 + 1)
+
+  waveformY = (waveformY - yZero) / (yOne - yZero)
+  waveformY = waveformY.tolist()
+
+  offender = None
+  factor = int(np.ceil(resample / iBitWidth))
+  if factor > 1:
+    # Expand to 3 bits for better sinc interpolation at the edges
+    iBitWidth = int((tBit / tDelta * 1.5) + 0.5)
+    tBitWidthUI = (iBitWidth * tDelta / tBit)
+    t0 = np.linspace(
+      0.5 - tBitWidthUI,
+      0.5 + tBitWidthUI,
+      iBitWidth * 2 + 1)
+    tNew = np.linspace(
+        0.5 - tBitWidthUI,
+        0.5 + tBitWidthUI,
+        iBitWidth * 2 * factor + 1)
+
+    T = t0[1] - t0[0]
+    sincM = np.tile(tNew, (len(t0), 1)) - \
+        np.tile(t0[:, np.newaxis], (1, len(tNew)))
+    referenceSinc = np.sinc(sincM / T)
+
+  maskMargin = 0
+  if len(initialOffenders) == 0:
+    maskMargin = 1
+    initialOffenders = list(range(len(bitCentersT)))
+
+  maskAdjusted = mask.adjust(maskMargin)
+  # Roughly on first offender
+  cY = bitCentersY[initialOffenders[0]]
+  cT = bitCentersT[initialOffenders[0]] / tBit
+
+  if factor > 0:
+    t = (tNew + cT).tolist()
+    yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+    y = np.dot(yOriginal, referenceSinc).tolist()
+  else:
+    t = (t0 + cT).tolist()
+    y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+
+  while isHitting(t, y, maskAdjusted.paths) and maskMargin >= -1:
+    maskMargin -= 0.01
+    maskAdjusted = mask.adjust(maskMargin)
+    offender = initialOffenders[0]
+  maskMargin += 0.01
+
+  # Finely decrement mask until each bit passes
+  for i in initialOffenders:
+    cY = bitCentersY[i]
+    cT = bitCentersT[i] / tBit
+
+    if factor > 0:
+      t = (tNew + cT).tolist()
+      yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+      y = np.dot(yOriginal, referenceSinc).tolist()
+    else:
+      t = (t0 + cT).tolist()
+      y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+
+    while isHitting(t, y, maskAdjusted.paths) and maskMargin >= -1:
+      maskMargin -= 0.0001
+      maskAdjusted = mask.adjust(maskMargin)
+      offender = i
+
+  # Collect mask hits for the worst offender
+  cY = bitCentersY[offender]
+  cT = bitCentersT[offender] / tBit
+
+  if factor > 0:
+    t = (tNew + cT).tolist()
+    yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+    y = np.dot(yOriginal, referenceSinc).tolist()
+  else:
+    t = (t0 + cT).tolist()
+    y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+  maskAdjusted = mask.adjust(maskMargin + 0.0001)
+  hits = getHits(t, y, maskAdjusted.paths)
+
+  return maskMargin, offender, hits
+
+def _runnerGenerateHeatMap(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int], tDelta: float,
+                           tBit: float, yZero: float, yOne: float, resample: int = 50, resolution: int = 500) -> np.ndarray:
+  '''!@brief Generate heat map by layering all waveforms and counting overlaps
+
+  @param waveformY Waveform data array [y0, y1,..., yn]
+  @param bitCentersT list of centerTs. Using np.linspace(center - sliceHalfWidth * tDelta, c + shw * td, shw * 2 + 1)
+  @param bitCentersY list of center indices. Use y[sliceCenter - sliceHalfWidth : c + shw + 1]
+  @param tDelta Time between samples
+  @param tBit Time for a single bit
+  @param yZero Vertical value for a '0'
+  @param yOne Vertical value for a '1'
+  @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
+    @param resolution Resolution of square eye diagram image
+  @return np.ndarray Grid of heat map counts
+  '''
+  iBitWidth = int((tBit / tDelta) + 0.5)
+  tBitWidthUI = (iBitWidth * tDelta / tBit)
+
+  t0 = np.linspace(0.5 - tBitWidthUI, 0.5 + tBitWidthUI, iBitWidth * 2 + 1)
+
+  imageMin = -0.5
+  imageMax = 1.5
+  waveformY = (waveformY - yZero) / (yOne - yZero)
+
+  factor = int(np.ceil(resample / iBitWidth))
+  if factor > 1:
+    # Expand to 3 bits for better sinc interpolation at the edges
+    iBitWidth = int((tBit / tDelta * 1.5) + 0.5)
+    tBitWidthUI = (iBitWidth * tDelta / tBit)
+    t0 = np.linspace(
+      0.5 - tBitWidthUI,
+      0.5 + tBitWidthUI,
+      iBitWidth * 2 + 1)
+    tNew = np.linspace(
+        0.5 - tBitWidthUI,
+        0.5 + tBitWidthUI,
+        iBitWidth * 2 * factor + 1)
+
+    T = t0[1] - t0[0]
+    sincM = np.tile(tNew, (len(t0), 1)) - \
+        np.tile(t0[:, np.newaxis], (1, len(tNew)))
+    referenceSinc = np.sinc(sincM / T)
+
+  grid = np.zeros((resolution, resolution), dtype=np.int32)
+
+  for i in range(len(bitCentersT)):
+    cY = bitCentersY[i]
+    cT = bitCentersT[i] / tBit
+
+    if factor > 0:
+      t = (tNew + cT)
+      yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+      y = np.dot(yOriginal, referenceSinc)
+    else:
+      t = (t0 + cT)
+      y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+
+    td = (((t - imageMin) / (imageMax - imageMin))
+          * resolution).astype(np.int32)
+    yd = (((y - imageMin) / (imageMax - imageMin))
+          * resolution).astype(np.int32)
+    brescount.counter(td, yd, grid)
+
+  return grid

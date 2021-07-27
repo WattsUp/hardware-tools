@@ -102,26 +102,26 @@ def getIntersectionSlow(p1: float, p2: float, q1: float, q2: float,
   if p1 < q1:
     if (i1 < p1) or (i1 > q1):
       return None
-  else:
+  elif p1 > q1:
     if (i1 > p1) or (i1 < q1):
       return None
   if p2 < q2:
     if (i2 < p2) or (i2 > q2):
       return None
-  else:
+  elif p2 > q2:
     if (i2 > p2) or (i2 < q2):
       return None
 
   if r1 < s1:
     if (i1 < r1) or (i1 > s1):
       return None
-  else:
+  elif r1 > s1:
     if (i1 > r1) or (i1 < s1):
       return None
   if r2 < s2:
     if (i2 < r2) or (i2 > s2):
       return None
-  else:
+  elif r2 > s2:
     if (i2 > r2) or (i2 < s2):
       return None
 
@@ -165,3 +165,41 @@ def getHitsSlow(t: list, y: list, paths: list[list[tuple]]) -> list[tuple]:
         if intersection is not None:
           intersections.append(intersection)
   return intersections
+
+def isHittingSlow(t: list, y: list, paths: list[list[tuple]]) -> bool:
+  '''!@brief Check for instersections between waveform and mask lines
+
+  @param t Waveform time array [t0, t1,..., tn]
+  @param y Waveform data array [y0, y1,..., yn]
+  @param lineSets list of path: list of points defining open path (n-1 segments)
+  @return bool True if any intersections occur, False otherwise
+  '''
+  for path in paths:
+    pathT = [p[0] for p in path]
+    pathY = [p[1] for p in path]
+    minT = min(pathT)
+    maxT = max(pathT)
+    minY = min(pathY)
+    maxY = max(pathY)
+    for i in range(1, len(t)):
+      if (t[i] < minT) or (t[i - 1] > maxT):
+        continue
+      if y[i] > y[i - 1]:
+        if (y[i] < minY) or (y[i - 1] > maxY):
+          continue
+      else:
+        if (y[i] > maxY) or (y[i - 1] < minY):
+          continue
+
+      for ii in range(1, len(path)):
+        intersection = getIntersectionSlow(t[i],
+                                           y[i],
+                                           t[i - 1],
+                                           y[i - 1],
+                                           pathT[ii],
+                                           pathY[ii],
+                                           pathT[ii - 1],
+                                           pathY[ii - 1])
+        if intersection is not None:
+          return True
+  return False
