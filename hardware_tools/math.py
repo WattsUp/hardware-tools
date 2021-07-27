@@ -286,6 +286,31 @@ def binExact(values: Iterable) -> tuple[list, list]:
   counts = [counts[b] for b in bins]
   return bins, counts
 
+def histogramDownsample(values: np.array, nMax:int=50e3, binCount=100) -> np.array:
+  '''!@ Reduce the number of samples to at most nMax. Preseves sample frequency
+
+  Bins the values, scale the counts to total of nMax, then undoes the binning.
+  Does use floor for sample count, be wary of loss of low frequency samples.
+
+
+  @param values Samples
+  @param nMax Maximum number of samples
+  @param binCount Number of equal-width bins to use, None for exact binning
+  @return np.array Downsampled samples
+  '''
+  scale = nMax / len(values)
+  if scale >= 1:
+    return values
+  if binCount:
+    bins, counts = binLinear(values, binCount=binCount)
+  else:
+    bins, counts = binExact(values)
+  values = []
+  for i in range(len(bins)):
+    count = int(np.floor(counts[i] * scale))
+    values.extend([bins[i]] * count)
+  return np.array(values)
+
 def fitGaussianMix(
   x: list, nMax: int = 10, tol: float = 1e-3) -> list[tuple[float, float, float]]:
   '''!@brief Fit a mixture of gaussian curves, returning the best combination

@@ -171,6 +171,7 @@ class EyeDiagram:
     self.manualYLevels = yLevels
     self.calculated = False
     self.hysteresis = 0.1
+    self.histNMax = 100e3
 
   def calculate(self, verbose: bool = True, plot: bool = False,
                 nThreads: int = 0) -> dict:
@@ -242,48 +243,35 @@ class EyeDiagram:
     @param plot True will create plots during calculation (histograms and such). False will not
     @param nThreads Specify number of threads to use
     '''
-    # Histogram vertical values for all waveforms
-    minValue = np.amin(np.amin(self.waveforms, axis=2).T[1])
-    maxValue = np.amax(np.amax(self.waveforms, axis=2).T[1])
-    edges = np.linspace(minValue, maxValue, 101)
 
-    with Pool(nThreads) as p:
-      results = []
-      for i in range(self.waveforms.shape[0]):
-        results.append(p.apply_async(
-            np.histogram,
-            args=[self.waveforms[i][1], edges]))
-      output = [p.get()[0] for p in results]
+    if self.manualYLevels is None or plot:
+      with Pool(nThreads) as p:
+        results = [p.apply_async(
+          _runnerCalculateLevels,
+          args=[self.waveforms[i][1], self.histNMax]) for i in range(self.waveforms.shape[0])]
+        output = [p.get() for p in results]
 
-    counts = output[0]
-    for i in range(1, len(output)):
-      counts += output[i]
-    bins = edges[:-1] + (edges[1] - edges[0]) / 2
+      # output = [
+      #     _runnerCalculateLevels(
+      #         self.waveforms[i][1],
+      #         self.histNMax) for i in range(
+      #         self.waveforms.shape[0])]
 
-    c = poly.polyfit(bins, counts, 4)
-    fit = poly.polyval(bins, c)
-    middleIndex = max(5, min(len(bins) - 5, argrelextrema(fit, np.less)[0][0]))
+      yMin = min([o['yMin'] for o in output])
+      yMax = max([o['yMax'] for o in output])
+      yZeroStdDev = np.sqrt(np.average([o['yZeroStdDev']**2 for o in output]))
+      yOneStdDev = np.sqrt(np.average([o['yOneStdDev']**2 for o in output]))
+    else:
+      yZeroStdDev = 0
+      yOneStdDev = 0
 
-    binsZero = bins[:middleIndex]
-    countsZero = counts[:middleIndex]
-    binsOnes = bins[middleIndex:]
-    countsOnes = counts[middleIndex:]
-
-    optZero = fitGaussian(binsZero, countsZero)
     if self.manualYLevels:
       self.yZero = self.manualYLevels[0]
-      yZeroStdDev = 0
-    else:
-      self.yZero = optZero[1]
-      yZeroStdDev = abs(optZero[2])
-
-    optOne = fitGaussian(binsOnes, countsOnes)
-    if self.manualYLevels:
       self.yOne = self.manualYLevels[1]
-      yOneStdDev = 0
     else:
-      self.yOne = optOne[1]
-      yOneStdDev = abs(optOne[2])
+      # Use min/max to get worst case
+      self.yZero = np.amax([o['yZero'] for o in output])
+      self.yOne = np.amin([o['yOne'] for o in output])
 
     hys = 0.5 - self.hysteresis
     self.thresholdRise = self.yOne * (1 - hys) + self.yZero * hys
@@ -299,10 +287,14 @@ class EyeDiagram:
       errorStr += f'  High: {Fore.BLUE}{metricPrefix(self.yOne, self.yUnit)} σ={metricPrefix(yOneStdDev, self.yUnit)}{Fore.RESET}'
 
     if plot:
-      yRange = np.linspace(bins[0], bins[-1], 1000)
-      pyplot.plot(bins, counts)
-      pyplot.plot(yRange, gaussian(yRange, *optZero))
-      pyplot.plot(yRange, gaussian(yRange, *optOne))
+      yRange = np.linspace(yMin, yMax, 1000)
+      yZeroCurve = np.zeros(1000)
+      yOneCurve = np.zeros(1000)
+      for o in output:
+        yZeroCurve += gaussianMix(yRange, o['yZeroComponents'])
+        yOneCurve += gaussianMix(yRange, o['yOneComponents'])
+      pyplot.plot(yRange, yZeroCurve / len(output))
+      pyplot.plot(yRange, yOneCurve / len(output))
       pyplot.axvline(x=self.yZero, color='g')
       pyplot.axvline(x=self.yOne, color='g')
       pyplot.axvline(x=self.thresholdRise, color='r')
@@ -321,7 +313,7 @@ class EyeDiagram:
       ax.xaxis.set_major_formatter(formatterY)
 
       pyplot.xlabel('Vertical scale')
-      pyplot.ylabel('Counts')
+      pyplot.ylabel('Density')
       pyplot.title('Vertical levels')
 
       pyplot.show()
@@ -358,18 +350,21 @@ class EyeDiagram:
       for i in range(1, len(edgesFall)):
         duration = edgesFall[i] - edgesFall[i - 1]
         periods.append(duration)
+    periods = histogramDownsample(periods, self.histNMax)
 
     # Step 1 find rough period from just the smallest pulses
-    bitDuration = min(periods) / 2
-    durationThreshold = 2.5 * bitDuration
-
-    periodsSmallest = []
-    for p in periods:
-      if p > durationThreshold:
-        continue
-      periodsSmallest.append(p / 2)
-
-    bitDuration = np.average(periodsSmallest)
+    components = fitGaussianMix(periods, nMax=self.nBitsMax)
+    components = sorted(components, key=lambda c: c[1])
+    if len(components) > 1:
+      bitPeriodsShort = []
+      weights = []
+      for c in components:
+        if c[1] < (2.5 * components[0][1] / 2):
+          bitPeriodsShort.append(c[1])
+          weights.append(c[0])
+      bitDuration = np.average(bitPeriodsShort, weights=weights) / 2
+    else:
+      bitDuration = components[0][1] / 2
     durationThreshold = 2.5 * bitDuration
 
     # Step 2 include bits of all lengths
@@ -380,10 +375,16 @@ class EyeDiagram:
         p = p - bitDuration * (nBits - 2)
       periodsAdjusted.append(p / 2)
 
-    binsPeriod, countsPeriod = binLinear(periodsAdjusted, 100)
-    optPeriod = fitGaussian(binsPeriod, countsPeriod)
-    self.tBit = optPeriod[1]
-    self.tBitStdDev = abs(optPeriod[2])
+    if self.method == 'peak' or plot:
+      components = fitGaussianMix(periodsAdjusted, nMax=self.nBitsMax)
+
+    if self.method == 'peak':
+      self.tBit = gaussianMixCenter(components)
+    elif self.method == 'average':
+      self.tBit = np.average(periodsAdjusted)
+    else:
+      raise Exception(f'Unrecognized measure method: {self.method}')
+    self.tBitStdDev = np.std(periodsAdjusted)
 
     # Get high and low timing offsets
     durationsHigh = []
@@ -422,42 +423,47 @@ class EyeDiagram:
       duration = binsHigh[i] - self.tBit * (nBits - 1)
       durationsHigh.extend([duration] * countsHigh[i])
 
-    binsLow, countsLow = binLinear(durationsLow, 100)
-    binsHigh, countsHigh = binLinear(durationsHigh, 100)
+    if self.method == 'peak' or plot:
+      componentsLow = fitGaussianMix(durationsLow, nMax=3)
+      componentsHigh = fitGaussianMix(durationsHigh, nMax=3)
 
-    optLow = fitGaussian(binsLow, countsLow)
-    optHigh = fitGaussian(binsHigh, countsHigh)
-    self.tLow = optLow[1]
-    tLowStdDev = abs(optLow[2])
-    self.tHigh = optHigh[1]
-    tHighStdDev = abs(optHigh[2])
+    if self.method == 'peak':
+      self.tLow = gaussianMixCenter(componentsLow)
+      self.tHigh = gaussianMixCenter(componentsHigh)
+    elif self.method == 'average':
+      self.tLow = np.average(durationsLow)
+      self.tHigh = np.average(durationsHigh)
+    else:
+      raise Exception(f'Unrecognized measure method: {self.method}')
+    tLowStdDev = np.std(durationsLow)
+    tHighStdDev = np.std(durationsHigh)
 
     if plot:
       def tickFormatterX(x, _):
         return metricPrefix(x, self.tUnit)
       formatterX = FuncFormatter(tickFormatterX)
 
-      yRange = np.linspace(min(binsLow[0], binsHigh[0]), max(
-        binsLow[-1], binsHigh[-1]), 1000)
+      yRange = np.linspace(np.amin([durationsLow, durationsHigh]), np.amax(
+        [durationsLow, durationsHigh]), 1000)
       _, subplots = pyplot.subplots(3, 1, sharex=True)
       subplots[0].set_title('Bit period')
-      subplots[0].plot(binsPeriod, countsPeriod)
-      subplots[0].plot(yRange, gaussian(yRange, *optPeriod))
+      subplots[0].hist(periodsAdjusted, 50, density=True, color='b', alpha=0.5)
+      subplots[0].plot(yRange, gaussianMix(yRange, components), color='r')
       subplots[0].axvline(x=self.tBit, color='g')
       subplots[0].axvline(x=(self.tBit + self.tBitStdDev), color='y')
       subplots[0].axvline(x=(self.tBit - self.tBitStdDev), color='y')
 
       subplots[1].set_title('Low period')
-      subplots[1].plot(binsLow, countsLow)
-      subplots[1].plot(yRange, gaussian(yRange, *optLow))
+      subplots[1].hist(durationsLow, 50, density=True, color='b', alpha=0.5)
+      subplots[1].plot(yRange, gaussianMix(yRange, componentsLow), color='r')
       subplots[1].axvline(x=self.tLow, color='g')
       subplots[1].axvline(x=(self.tLow + tLowStdDev), color='y')
       subplots[1].axvline(x=(self.tLow - tLowStdDev), color='y')
       subplots[1].axvline(x=self.tBit, color='r')
 
       subplots[2].set_title('High period')
-      subplots[2].plot(binsHigh, countsHigh)
-      subplots[2].plot(yRange, gaussian(yRange, *optHigh))
+      subplots[2].hist(durationsHigh, 50, density=True, color='b', alpha=0.5)
+      subplots[2].plot(yRange, gaussianMix(yRange, componentsHigh), color='r')
       subplots[2].axvline(x=self.tHigh, color='g')
       subplots[2].axvline(x=(self.tHigh - tHighStdDev), color='y')
       subplots[2].axvline(x=(self.tHigh + tHighStdDev), color='y')
@@ -468,9 +474,9 @@ class EyeDiagram:
       subplots[2].xaxis.set_major_formatter(formatterX)
 
       subplots[-1].set_xlabel('Time')
-      subplots[0].set_ylabel('Counts')
-      subplots[1].set_ylabel('Counts')
-      subplots[2].set_ylabel('Counts')
+      subplots[0].set_ylabel('Density')
+      subplots[1].set_ylabel('Density')
+      subplots[2].set_ylabel('Density')
 
       pyplot.show()
 
@@ -614,16 +620,19 @@ class EyeDiagram:
         f'  {elapsedStr(start)} {Fore.YELLOW}Computing \'0\', \'0.5\', \'1\' statistics')
 
     if self.method == 'peak' or plot:
+      valuesY['zero'] = histogramDownsample(valuesY['zero'], self.histNMax)
       componentsZero = fitGaussianMix(valuesY['zero'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}yZero has {len(componentsZero)} modes')
 
+      valuesY['cross'] = histogramDownsample(valuesY['cross'], self.histNMax)
       componentsCross = fitGaussianMix(valuesY['cross'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}yCross has {len(componentsCross)} modes')
 
+      valuesY['one'] = histogramDownsample(valuesY['one'], self.histNMax)
       componentsOne = fitGaussianMix(valuesY['one'], nMax=3)
       if printProgress:
         print(
@@ -763,31 +772,37 @@ class EyeDiagram:
       print(f'  {elapsedStr(start)} {Fore.YELLOW}Computing edges statistics')
 
     if self.method == 'peak' or plot:
+      valuesT['rise20'] = histogramDownsample(valuesT['rise20'], self.histNMax)
       componentsRise20 = fitGaussianMix(valuesT['rise20'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tRise20 has {len(componentsRise20)} modes')
 
+      valuesT['rise50'] = histogramDownsample(valuesT['rise50'], self.histNMax)
       componentsRise50 = fitGaussianMix(valuesT['rise50'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tRise50 has {len(componentsRise50)} modes')
 
+      valuesT['rise80'] = histogramDownsample(valuesT['rise80'], self.histNMax)
       componentsRise80 = fitGaussianMix(valuesT['rise80'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tRise80 has {len(componentsRise80)} modes')
 
+      valuesT['fall20'] = histogramDownsample(valuesT['fall20'], self.histNMax)
       componentsFall20 = fitGaussianMix(valuesT['fall20'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tFall20 has {len(componentsFall20)} modes')
 
+      valuesT['fall50'] = histogramDownsample(valuesT['fall50'], self.histNMax)
       componentsFall50 = fitGaussianMix(valuesT['fall50'], nMax=3)
       if printProgress:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tFall50 has {len(componentsFall50)} modes')
 
+      valuesT['fall80'] = histogramDownsample(valuesT['fall80'], self.histNMax)
       componentsFall80 = fitGaussianMix(valuesT['fall80'], nMax=3)
       if printProgress:
         print(
@@ -1427,10 +1442,10 @@ class EyeDiagram:
            * self.resolution).astype(np.int32)
 
       for ii in range(1, len(t)):
-        if t[ii - 1] < 0 or t[ii] > self.resolution:
+        if t[ii - 1] < 1 or t[ii] > (self.resolution - 1):
           continue
-        if min(y[ii], y[ii - 1]) < 0 or max(y[ii],
-                                            y[ii - 1]) > self.resolution:
+        if min(y[ii], y[ii - 1]) < 1 or max(y[ii],
+                                            y[ii - 1]) > (self.resolution - 1):
           continue
         rr, cc, val = skimage.draw.line_aa(y[ii], t[ii], y[ii - 1], t[ii - 1])
         image[rr, cc, 3] = val + (1 - val) * image[rr, cc, 3]
@@ -1497,6 +1512,67 @@ class EyeDiagram:
       self.imageHits.save(os.path.join(dir, 'eye-diagram-mask-hits.png'))
       self.imageMargin.save(os.path.join(dir, 'eye-diagram-mask-margin.png'))
 
+def _runnerCalculateLevels(
+  waveformY: np.ndarray, nMax: int = 50e3) -> tuple[float, float]:
+  '''!@brief Calculate the high and low levels of the waveform
+
+  @param waveformY Waveform data array [y0, y1,..., yn]
+  @param nMax Limit the number of points to calculate on (histogram downsampling), None for no limit
+  @return dict Dictionary of yMin, yMax, yZero, yZeroStdDev, yZeroComponent, yOne, yOneStdDev, yOneComponents
+  '''
+  if nMax:
+    waveformY = histogramDownsample(waveformY, nMax)
+
+  yMin = np.amin(waveformY)
+  yMax = np.amax(waveformY)
+  yMid = (yMin + yMax) / 2
+
+  lowerValues = waveformY[np.where(waveformY < yMid)]
+  yZeroStdDev = np.std(lowerValues)
+
+  upperValues = waveformY[np.where(waveformY > yMid)]
+  yOneStdDev = np.std(upperValues)
+
+  lowerComponents = fitGaussianMix(lowerValues, nMax=3)
+  upperComponents = fitGaussianMix(upperValues, nMax=3)
+
+  if len(lowerComponents) == 1:
+    yZero = lowerComponents[0][1]
+  elif lowerComponents[0][0] > 2 * lowerComponents[1][0]:
+    # yZero prominent
+    yZero = lowerComponents[0][1]
+  else:
+    # yZero not prominent find closest to average
+    averageValue = np.average(lowerValues)
+    lowerComponents = sorted(
+        lowerComponents, key=lambda c: abs(
+            c[1] - averageValue))
+    yZero = lowerComponents[0][1]
+
+  if len(upperComponents) == 1:
+    yOne = upperComponents[0][1]
+  elif upperComponents[0][0] > 2 * upperComponents[1][0]:
+    # yOne prominent
+    yOne = upperComponents[0][1]
+  else:
+    # yOne not prominent find closest to average
+    averageValue = np.average(upperValues)
+    upperComponents = sorted(
+        upperComponents, key=lambda c: abs(
+            c[1] - averageValue))
+    yOne = upperComponents[0][1]
+
+  results = {
+    'yMin': yMin,
+    'yMax': yMax,
+    'yZero': yZero,
+    'yZeroStdDev': yZeroStdDev,
+    'yZeroComponents': lowerComponents,
+    'yOne': yOne,
+    'yOneStdDev': yOneStdDev,
+    'yOneComponents': upperComponents,
+  }
+  return results
 
 def _runnerBitExtract(edges: tuple[list, list], tZero: float, tDelta: float, tBit: float,
                       tHighOffset: float, tLowOffset: float, nBitsMax: int = 5) -> tuple[list, list]:
@@ -1665,14 +1741,21 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
 
     y = waveformY[cY - hw: cY + hw + 1]
 
-    if waveformY[cY] > 0.5:
-      ii = np.argmax(y)
-      if y[ii] < 0.8:
+    iMax = np.argmax(y)
+    if y[iMax] < 0.8:
         errorStr = 'Waveform does not reach 80%\n'
         errorStr += f'  i: {i}\n'
-        errorStr += f'  yMax: {metricPrefix(y[ii])}\n'
+        errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
+        raise Exception(errorStr)
+    iMin = np.argmin(y)
+    if y[iMin] > 0.2:
+        errorStr = 'Waveform does not reach 20%\n'
+        errorStr += f'  i: {i}\n'
+        errorStr += f'  yMin: {metricPrefix(y[iMin])}\n'
         raise Exception(errorStr)
 
+    if waveformY[cY] > 0.5:
+      ii = iMax
       t, ii = getCrossing(t0, y, ii, 0.8)
       valuesRise80.append(t + cT)
       t, ii = getCrossing(t0, y, ii, 0.5)
@@ -1680,13 +1763,7 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
       t, ii = getCrossing(t0, y, ii, 0.2)
       valuesRise20.append(t + cT)
     else:
-      ii = np.argmin(y)
-      if y[ii] > 0.2:
-        errorStr = 'Waveform does not reach 20%\n'
-        errorStr += f'  i: {i}\n'
-        errorStr += f'  yMin: {metricPrefix(y[ii])}\n'
-        raise Exception(errorStr)
-
+      ii = iMin
       t, ii = getCrossing(t0, y, ii, 0.2)
       valuesFall20.append(t + cT)
       t, ii = getCrossing(t0, y, ii, 0.5)

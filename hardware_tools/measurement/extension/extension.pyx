@@ -30,7 +30,7 @@ cdef tuple get_crossing_c(list returnAxis,
     i -= 1
 
   if i < 1:
-    return np.nan
+    return (np.nan, 0)
 
   v = (returnAxis[i] - returnAxis[i - 1]) / (searchAxis[i] - searchAxis[i - 1]) * \
         (value - searchAxis[i - 1]) + returnAxis[i - 1]
