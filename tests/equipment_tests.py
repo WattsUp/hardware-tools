@@ -1,17 +1,16 @@
+from hardware_tools.equipment import utility
 from unittest import TestCase
 
-from hardware_tools.equipment import *
-
-import matplotlib.pyplot as pyplot
 import json
 # from scipy.fft import fft, fftfreq
 
+import time
 import numpy as np
 
 def test() -> None:
   for r in utility.getAvailableEquipment():
     if r.startswith('USB'):
-      s = tektronik.MDO3000(r)
+      s = utility.getEquipmentObject(r)
       break
 
   print(s)
@@ -24,9 +23,9 @@ def test() -> None:
   print(s.configure('TRIGGER_POLARITY', 'EITH'))
   print(s.configure('ACQUIRE_MODE', 'SAMPLE'))
 
-  print(s.configureChannel('CH1', 'SCALE', 10e-6))
+  print(s.configureChannel('CH1', 'SCALE', 0.001e-6))
   print(s.configureChannel('CH1', 'OFFSET', 0))
-  print(s.configureChannel('CH1', 'POSITION', 0))
+  print(s.configureChannel('CH1', 'POSITION', 3))
   print(s.configureChannel('CH1', 'LABEL', 'Clock'))
   print(s.configureChannel('CH1', 'BANDWIDTH', 'FULL'))
   print(s.configureChannel('CH3', 'ACTIVE', 1))
@@ -72,42 +71,21 @@ def test() -> None:
   # s.command('STOP')
   # print('Run/Stop auto trigger', s.ask('ACQuire:NUMACq?'))
 
-  s.command('CLEARMENU')
-  s.command('AUTOSCALE', 'CH1')
+  # s.command('CLEARMENU')
+  s.command('AUTOSCALE', channel='CH1')
 
   s.command('SINGLE_FORCE')
-  data1Pair = s.readWaveform('CH1', interpolate=1)
-  data1 = data1Pair[0]
-  print(f'{1/data1Pair[1]["tIncr"]:.3g}')
-  data10Pair = s.readWaveform('CH1', interpolate=10)
-  data10 = data10Pair[0]
-  print(f'{1/data10Pair[1]["tIncr"]:.3g}')
-
-  # n = len(data10[0])
-  # yf = fft(data10[1])
-  # xf = fftfreq(n, data10[0][1] - data10[0][0])[:n//2]
-  # pyplot.plot(xf, 2.0/n * np.abs(yf[0:n//2]))
-
-  # n = len(data1[0])
-  # yf = fft(data1[1])
-  # xf = fftfreq(n, data1[0][1] - data1[0][0])[:n//2]
-  # pyplot.plot(xf, 2.0/n * np.abs(yf[0:n//2]))
-  # pyplot.xlim([0, 1/(data1[0][1] - data1[0][0])])
-
-  pyplot.plot(data1[0], data1[1])
-  pyplot.plot(data10[0], data10[1])
-  pyplot.xlim([0, 30e-9])
-  pyplot.show()
+  dataPair = s.readWaveform('CH1', addNoise=True)
 
 def collectTestData():
   for r in utility.getAvailableEquipment():
     if r.startswith('USB'):
-      s = tektronik.MDO3000(r)
+      s = utility.getEquipmentObject(r)
       break
 
   s.configure('TIME_SCALE', 0.1e-9)
   s.configure('TIME_OFFSET', 0e-9)
-  s.configure('TIME_POINTS', 10e6)
+  s.configure('TIME_POINTS', 1e5)
   s.configure('TRIGGER_MODE', 'NORMAL')
   s.configure('TRIGGER_SOURCE', 'CH1')
   s.configure('TRIGGER_COUPLING', 'DC')
@@ -127,20 +105,20 @@ def collectTestData():
   s.configureChannel('CH3', 'ACTIVE', 0)
   s.configureChannel('CH4', 'ACTIVE', 0)
 
-  s.command('AUTOSCALE', 'CH1')
+  s.command('AUTOSCALE', channel='CH1')
 
   waveforms = []
 
   s.command('SINGLE_FORCE')
-  data, info = s.readWaveform('CH1', interpolate=1)
+  data, info = s.readWaveform('CH1', addNoise=True)
+  info['clippingTop'] = int(info['clippingTop'])
+  info['clippingBottom'] = int(info['clippingBottom'])
 
   waveforms.append(data)
 
-  for i in range(1, 10):
-    # Dither capture
-    s.configureChannel('CH1', 'OFFSET', i * info['yIncr'] * 3 / 10)
+  for _ in range(1, 10):
     s.command('SINGLE_FORCE')
-    data, _ = s.readWaveform('CH1', interpolate=1)
+    data, _ = s.readWaveform('CH1', addNoise=True)
     waveforms.append(data)
 
   waveforms = np.array(waveforms)

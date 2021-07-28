@@ -8,6 +8,8 @@ import os
 def test() -> None:
   # waveforms = np.load('data/waveforms.npy')
   waveforms = np.load('data/waveforms.npy')[:, :, :1000000]
+  # for i in range(waveforms.shape[0]):
+  #   waveforms[i][1]
   # waveforms = np.load('data/waveforms.npy')[:1]
   with open('data/waveformInfo.json', 'r') as file:
     waveformInfo = json.load(file)
