@@ -377,3 +377,26 @@ def layerNumpyImageRGBA(below: np.ndarray, above: np.ndarray) -> np.ndarray:
                                        alphaA), alphaOut, where=alphaOut != 0)
   out[:, :, 3] = alphaOut
   return out
+
+def trimImage(rr: np.ndarray, cc:np.ndarray, size:int, val:np.ndarray=None)-> Union[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]:
+  '''!@brief Trim row and column selectors to image size, discards out of bounds
+  
+  @param rr Row indices
+  @param cc Column indices
+  @param size Resolution of the image
+  @param val Values, optional
+  @return tuple[np.ndarray...]
+    (rr, cc) Trimmed to image size if val was not provided
+    (rr, cc, val) Trimmed to image size if val was provided
+  '''
+  mask = []
+  mask.extend(np.where(rr < 0)[0])
+  mask.extend(np.where(rr >= size)[0])
+  mask.extend(np.where(cc < 0)[0])
+  mask.extend(np.where(cc >= size)[0])
+  rr = np.delete(rr, mask)
+  cc = np.delete(cc, mask)
+  if val is None:
+    return rr, cc
+  val = np.delete(val, mask)
+  return rr, cc, val

@@ -6,8 +6,7 @@ import numpy as np
 import os
 
 def test() -> None:
-  # waveforms = np.load('data/waveforms.npy')
-  waveforms = np.load('data/waveforms.npy')[:, :, :1000000]
+  waveforms = np.load('data/waveforms.npy')
   # for i in range(waveforms.shape[0]):
   #   waveforms[i][1]
   # waveforms = np.load('data/waveforms.npy')[:1]
@@ -15,7 +14,7 @@ def test() -> None:
     waveformInfo = json.load(file)
 
   m = MaskDecagon(0.18, 0.29, 0.35, 0.35, 0.38, 0.4, 0.55)
-  e = EyeDiagram(waveforms, waveformInfo, mask=m, method='average', resample=50, resolution=2000)
+  e = EyeDiagram(waveforms, waveformInfo, mask=m, method='average', resample=50, resolution=2000)#, yLevels=[0, 40e-6])
   try:
     # e.calculate(nThreads=1)
     e.calculate(plot=False)

@@ -1,12 +1,8 @@
 from ..scope import Scope
-from ... import math
 
 import numpy as np
 from struct import unpack
 import time
-
-import sys
-import matplotlib.pyplot as pyplot
 
 class MSO4000(Scope):
 
@@ -268,7 +264,7 @@ class MSO4000(Scope):
         print(f'Autoscaling channel \'{channel}\'')
 
       originalNumPoints = self.ask(f'HORIZONTAL:RECORDLENGTH?')
-      self.configure("TIME_POINTS", 100e3)
+      self.configure("TIME_POINTS", 1e6)
 
       attempts = 10
       while attempts > 0:
@@ -317,7 +313,7 @@ class MSO4000(Scope):
           newScale = scale * 2
           newPosition = (position - 10 * dataMid) * scale / newScale
         else:
-          if range < 0.7 or range > 0.9:
+          if range < 0.75 or range > 0.85:
             if not silent:
               print('    Adjusting scale')
             newScale = scale / (0.8 / range)

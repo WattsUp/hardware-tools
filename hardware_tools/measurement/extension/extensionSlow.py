@@ -1,5 +1,3 @@
-import numpy as np
-
 def getCrossingSlow(returnAxis: list, searchAxis: list,
                     i: int, value: float, silent: bool = False) -> tuple[float, int]:
   '''!@brief Get crossing value in the returnAxis by searching and interpolating searchAxis

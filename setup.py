@@ -1,11 +1,12 @@
 import numpy
 import os
 import setuptools
-import subprocess
 
 from setuptools import setup, find_packages
 import setuptools.command.develop
 import setuptools.command.build_py
+
+from tools import gitsemver
 
 with open('README.md') as f:
   longDescription = f.read()
@@ -13,16 +14,8 @@ with open('README.md') as f:
 with open('requirements.txt') as f:
   required = f.read().splitlines()
 
-version = '0.0.1'
+version = str(gitsemver.getVersion())
 cwd = os.path.dirname(os.path.abspath(__file__))
-try:
-  sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'],
-                                cwd=cwd).decode('ascii').strip()
-  version += '+' + sha[:7]
-except subprocess.CalledProcessError:
-  pass
-except IOError:  # FileNotFoundError for python 3
-  pass
 
 try:
   from Cython.Build import cythonize
@@ -52,7 +45,7 @@ class BuildPy(setuptools.command.build_py.build_py):
 
   @staticmethod
   def createVersionFile():
-    print('-- Building veresion' + version)
+    print('-- Building veresion ' + version)
     versionPath = os.path.join(cwd, 'version.py')
     with open(versionPath, 'w') as file:
       file.write(f'__version__ = \'{version}\'\n')

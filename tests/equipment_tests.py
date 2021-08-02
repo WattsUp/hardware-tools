@@ -85,16 +85,16 @@ def collectTestData():
 
   s.configure('TIME_SCALE', 0.1e-9)
   s.configure('TIME_OFFSET', 0e-9)
-  s.configure('TIME_POINTS', 1e5)
+  s.configure('TIME_POINTS', 1e6)
   s.configure('TRIGGER_MODE', 'NORMAL')
   s.configure('TRIGGER_SOURCE', 'CH1')
   s.configure('TRIGGER_COUPLING', 'DC')
   s.configure('TRIGGER_POLARITY', 'RISE')
   s.configure('ACQUIRE_MODE', 'SAMPLE')
 
-  s.configureChannel('CH1', 'SCALE', 10e-6)
+  s.configureChannel('CH1', 'SCALE', 8e-6)
   s.configureChannel('CH1', 'OFFSET', 0)
-  s.configureChannel('CH1', 'POSITION', 0)
+  s.configureChannel('CH1', 'POSITION', -3.5)
   s.configureChannel('CH1', 'LABEL', '')
   s.configureChannel('CH1', 'BANDWIDTH', 'FULL')
   s.configureChannel('CH1', 'INVERT', 'OFF')
@@ -111,17 +111,26 @@ def collectTestData():
 
   s.command('SINGLE_FORCE')
   data, info = s.readWaveform('CH1', addNoise=True)
-  info['clippingTop'] = int(info['clippingTop'])
-  info['clippingBottom'] = int(info['clippingBottom'])
+  if info['clippingTop']:
+    print('Clipped top')
+  if info['clippingBottom']:
+    print('Clipped bottom')
 
   waveforms.append(data)
 
   for _ in range(1, 10):
     s.command('SINGLE_FORCE')
-    data, _ = s.readWaveform('CH1', addNoise=True)
+    data, info = s.readWaveform('CH1', addNoise=True)
     waveforms.append(data)
+    if info['clippingTop']:
+      print('Clipped top')
+    if info['clippingBottom']:
+      print('Clipped bottom')
+
+  info['clippingTop'] = int(info['clippingTop'])
+  info['clippingBottom'] = int(info['clippingBottom'])
 
   waveforms = np.array(waveforms)
-  np.save('data/waveforms.npy', waveforms)
-  with open('data/waveformInfo.json', 'w') as file:
+  np.save('data/waveforms1M.npy', waveforms)
+  with open('data/waveformInfo1M.json', 'w') as file:
     json.dump(info, file)

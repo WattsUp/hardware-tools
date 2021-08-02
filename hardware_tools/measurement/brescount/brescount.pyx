@@ -47,7 +47,7 @@ cdef int bres_segment_count(int x0, int y0,
         if x0 == x1 and y0 == y1:
             break
 
-        if (x0 < nrows) and (y0 < ncols) and (x0 > 0) and (y0 > 0):
+        if (x0 < nrows) and (y0 < ncols) and (x0 >= 0) and (y0 >= 0):
             grid[x0, y0] += 1
 
         e2 = 2 * err
