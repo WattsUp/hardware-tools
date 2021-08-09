@@ -6,7 +6,8 @@ cimport cython
 cdef tuple get_crossing_c(list returnAxis,
                         list searchAxis,
                         int i,
-                        float value):
+                        float value,
+                        bint stepForward):
   '''!@brief Get crossing value in the returnAxis by searching and interpolating searchAxis
 
   Example:
@@ -22,12 +23,13 @@ cdef tuple get_crossing_c(list returnAxis,
   @param searchAxis Data axis to find and interpolate value
   @param i Begining index to look at, back up until found
   @param value Value to find and interpolate in searchAxis
+  @param stepForward True will iterate forward until crossing, False will iterate backwards
   @return tuple (interpolated value, index)
   '''
 
   # Back up
   while (searchAxis[i] > value) == (searchAxis[i - 1] > value) and i > 0:
-    i -= 1
+    i += 1 if stepForward else -1
 
   if i < 1:
     return (np.nan, 0)
@@ -39,7 +41,8 @@ cdef tuple get_crossing_c(list returnAxis,
 def getCrossingFast(list returnAxis,
                     list searchAxis,
                     int i,
-                    float value) -> tuple:
+                    float value,
+                    bint stepForward=False) -> tuple:
   '''!@brief Get crossing value in the returnAxis by searching and interpolating searchAxis
 
   Example:
@@ -55,9 +58,10 @@ def getCrossingFast(list returnAxis,
   @param searchAxis Data axis to find and interpolate value
   @param i Begining index to look at, back up until found
   @param value Value to find and interpolate in searchAxis
+  @param stepForward True will iterate forward until crossing, False will iterate backwards
   @return tuple (interpolated value, index)
   '''
-  return get_crossing_c(returnAxis, searchAxis, i, value)
+  return get_crossing_c(returnAxis, searchAxis, i, value, stepForward)
 
 @cython.boundscheck(False)
 cdef tuple get_edges_c(
@@ -84,12 +88,12 @@ cdef tuple get_edges_c(
       if y[i] > yRise:
         stateLow = False
         # interpolate 50% crossing
-        edgesRise.append(get_crossing_c(t, y, i, yHalf)[0])
+        edgesRise.append(get_crossing_c(t, y, i, yHalf, False)[0])
     else:
       if y[i] < yFall:
         stateLow = True
         # interpolate 50% crossing
-        edgesFall.append(get_crossing_c(t, y, i, yHalf)[0])
+        edgesFall.append(get_crossing_c(t, y, i, yHalf, False)[0])
   return (edgesRise, edgesFall)
 
 def getEdgesFast(

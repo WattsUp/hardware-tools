@@ -18,7 +18,7 @@ class MSO4000(Scope):
       if query.startswith('TEKTRONIX,MSO4'):
         self.name = '-'.join(query.split(',')[:2])
       else:
-        e = f'{addr} did not connect to a Tektronik MSO4000 scope\n'
+        e = f'{addr} did not connect to a tektronix MSO4000 scope\n'
         e += f'  \'*IDN?\' returned {query}'
         raise Exception(e)
 

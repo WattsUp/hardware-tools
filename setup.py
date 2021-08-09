@@ -14,7 +14,11 @@ with open('README.md') as f:
 with open('requirements.txt') as f:
   required = f.read().splitlines()
 
-version = str(gitsemver.getVersion())
+version = gitsemver.getVersion()
+with open('hardware_tools/version.py', 'w') as file:
+  file.write(f'version = \'{version}\'\n')
+  file.write(f'versionFull = \'{version.fullStr()}\'\n')
+
 cwd = os.path.dirname(os.path.abspath(__file__))
 
 try:
@@ -40,19 +44,10 @@ def findCythonExtensions(path='.'):
 
 class BuildPy(setuptools.command.build_py.build_py):
   def run(self):
-    self.createVersionFile()
     setuptools.command.build_py.build_py.run(self)
-
-  @staticmethod
-  def createVersionFile():
-    print('-- Building veresion ' + version)
-    versionPath = os.path.join(cwd, 'version.py')
-    with open(versionPath, 'w') as file:
-      file.write(f'__version__ = \'{version}\'\n')
 
 class Develop(setuptools.command.develop.develop):
   def run(self):
-    BuildPy.createVersionFile()
     setuptools.command.develop.develop.run(self)
 
 

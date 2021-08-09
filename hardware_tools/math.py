@@ -1,6 +1,9 @@
 from __future__ import annotations
+import base64
 import datetime
+import io
 import numpy as np
+from PIL import Image
 from scipy import optimize
 from sklearn.mixture import GaussianMixture
 from typing import Iterable, Union
@@ -400,3 +403,13 @@ def trimImage(rr: np.ndarray, cc:np.ndarray, size:int, val:np.ndarray=None)-> Un
     return rr, cc
   val = np.delete(val, mask)
   return rr, cc, val
+
+def imageToBase64Image(image: Image) -> bytes:
+  '''!@brief Convert a PIL.Image to base64 encoded PNG
+  
+  @param image Image to convert
+  @return bytes base64 encoded PNG image
+  '''
+  b = io.BytesIO()
+  image.save(b, 'PNG')
+  return base64.b64encode(b.getvalue())

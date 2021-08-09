@@ -9,7 +9,7 @@ class MDO4000(MSO4000):
       if query.startswith('TEKTRONIX,MDO4'):
         self.name = '-'.join(query.split(',')[:2])
       else:
-        e = f'{addr} did not connect to a Tektronik MDO4000 scope\n'
+        e = f'{addr} did not connect to a tektronix MDO4000 scope\n'
         e += f'  \'*IDN?\' returned {query}'
         raise Exception(e)
     # TODO add other channel operations: RF

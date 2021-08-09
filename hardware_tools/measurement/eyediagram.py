@@ -1,4 +1,5 @@
 from __future__ import annotations
+from hardware_tools.measurement.extension.extensionSlow import getCrossingSlow
 import colorama
 from colorama import Fore
 import datetime
@@ -164,13 +165,15 @@ class EyeDiagram:
     self.resolution = resolution
     self.mask = mask
     self.nBitsMax = nBitsMax
+    self.nBitsMin = 0.2
     self.method = method
     self.resample = resample
     self.manualYLevels = yLevels
     self.calculated = False
     self.hysteresis = hysteresis
     self.histNMax = 100e3
-    self.nBitsMin = 0.2
+    self.imageMin = -0.5
+    self.imageMax = 1.5
 
   def calculate(self, verbose: bool = True, plot: bool = False,
                 nThreads: int = 0) -> dict:
@@ -233,6 +236,7 @@ class EyeDiagram:
       print(f'{elapsedStr(start)} {Fore.GREEN}Complete')
 
     self.calculated = True
+    return self.measures
 
   def __calculateLevels(self, plot: bool = True, nThreads: int = 1) -> None:
     '''!@brief Calculate high/low levels and crossing thresholds
@@ -687,7 +691,8 @@ class EyeDiagram:
               self.bitCentersY[i],
               self.tDelta,
               self.tBit,
-              self.thresholdHalf) for i in range(self.waveforms.shape[0])]
+              self.thresholdHalf,
+              self.resample) for i in range(self.waveforms.shape[0])]
     else:
       with Pool(nThreads) as p:
         results = [p.apply_async(
@@ -698,7 +703,8 @@ class EyeDiagram:
               self.bitCentersY[i],
               self.tDelta,
               self.tBit,
-              self.thresholdHalf]) for i in range(self.waveforms.shape[0])]
+              self.thresholdHalf,
+              self.resample]) for i in range(self.waveforms.shape[0])]
         output = [p.get() for p in results]
 
     valuesY = {
@@ -714,6 +720,14 @@ class EyeDiagram:
     if printProgress:
       print(
         f'  {elapsedStr(start)} {Fore.YELLOW}Computing \'0\', \'0.5\', \'1\' statistics')
+
+    if self.method == 'average':
+      m['yZero'] = np.average(valuesY['zero'])
+      m['yCross'] = np.average(valuesY['cross'])
+      m['yOne'] = np.average(valuesY['one'])
+    m['yZeroStdDev'] = np.std(valuesY['zero'])
+    m['yCrossStdDev'] = np.std(valuesY['cross'])
+    m['yOneStdDev'] = np.std(valuesY['one'])
 
     if self.method == 'peak' or plot:
       valuesY['zero'] = histogramDownsample(valuesY['zero'], self.histNMax)
@@ -736,17 +750,13 @@ class EyeDiagram:
 
     if self.method == 'peak':
       m['yZero'] = gaussianMixCenter(componentsZero)
-      m['yCrossing'] = gaussianMixCenter(componentsCross)
+      m['yCross'] = gaussianMixCenter(componentsCross)
       m['yOne'] = gaussianMixCenter(componentsOne)
     elif self.method == 'average':
-      m['yZero'] = np.average(valuesY['zero'])
-      m['yCrossing'] = np.average(valuesY['cross'])
-      m['yOne'] = np.average(valuesY['one'])
+      # Already did before histogram downsampling
+      pass
     else:
       raise Exception(f'Unrecognized measure method: {self.method}')
-    m['yZeroStdDev'] = np.std(valuesY['zero'])
-    m['yCrossingStdDev'] = np.std(valuesY['cross'])
-    m['yOneStdDev'] = np.std(valuesY['one'])
 
     m['eyeAmplitude'] = m['yOne'] - m['yZero']
     m['eyeAmplitudeStdDev'] = np.sqrt(m['yOneStdDev']**2 + m['yZeroStdDev']**2)
@@ -757,10 +767,9 @@ class EyeDiagram:
         (m['yZero'] + 3 * m['yZeroStdDev'])
     m['eyeHeightP'] = 100 * m['eyeHeight'] / (m['eyeAmplitude'])
 
-    m['yCrossingP'] = 100 * (m['yCrossing'] - m['yZero']
-                             ) / (m['eyeAmplitude'])
-    m['yCrossingPStdDev'] = 100 * \
-        (m['yCrossingStdDev'] - m['yZero']) / (m['eyeAmplitude'])
+    m['yCrossP'] = 100 * (m['yCross'] - m['yZero']
+                          ) / (m['eyeAmplitude'])
+    m['yCrossPStdDev'] = 100 * m['yCrossStdDev'] / (m['eyeAmplitude'])
 
     if plot:
       def tickFormatterY(y, _):
@@ -787,9 +796,9 @@ class EyeDiagram:
           color='b',
           alpha=0.5)
       subplots[1].plot(yRange, gaussianMix(yRange, componentsCross), color='r')
-      subplots[1].axvline(x=m["yCrossing"], color='g')
-      subplots[1].axvline(x=(m["yCrossing"] - m["yCrossingStdDev"]), color='y')
-      subplots[1].axvline(x=(m["yCrossing"] + m["yCrossingStdDev"]), color='y')
+      subplots[1].axvline(x=m["yCross"], color='g')
+      subplots[1].axvline(x=(m["yCross"] - m["yCrossStdDev"]), color='y')
+      subplots[1].axvline(x=(m["yCross"] + m["yCrossStdDev"]), color='y')
 
       subplots[2].set_title('One Level')
       subplots[2].hist(valuesY['one'], 50, density=True, color='b', alpha=0.5)
@@ -828,39 +837,66 @@ class EyeDiagram:
       self.thresholdFall = self.yOne * hys + self.yZero * (1 - hys)
       self.thresholdHalf = (self.yOne + self.yZero) / 2
 
-    if nThreads <= 1:
-      output = [
-          _runnerCollectValuesT(
+    try:
+      if nThreads <= 1:
+        output = [
+            _runnerCollectValuesT(
+                self.waveforms[i][1],
+                self.bitCentersT[i],
+                self.bitCentersY[i],
+                self.tDelta,
+                self.tBit,
+                self.yZero,
+                m['yCross'],
+                self.yOne,
+                self.resample,
+                i) for i in range(self.waveforms.shape[0])]
+      else:
+        with Pool(nThreads) as p:
+          results = [p.apply_async(
+            _runnerCollectValuesT,
+            args=[
               self.waveforms[i][1],
-              self.bitCentersT[i],
-              self.bitCentersY[i],
-              self.tDelta,
-              self.tBit,
-              self.yZero,
-              self.yOne,
-              f'Waveform #{i}') for i in range(self.waveforms.shape[0])]
-    else:
-      with Pool(nThreads) as p:
-        results = [p.apply_async(
-          _runnerCollectValuesT,
-          args=[
-            self.waveforms[i][1],
-              self.bitCentersT[i],
-              self.bitCentersY[i],
-              self.tDelta,
-              self.tBit,
-              self.yZero,
-              self.yOne,
-              f'Waveform #{i}']) for i in range(self.waveforms.shape[0])]
-        output = [p.get() for p in results]
+                self.bitCentersT[i],
+                self.bitCentersY[i],
+                self.tDelta,
+                self.tBit,
+                self.yZero,
+                m['yCross'],
+                self.yOne,
+                self.resample,
+                i]) for i in range(self.waveforms.shape[0])]
+          output = [p.get() for p in results]
+    except WaveformException as e:
+      if not plot:
+        raise e
+      print(e)
+      hw = int((self.tBit / self.tDelta) + 0.5)
+      i = self.bitCentersY[e.waveformIndex][e.bitIndex]
+      t = self.waveforms[e.waveformIndex, 0, i - hw: i + hw + 1]
+      y = self.waveforms[e.waveformIndex, 1, i - hw: i + hw + 1]
+      y = (y - self.yZero) / (self.yOne - self.yZero)
+      pyplot.plot(t, y)
+      pyplot.axhline(y=0, color='r')
+      pyplot.axhline(y=((m['yCross'] - self.yZero) /
+                     (self.yOne - self.yZero)), color='b')
+      pyplot.axhline(y=1, color='r')
+      pyplot.axhline(y=0.2, color='g')
+      pyplot.axhline(y=0.8, color='g')
+      pyplot.show()
+      import sys
+      sys.exit(1)
 
     valuesT = {
         'rise20': [],
         'rise50': [],
         'rise80': [],
+        'rise': [],
         'fall20': [],
         'fall50': [],
-        'fall80': []
+        'fall80': [],
+        'fall': [],
+        'cross': []
     }
 
     for o in output:
@@ -869,6 +905,68 @@ class EyeDiagram:
 
     if printProgress:
       print(f'  {elapsedStr(start)} {Fore.YELLOW}Computing edges statistics')
+
+    crossNan = np.count_nonzero(np.isnan(valuesT['cross']))
+    if crossNan > 0:
+      print(
+        f'  {Fore.RED}{crossNan}/{len(valuesT["cross"])}={crossNan/len(valuesT["cross"]) *100:.2f}% bits did not reach yCross')
+      valuesT['cross'] = np.array(valuesT['cross'])
+      valuesT['cross'] = valuesT['cross'][~np.isnan(valuesT['cross'])].tolist()
+
+    if self.method == 'average':
+      m["tRise20"] = np.average(valuesT['rise20'])
+      m["tRise50"] = np.average(valuesT['rise50'])
+      m["tRise80"] = np.average(valuesT['rise80'])
+      m["tRise"] = np.average(valuesT['rise'])
+      m["tFall20"] = np.average(valuesT['fall20'])
+      m["tFall50"] = np.average(valuesT['fall50'])
+      m["tFall80"] = np.average(valuesT['fall80'])
+      m["tFall"] = np.average(valuesT['fall'])
+      m["tCross"] = np.average(valuesT['cross'])
+    m["tRise20StdDev"] = np.std(valuesT['rise20'])
+    m["tRise50StdDev"] = np.std(valuesT['rise50'])
+    m["tRise80StdDev"] = np.std(valuesT['rise80'])
+    m["tRiseStdDev"] = np.std(valuesT['rise'])
+    m["tFall20StdDev"] = np.std(valuesT['fall20'])
+    m["tFall50StdDev"] = np.std(valuesT['fall50'])
+    m["tFall80StdDev"] = np.std(valuesT['fall80'])
+    m["tFallStdDev"] = np.std(valuesT['fall'])
+    m["tCrossStdDev"] = np.std(valuesT['cross'])
+
+    spanThreshold = 0.25
+    span = (np.amax(valuesT['rise20']) -
+            np.amin(valuesT['rise20'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tRise20 spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['rise50']) -
+            np.amin(valuesT['rise50'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tRise50 spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['rise80']) -
+            np.amin(valuesT['rise80'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tRise80 spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['rise']) - np.amin(valuesT['rise'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tRise spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['fall20']) -
+            np.amin(valuesT['fall20'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tFall20 spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['fall50']) -
+            np.amin(valuesT['fall50'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tFall50 spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['fall80']) -
+            np.amin(valuesT['fall80'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tFall80 spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['fall']) - np.amin(valuesT['fall'])) / self.tBit
+    if span > spanThreshold:
+      raise Exception(f'tFall spans {span:.2f}b > {spanThreshold:.2f}b')
+    span = (np.amax(valuesT['cross']) - np.amin(valuesT['cross'])) / self.tBit
+    if span > spanThreshold and (m['yCrossP'] > 20 and m['yCrossP'] < 80):
+      raise Exception(f'tCross spans {span:.2f}b > {spanThreshold:.2f}b')
 
     if self.method == 'peak' or plot:
       valuesT['rise20'] = histogramDownsample(valuesT['rise20'], self.histNMax)
@@ -889,6 +987,12 @@ class EyeDiagram:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tRise80 has {len(componentsRise80)} modes')
 
+      valuesT['rise'] = histogramDownsample(valuesT['rise'], self.histNMax)
+      componentsRise = fitGaussianMix(valuesT['rise'], nMax=3)
+      if printProgress:
+        print(
+          f'  {elapsedStr(start)} {Fore.CYAN}tRise has {len(componentsRise)} modes')
+
       valuesT['fall20'] = histogramDownsample(valuesT['fall20'], self.histNMax)
       componentsFall20 = fitGaussianMix(valuesT['fall20'], nMax=3)
       if printProgress:
@@ -907,33 +1011,33 @@ class EyeDiagram:
         print(
           f'  {elapsedStr(start)} {Fore.CYAN}tFall80 has {len(componentsFall80)} modes')
 
+      valuesT['fall'] = histogramDownsample(valuesT['fall'], self.histNMax)
+      componentsFall = fitGaussianMix(valuesT['fall'], nMax=3)
+      if printProgress:
+        print(
+          f'  {elapsedStr(start)} {Fore.CYAN}tFall has {len(componentsFall)} modes')
+
+      valuesT['cross'] = histogramDownsample(valuesT['cross'], self.histNMax)
+      componentsTCross = fitGaussianMix(valuesT['cross'], nMax=3)
+      if printProgress:
+        print(
+          f'  {elapsedStr(start)} {Fore.CYAN}tCross has {len(componentsTCross)} modes')
+
     if self.method == 'peak':
       m["tRise20"] = gaussianMixCenter(componentsRise20)
       m["tRise50"] = gaussianMixCenter(componentsRise50)
       m["tRise80"] = gaussianMixCenter(componentsRise80)
+      m["tRise"] = gaussianMixCenter(componentsRise)
       m["tFall20"] = gaussianMixCenter(componentsFall20)
       m["tFall50"] = gaussianMixCenter(componentsFall50)
       m["tFall80"] = gaussianMixCenter(componentsFall80)
+      m["tFall"] = gaussianMixCenter(componentsFall)
+      m["tCross"] = gaussianMixCenter(componentsTCross)
     elif self.method == 'average':
-      m["tRise20"] = np.average(valuesT['rise20'])
-      m["tRise50"] = np.average(valuesT['rise50'])
-      m["tRise80"] = np.average(valuesT['rise80'])
-      m["tFall20"] = np.average(valuesT['fall20'])
-      m["tFall50"] = np.average(valuesT['fall50'])
-      m["tFall80"] = np.average(valuesT['fall80'])
+      # Already did before histogram downsampling
+      pass
     else:
       raise Exception(f'Unrecognized measure method: {self.method}')
-    m["tRise20StdDev"] = np.std(valuesT['rise20'])
-    m["tRise50StdDev"] = np.std(valuesT['rise50'])
-    m["tRise80StdDev"] = np.std(valuesT['rise80'])
-    m["tFall20StdDev"] = np.std(valuesT['fall20'])
-    m["tFall50StdDev"] = np.std(valuesT['fall50'])
-    m["tFall80StdDev"] = np.std(valuesT['fall80'])
-
-    m["tRise"] = m["tRise80"] - m["tRise20"]
-    m["tRiseStdDev"] = np.sqrt(m["tRise80StdDev"]**2 + m["tRise20StdDev"]**2)
-    m["tFall"] = m["tFall20"] - m["tFall80"]
-    m["tFallStdDev"] = np.sqrt(m["tFall20StdDev"]**2 + m["tFall80StdDev"]**2)
 
     m["tLow"] = (m["tRise50"] + m["tBit"]) - m["tFall50"]
     m["tLowStdDev"] = np.sqrt(
@@ -946,31 +1050,19 @@ class EyeDiagram:
         m["tBitStdDev"]**2 +
         m["tRise50StdDev"]**2)
 
-    m["tJitterPP"] = max(np.max(valuesT['rise50']) - np.min(valuesT['fall50']),
-                         np.max(valuesT['fall50']) - np.min(valuesT['rise50']))
-    m["tJitterRMS"] = np.sqrt(m["tFall50StdDev"]**2 + m["tFall50StdDev"]**2)
+    m["tJitterPP"] = np.max(valuesT['cross']) - np.min(valuesT['cross'])
+    m["tJitterRMS"] = m["tCrossStdDev"]
 
-    eyeWidthLow = (m["tRise50"] + m["tBit"] - 3 * m["tRise50StdDev"]
-                   ) - (m["tFall50"] + 3 * m["tFall50StdDev"])
-    eyeWidthHigh = (m["tFall50"] + m["tBit"] - 3 * m["tFall50StdDev"]
-                    ) - (m["tRise50"] + 3 * m["tRise50StdDev"])
-    m["eyeWidth"] = min(eyeWidthLow, eyeWidthHigh)
+    m["eyeWidth"] = (m["tBit"] + m["tCross"] - 3 *
+                     m["tCrossStdDev"]) - (m["tCross"] + 3 * m["tCrossStdDev"])
     m["eyeWidthP"] = 100 * m["eyeWidth"] / m["tBit"]
 
-    edgeDifference = (m["tRise20"] + m["tRise80"]) / 2 - \
-        (m["tFall20"] + m["tFall80"]) / 2
+    edgeDifference = (m['tHigh'] - m['tLow']) * 0.5
     edgeDifferenceStdDev = np.sqrt(
-        0.25 *
-        m["tRise20StdDev"]**2 +
-        0.25 *
-        m["tRise80StdDev"]**2 +
-        0.25 *
-        m["tFall20StdDev"]**2 +
-        0.25 *
-        m["tFall80StdDev"]**2)
-    m["dutyCycleDistortion"] = 100 * edgeDifference / m["tBit"]
-    m["dutyCycleDistortionStdDev"] = abs(m["dutyCycleDistortion"]) * np.sqrt(
-      (edgeDifferenceStdDev / edgeDifference) ** 2 + (m["tBitStdDev"] / m["tBit"]) ** 2)
+        m['tHighStdDev']**2 + m['tLowStdDev']**2) * 0.5
+    m["dcd"] = 100 * edgeDifference / m["tBit"]
+    m["dcdStdDev"] = abs(m["dcd"]) * np.sqrt((edgeDifferenceStdDev /
+                                              edgeDifference) ** 2 + (m["tBitStdDev"] / m["tBit"]) ** 2)
 
     if plot:
       def tickFormatterX(x, _):
@@ -981,8 +1073,8 @@ class EyeDiagram:
         return metricPrefix(y, self.yUnit)
       formatterY = FuncFormatter(tickFormatterY)
 
-      xRange = np.linspace(-m["tBit"], 0, 1000)
-      _, subplots = pyplot.subplots(3, 1, sharex=True)
+      xRange = np.linspace(-m["tBit"] / 2, m["tBit"] / 2, 1000)
+      _, subplots = pyplot.subplots(4, 1, sharex=True)
       subplots[0].set_title('Rising Edges')
       subplots[0].hist(
           valuesT['rise20'],
@@ -1078,9 +1170,11 @@ class EyeDiagram:
       subplots[1].axvline(x=(m["tFall80"] - m["tFall80StdDev"]), color='y')
 
       subplots[2].set_title('Interpolated Waveforms')
-      x01 = list(np.linspace(-self.tBit, 2 * m["tRise20"] - m["tRise50"], 10))
+      x01 = list(np.linspace(-self.tBit / 2, 2 *
+                 m["tRise20"] - m["tRise50"], 10))
       x01.extend([m["tRise20"], m["tRise50"], m["tRise80"]])
-      x01.extend(list(np.linspace(2 * m["tRise80"] - m["tRise50"], 0, 10)))
+      x01.extend(list(
+          np.linspace(2 * m["tRise80"] - m["tRise50"], self.tBit / 2, 10)))
       y01 = [m["yZero"]] * 10
       y01.extend([m["yZero"] + 0.2 * m["eyeAmplitude"],
                   m["yZero"] + 0.5 * m["eyeAmplitude"],
@@ -1089,9 +1183,11 @@ class EyeDiagram:
       # f01 = interp1d(x01, y01, kind='cubic')
       subplots[2].plot(x01, y01, color='b')
       # subplots[2].plot(xRange, f01(xRange), color='b', linestyle=':')
-      x10 = list(np.linspace(-self.tBit, 2 * m["tFall80"] - m["tFall50"], 10))
+      x10 = list(np.linspace(-self.tBit / 2, 2 *
+                 m["tFall80"] - m["tFall50"], 10))
       x10.extend([m["tFall80"], m["tFall50"], m["tFall20"]])
-      x10.extend(list(np.linspace(2 * m["tFall20"] - m["tFall50"], 0, 10)))
+      x10.extend(list(
+          np.linspace(2 * m["tFall20"] - m["tFall50"], self.tBit / 2, 10)))
       y10 = [m["yOne"]] * 10
       y10.extend([m["yZero"] + 0.8 * m["eyeAmplitude"],
                   m["yZero"] + 0.5 * m["eyeAmplitude"],
@@ -1101,15 +1197,34 @@ class EyeDiagram:
       subplots[2].plot(x10, y10, color='g')
       # subplots[2].plot(xRange, f10(xRange), color='g', linestyle=':')
 
+      subplots[3].set_title('Crossing Point')
+      subplots[3].hist(
+          valuesT['cross'],
+          50,
+          density=True,
+          color='k',
+          alpha=0.5)
+      subplots[3].plot(
+          xRange,
+          gaussianMix(
+              xRange,
+              componentsTCross),
+          color='k')
+      subplots[3].axvline(x=m["tCross"], color='g')
+      subplots[3].axvline(x=(m["tCross"] + m["tCrossStdDev"]), color='y')
+      subplots[3].axvline(x=(m["tCross"] - m["tCrossStdDev"]), color='y')
+
       subplots[0].xaxis.set_major_formatter(formatterX)
       subplots[1].xaxis.set_major_formatter(formatterX)
       subplots[2].xaxis.set_major_formatter(formatterX)
       subplots[2].yaxis.set_major_formatter(formatterY)
+      subplots[3].xaxis.set_major_formatter(formatterX)
 
       subplots[-1].set_xlabel('Time')
       subplots[0].set_ylabel('Counts')
       subplots[1].set_ylabel('Counts')
       subplots[2].set_ylabel('Vertical Scale')
+      subplots[3].set_ylabel('Counts')
 
       pyplot.show()
 
@@ -1364,11 +1479,12 @@ class EyeDiagram:
     if printProgress:
       print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing grid')
 
-    imageMin = -0.5
-    imageMax = 1.5
-    zero = int(((0 - imageMin) / (imageMax - imageMin)) * self.resolution)
-    half = int(((0.5 - imageMin) / (imageMax - imageMin)) * self.resolution)
-    one = int(((1 - imageMin) / (imageMax - imageMin)) * self.resolution)
+    zero = int(
+      ((0 - self.imageMin) / (self.imageMax - self.imageMin)) * self.resolution)
+    half = int(((0.5 - self.imageMin) /
+               (self.imageMax - self.imageMin)) * self.resolution)
+    one = int(((1 - self.imageMin) / (self.imageMax - self.imageMin))
+              * self.resolution)
 
     # Draw a grid for reference levels
     npImageGrid = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
@@ -1376,11 +1492,13 @@ class EyeDiagram:
     npImageGrid[zero, :, 3] = 1.0
     npImageGrid[one, :, 3] = 1.0
     for v in [0.2, 0.5, 0.8]:
-      pos = int(((v - imageMin) / (imageMax - imageMin)) * self.resolution)
+      pos = int(((v - self.imageMin) / (self.imageMax - self.imageMin))
+                * self.resolution)
       npImageGrid[pos, ::4, 3] = 1.0
     for v in [self.thresholdRise, self.thresholdFall]:
       v = (v - self.yZero) / (self.yOne - self.yZero)
-      pos = int(((v - imageMin) / (imageMax - imageMin)) * self.resolution)
+      pos = int(((v - self.imageMin) / (self.imageMax - self.imageMin))
+                * self.resolution)
       npImageGrid[pos, ::6, 3] = 1.0
 
     npImageGrid[:, zero, 3] = 1.0
@@ -1392,11 +1510,9 @@ class EyeDiagram:
       npImageGrid[::10, pos, 3] = 1.0
     npImageGrid = np.flip(npImageGrid, axis=0)
 
-    npImage = layerNumpyImageRGBA(npImageClean, npImageGrid)
-    self.imageGrid = Image.fromarray((255 * npImage).astype('uint8'))
+    self.imageGrid = Image.fromarray((255 * npImageGrid).astype('uint8'))
 
     if self.mask:
-      npImageMargin = npImage.copy()
 
       if printProgress:
         print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing mask')
@@ -1404,17 +1520,16 @@ class EyeDiagram:
       # Draw mask
       npImageMask = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
       for path in self.mask.paths:
-        x = [((p[0] - imageMin) / (imageMax - imageMin))
+        x = [((p[0] - self.imageMin) / (self.imageMax - self.imageMin))
              * self.resolution for p in path]
-        y = [((p[1] - imageMin) / (imageMax - imageMin))
+        y = [((p[1] - self.imageMin) / (self.imageMax - self.imageMin))
              * self.resolution for p in path]
         rr, cc = skimage.draw.polygon(y, x)
         rr, cc = trimImage(rr, cc, self.resolution)
         npImageMask[rr, cc] = [1.0, 0.0, 1.0, 0.5]
       npImageMask = np.flip(npImageMask, axis=0)
 
-      npImage = layerNumpyImageRGBA(npImage, npImageMask)
-      self.imageMask = Image.fromarray((255 * npImage).astype('uint8'))
+      self.imageMask = Image.fromarray((255 * npImageMask).astype('uint8'))
 
       if printProgress:
         print(
@@ -1425,8 +1540,10 @@ class EyeDiagram:
       npImageHits[:, :, 0] = 1.0
       radius = int(max(3, self.resolution / 500))
       for h in self.hits[:10000]:
-        x = int(((h[0] - imageMin) / (imageMax - imageMin)) * self.resolution)
-        y = int(((h[1] - imageMin) / (imageMax - imageMin)) * self.resolution)
+        x = int(((h[0] - self.imageMin) /
+                (self.imageMax - self.imageMin)) * self.resolution)
+        y = int(((h[1] - self.imageMin) /
+                (self.imageMax - self.imageMin)) * self.resolution)
         rr, cc = skimage.draw.circle_perimeter(y, x, radius)
         rr, cc = trimImage(rr, cc, self.resolution)
         npImageHits[rr, cc, 3] = 1
@@ -1437,8 +1554,7 @@ class EyeDiagram:
 
       npImageHits = np.flip(npImageHits, axis=0)
 
-      npImage = layerNumpyImageRGBA(npImage, npImageHits)
-      self.imageHits = Image.fromarray((255 * npImage).astype('uint8'))
+      self.imageHits = Image.fromarray((255 * npImageHits).astype('uint8'))
 
       if printProgress:
         print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing mask at margin')
@@ -1446,16 +1562,14 @@ class EyeDiagram:
       # Draw margin mask
       npImageMask = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
       for path in self.mask.adjust(self.maskMarginPair[0][0]).paths:
-        x = [((p[0] - imageMin) / (imageMax - imageMin))
+        x = [((p[0] - self.imageMin) / (self.imageMax - self.imageMin))
              * self.resolution for p in path]
-        y = [((p[1] - imageMin) / (imageMax - imageMin))
+        y = [((p[1] - self.imageMin) / (self.imageMax - self.imageMin))
              * self.resolution for p in path]
         rr, cc = skimage.draw.polygon(y, x)
         rr, cc = trimImage(rr, cc, self.resolution)
         npImageMask[rr, cc] = [1.0, 0.0, 1.0, 0.5]
       npImageMask = np.flip(npImageMask, axis=0)
-
-      npImageMargin = layerNumpyImageRGBA(npImageMargin, npImageMask)
 
       if printProgress:
         print(
@@ -1465,8 +1579,10 @@ class EyeDiagram:
       npImageHits = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
       npImageHits[:, :, 0] = 1.0
       for h in self.maskMarginPair[0][2][:100000]:
-        x = int(((h[0] - imageMin) / (imageMax - imageMin)) * self.resolution)
-        y = int(((h[1] - imageMin) / (imageMax - imageMin)) * self.resolution)
+        x = int(((h[0] - self.imageMin) /
+                (self.imageMax - self.imageMin)) * self.resolution)
+        y = int(((h[1] - self.imageMin) /
+                (self.imageMax - self.imageMin)) * self.resolution)
         rr, cc = skimage.draw.circle_perimeter(y, x, radius)
         rr, cc = trimImage(rr, cc, self.resolution)
         npImageHits[rr, cc, 3] = 1
@@ -1478,7 +1594,7 @@ class EyeDiagram:
 
       npImageHits = np.flip(npImageHits, axis=0)
 
-      npImageMargin = layerNumpyImageRGBA(npImageMargin, npImageHits)
+      npImageMargin = layerNumpyImageRGBA(npImageMask, npImageHits)
       self.imageMargin = Image.fromarray((255 * npImageMargin).astype('uint8'))
 
     else:
@@ -1560,7 +1676,7 @@ class EyeDiagram:
     print(
       f'  yZero:        {Fore.CYAN}{metricPrefix(self.measures["yZero"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yZeroStdDev"], self.yUnit)}')
     print(
-      f'  yCrossing:     {Fore.CYAN}{self.measures["yCrossingP"]:6.2f} %   {Fore.BLUE}σ= {self.measures["yCrossingPStdDev"]:6.2f} %')
+      f'  yCross:     {Fore.CYAN}{self.measures["yCrossP"]:6.2f} %   {Fore.BLUE}σ= {self.measures["yCrossPStdDev"]:6.2f} %')
     print(
       f'  yOne:         {Fore.CYAN}{metricPrefix(self.measures["yOne"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yOneStdDev"], self.yUnit)}')
     print(f'  SNR:           {Fore.CYAN}{self.measures["snr"]:6.2f}')
@@ -1585,13 +1701,85 @@ class EyeDiagram:
     print(
       f'  eyeWidth:     {Fore.CYAN}{metricPrefix(self.measures["eyeWidth"], self.tUnit)}      {Fore.BLUE}{self.measures["eyeWidthP"]:6.2f} %')
     print(
-      f'  dutyCycleDist: {Fore.CYAN}{self.measures["dutyCycleDistortion"]:6.2f} %   {Fore.BLUE}σ= {self.measures["dutyCycleDistortionStdDev"]:6.2f} %')
+      f'  dutyCycleDist: {Fore.CYAN}{self.measures["dcd"]:6.2f} %   {Fore.BLUE}σ= {self.measures["dcdStdDev"]:6.2f} %')
     print(
       f'  nBits:        {Fore.CYAN}{metricPrefix(self.measures["nBits"], "b")}')
     if self.mask:
       print(
         f'  nBadBits:     {Fore.CYAN}{metricPrefix(self.measures["offenderCount"], "b")}       {Fore.BLUE}{self.measures["ber"]:9.2e}')
-      print(f'  maskMargin:   {Fore.CYAN}{self.measures["maskMargin"]:6.2f}%')
+      print(f'  maskMargin:    {Fore.CYAN}{self.measures["maskMargin"]:5.1f}%')
+
+  def getMeasures(self) -> dict:
+    '''!@brief Get measures
+
+    yZero,        yZeroStdDev:        mean at t=[0.4,0.6]UI,    state=low,        units=yUnit
+    yCross,    yCrossStdDev:    mean at t=[-0.05,0.05]UI, state=change,     units=yUnit
+    yCrossP,   yCrossPStdDev:   100 * (yCross - yZero) / eyeAmplitude, state=change,     units=percent
+    yOne,         yOneStdDev:         mean at t=[0.4,0.6]UI,    state=high,       units=yUnit
+    snr:                              eyeAmplitude / (yZeroStdDev + yOneStdDev),  units=unitless
+    eyeAmplitude, eyeAmplitudeStdDev: yOne - yZero,  units=yUnit
+    eyeHeight:                        (yOne - 3 * yOneStdDev) - (yZero + 3 * yZeroStdDev),  units=yUnit
+    eyeHeightP:                       100 * eyeHeight / eyeAmplitude, units=percent
+    tBit,         tBitStdDev:         time between bits,                      units=tUnit
+    fBit,         fBitStdDev:         1/tBit,                      units=tUnit⁻¹
+    tRise20,      tRise20StdDev:      t @ y=20%,  edge=rising-, units=tUnit
+    tRise50,      tRise50StdDev:      t @ y=50%,  edge=rising-, units=tUnit
+    tRise80,      tRise80StdDev:      t @ y=80%,  edge=rising-, units=tUnit
+    tFall20,      tFall20StdDev:      t @ y=20%,  edge=falling-, units=tUnit
+    tRise50,      tFall50StdDev:      t @ y=50%,  edge=falling-,                              units=tUnit
+    tRise80,      tFall80StdDev:      t @ y=80%,  edge=falling-,                              units=tUnit
+    tRise,        tRiseStdDev:        tRise80 - tRise20, edge=rising-,                        units=tUnit
+    tFall,        tFallStdDev:        tFall20 - tRise80, edge=falling-,                       units=tUnit
+    tLow,         tLowStdDev:         tRise50+ - tFall50-, state=low, edges @ y=50%,  units=tUnit
+    tHigh,        tHighStdDev:        tFall50+ - tRise50-, state=high, edges @ y=50%, units=tUnit
+    tJitterPP:                        full width of time histogram at yCross,          state=change, units=tUnit
+    tJitterRMS:                       stddev of time histogram at yCross,          state=change, units=tUnit
+    eyeWidth:                         (tEdge+ - tEdge+StdDev) - (tEdge- + tEdge-StdDev), units=tUnit
+    eyeWidthP:                        100 * eyeWidth / tBit, units=percent
+    dcd, dcdStdDev: 100 * (tHigh - tLow) / (2 * tBit), edges @ y=50%, units=tUnit
+    nBits:                            number of bits,  units=unitless
+    offenderCount:                    number of bits that hit the mask,  units=unitless
+    ber:                              offenderCount / nBits,  units=unitless
+    maskMargin:                       100 * largest mask adjust without hits,  units=percent
+
+    @return dict Dictionary of measured values
+    '''
+    if not self.calculated:
+      raise Exception(
+        'Eye diagram must be calculated before printing measures')
+    return self.measures
+
+  def getConfig(self) -> dict:
+    '''!@brief Get the configuration used to generate the eye diagram
+
+    @return dict Dictionary of parameters
+    '''
+    if not self.calculated:
+      raise Exception(
+        'Eye diagram must be calculated before printing measures')
+    config = {
+      'tUnit': self.tUnit,
+      'tDelta': self.tDelta,
+      'yUnit': self.yUnit,
+      'nWaveforms': self.waveforms.shape[0],
+      'nSamples': self.waveforms.size / 2,
+      'resolution': self.resolution,
+      'mask': self.mask,
+      'nBitsMax': self.nBitsMax,
+      'nBitsMin': self.nBitsMin,
+      'method': self.method,
+      'resample': self.resample,
+      'yZero': self.yZero,
+      'yOne': self.yOne,
+      'hysteresis': self.hysteresis,
+      'yRise': self.thresholdRise,
+      'yHalf': self.thresholdHalf,
+      'yFall': self.thresholdFall,
+      'histNMax': self.histNMax,
+      'imageMin': self.imageMin,
+      'imageMax': self.imageMax
+    }
+    return config
 
   def saveImages(self, dir: str = '.') -> None:
     '''!@brief Save generated images to a directory
@@ -1613,6 +1801,45 @@ class EyeDiagram:
       self.imageMask.save(os.path.join(dir, 'eye-diagram-mask-clean.png'))
       self.imageHits.save(os.path.join(dir, 'eye-diagram-mask-hits.png'))
       self.imageMargin.save(os.path.join(dir, 'eye-diagram-mask-margin.png'))
+
+  def getImages(self, asString: bool = False) -> dict:
+    '''!@brief Get generated images, optionally as a base64 encoded string (PNG)
+
+    @param asString True will return base64 encoded string for each image as PNG
+    @return dict {name: image} image is PIL.Image or str
+    '''
+    if not self.calculated:
+      raise Exception('Eye diagram must be calculated before getting images')
+    output = {}
+    if asString:
+      output['clean'] = imageToBase64Image(self.imageClean)
+      output['grid'] = imageToBase64Image(self.imageGrid)
+      if self.mask:
+        output['mask'] = imageToBase64Image(self.imageMask)
+        output['hits'] = imageToBase64Image(self.imageHits)
+        output['margin'] = imageToBase64Image(self.imageMargin)
+    else:
+      output['clean'] = self.imageClean
+      output['grid'] = self.imageGrid
+      if self.mask:
+        output['mask'] = self.imageMask
+        output['hits'] = self.imageHits
+        output['margin'] = self.imageMargin
+    return output
+
+class WaveformException(Exception):
+
+  def __init__(self, str: str, waveformIndex: str = None,
+               bitIndex: int = None) -> None:
+    '''!@brief Create a waveform exception containing information to plot exception
+
+    @param str Exception string
+    @param waveformIndex Index of exceptional waveform
+    @param bitIndex Index of exceptional bit
+    '''
+    super().__init__(str)
+    self.waveformIndex = waveformIndex
+    self.bitIndex = bitIndex
 
 def _runnerCalculateLevels(
   waveformY: np.ndarray, nMax: int = 50e3) -> tuple[float, float]:
@@ -1841,8 +2068,8 @@ def _runnerBitExtract(edges: tuple[list, list], tZero: float, tDelta: float, tBi
 
   return bitCentersT, bitCentersY
 
-def _runnerCollectValuesY(
-  waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int], tDelta: float, tBit: float, yHalf: float) -> dict:
+def _runnerCollectValuesY(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int],
+                          tDelta: float, tBit: float, yHalf: float, resample: int = 50) -> dict:
   '''!@brief Collect values from waveform: zero/cross/one vertical levels
 
   @param waveformY Waveform data array [y0, y1,..., yn]
@@ -1851,14 +2078,36 @@ def _runnerCollectValuesY(
   @param tDelta Time between samples
   @param tBit Time for a single bit
   @param yHalf Threshold to decide '1' or '0'
+  @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
   @return dict Dictionary of collected values: zero, cross, one
   '''
-  hw = int((tBit / tDelta) + 0.5)
-  n = hw * 2 + 1
-  t0 = np.linspace(-hw * tDelta, hw * tDelta, n).tolist()
-  t0 = (t0 + tBit / 2) / tBit  # Transform to UI units
+  iBitWidthOriginal = int((tBit / tDelta) + 0.5)
+  iBitWidth = iBitWidthOriginal
+  tBitWidthUI = (iBitWidth * tDelta / tBit)
+
+  n = iBitWidth * 2 + 1
+  t0 = np.linspace(0.5 - tBitWidthUI, 0.5 + tBitWidthUI, n)
+  tList = t0.tolist()
 
   waveformY = waveformY.tolist()
+
+  factor = int(np.ceil(resample / iBitWidth))
+  if factor > 1:
+    # Expand to 3 bits for better sinc interpolation at the edges
+    iBitWidth = int((tBit / tDelta * 1.5) + 0.5)
+    tBitWidthUI = (iBitWidth * tDelta / tBit)
+    t0 = np.linspace(
+      0.5 - tBitWidthUI,
+      0.5 + tBitWidthUI,
+      iBitWidth * 2 + 1)
+    n = iBitWidth * 2 * factor + 1
+    tNew = np.linspace(0.5 - tBitWidthUI, 0.5 + tBitWidthUI, n)
+
+    T = t0[1] - t0[0]
+    sincM = np.tile(tNew, (len(t0), 1)) - \
+        np.tile(t0[:, np.newaxis], (1, len(tNew)))
+    referenceSinc = np.sinc(sincM / T)
+    tList = tNew.tolist()
 
   # One level and zero level
   # Historgram mean 40% to 60%
@@ -1870,17 +2119,24 @@ def _runnerCollectValuesY(
     cT = bitCentersT[i] / tBit
     cY = bitCentersY[i]
 
-    # Only look at transitions at t=0
-    transition = (waveformY[cY - hw] > yHalf) != (waveformY[cY] > yHalf)
+    # Only look at transitions at t=0 for yCross
+    transition = (waveformY[cY - iBitWidthOriginal]
+                  > yHalf) != (waveformY[cY] > yHalf)
+
+    if factor > 0:
+      yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+      y = np.dot(yOriginal, referenceSinc).tolist()
+    else:
+      y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
 
     bitValues = []
 
     for ii in range(n):
-      t = t0[ii] + cT
+      t = tList[ii] + cT
       if t >= 0.4 and t <= 0.6:
-        bitValues.append(waveformY[cY - hw + ii])
+        bitValues.append(y[ii])
       if transition and t >= -0.05 and t <= 0.05:
-        valuesCross.append(waveformY[cY - hw + ii])
+        valuesCross.append(y[ii])
 
     if np.mean(bitValues) > yHalf:
       valuesOne.extend(bitValues)
@@ -1894,9 +2150,9 @@ def _runnerCollectValuesY(
   }
   return values
 
-def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int],
-                          tDelta: float, tBit: float, yZero: float, yOne: float, debugStr: str = '') -> dict:
-  '''!@brief Collect values from waveform: rise/fall times @ 20%, 50%, 80%
+def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCentersY: list[int], tDelta: float,
+                          tBit: float, yZero: float, yCross: float, yOne: float, resample: int = 50, waveformI: int = 0) -> dict:
+  '''!@brief Collect values from waveform: rise/fall times @ 20%, 50%, 80%, crossing
 
   @param waveformY Waveform data array [y0, y1,..., yn]
   @param bitCentersT list of centerTs. Using np.linspace(center - sliceHalfWidth * tDelta, c + shw * td, shw * 2 + 1)
@@ -1904,72 +2160,149 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
   @param tDelta Time between samples
   @param tBit Time for a single bit
   @param yZero Vertical value for a '0'
+  @param yCross Vertical value for bit transition
   @param yOne Vertical value for a '1'
-  @param debugStr Additional string to add to an Exception (aka waveform index)
+  @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
+  @param waveformI Add to an WaveformException
   @return dict Dictionary of collected values: rise20, rise50, rise80, fall20, fall50, fall80
   '''
-  hw = int((tBit / tDelta) + 0.5)
-  n = hw * 2 + 1
-  t0 = np.linspace(-hw * tDelta, hw * tDelta, n).tolist()
+  iBitWidthOriginal = int((tBit / tDelta) + 0.5)
+  iBitWidth = iBitWidthOriginal
+  tBitWidth = (iBitWidth * tDelta)
+
+  n = iBitWidth * 2 + 1
+  t0 = np.linspace(-tBitWidth + tBit / 2, tBitWidth + tBit / 2, n)
+  sliceCenterStart = int(n * 1 / 4)  # T = 0b
+  sliceCenterStop = int(n * 3 / 4) + 1  # T = 1b
+  tList = t0.tolist()
+
+  factor = int(np.ceil(resample / iBitWidth))
+  if factor > 1:
+    # Expand to 3 bits for better sinc interpolation at the edges
+    iBitWidth = int((tBit / tDelta * 1.5) + 0.5)
+    tBitWidth = (iBitWidth * tDelta)
+    t0 = np.linspace(-tBitWidth + tBit / 2, tBitWidth + tBit / 2,
+                     iBitWidth * 2 + 1)
+    n = iBitWidth * 2 * factor + 1
+    tNew = np.linspace(-tBitWidth + tBit / 2, tBitWidth + tBit / 2, n)
+
+    T = t0[1] - t0[0]
+    sincM = np.tile(tNew, (len(t0), 1)) - \
+        np.tile(t0[:, np.newaxis], (1, len(tNew)))
+    referenceSinc = np.sinc(sincM / T)
+    sliceCenterStart = int(n * 1 / 3)  # T = 0b
+    sliceCenterStop = int(n * 2 / 3) + 1  # T = 1b
+    tList = tNew.tolist()
 
   waveformY = (waveformY - yZero) / (yOne - yZero)
   waveformY = waveformY.tolist()
+  yCross = (yCross - yZero) / (yOne - yZero)
 
   # Collect time for edges at 20%, 50%, and 80% values
   valuesRise20 = []
   valuesRise50 = []
   valuesRise80 = []
+  valuesRise = []
   valuesFall20 = []
   valuesFall50 = []
   valuesFall80 = []
+  valuesFall = []
+  valuesCross = []
   for i in range(len(bitCentersT)):
     cT = bitCentersT[i]
     cY = bitCentersY[i]
     # Only look at transitions at t=0
-    if (waveformY[cY - hw] > 0.5) == (waveformY[cY] > 0.5):
+    if (waveformY[cY - iBitWidthOriginal] > 0.5) == (waveformY[cY] > 0.5):
       continue
 
-    y = waveformY[cY - hw: cY + hw + 1]
-
-    iMax = np.argmax(y)
-    if y[iMax] < 0.8:
-      errorStr = 'Waveform does not reach 80%\n'
-      errorStr += f'  DebugStr: \'{debugStr}\'\n'
-      errorStr += f'  i: {i}\n'
-      errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
-      raise Exception(errorStr)
-    iMin = np.argmin(y)
-    if y[iMin] > 0.2:
-      errorStr = 'Waveform does not reach 20%\n'
-      errorStr += f'  DebugStr: \'{debugStr}\'\n'
-      errorStr += f'  i: {i}\n'
-      errorStr += f'  yMin: {metricPrefix(y[iMin])}\n'
-      raise Exception(errorStr)
-
-    if waveformY[cY] > 0.5:
-      ii = iMax
-      t, ii = getCrossing(t0, y, ii, 0.8)
-      valuesRise80.append(t + cT)
-      t, ii = getCrossing(t0, y, ii, 0.5)
-      valuesRise50.append(t + cT)
-      t, ii = getCrossing(t0, y, ii, 0.2)
-      valuesRise20.append(t + cT)
+    if factor > 0:
+      yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+      y = np.dot(yOriginal, referenceSinc).tolist()
     else:
-      ii = iMin
-      t, ii = getCrossing(t0, y, ii, 0.2)
-      valuesFall20.append(t + cT)
-      t, ii = getCrossing(t0, y, ii, 0.5)
+      y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
+    yCenter = y[sliceCenterStart:sliceCenterStop]
+
+    if (waveformY[cY] > 0.5):
+      iMax = sliceCenterStart + np.argmax(yCenter)
+      if y[iMax] < 0.8:
+        errorStr = 'Waveform does not reach 80%\n'
+        errorStr += f'  Waveform Index: {waveformI}\n'
+        errorStr += f'  i: {i}\n'
+        errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
+        raise WaveformException(errorStr, waveformI, i)
+      t, i80 = getCrossing(tList, y, iMax, 0.8)
+      rise80 = t + cT
+      valuesRise80.append(rise80)
+      t, i50 = getCrossing(tList, y, i80, 0.5)
+      valuesRise50.append(t + cT)
+      t, i20 = getCrossing(tList, y, i50, 0.2)
+      if np.isnan(t):
+        errorStr = 'Waveform does not reach 20%\n'
+        errorStr += f'  Waveform Index: {waveformI}\n'
+        errorStr += f'  i: {i}\n'
+        errorStr += f'  yMax: {metricPrefix(y[iMin])}\n'
+        raise WaveformException(errorStr, waveformI, i)
+      rise20 = t + cT
+      valuesRise20.append(rise20)
+      valuesRise.append(rise80 - rise20)
+      if yCross > 0.5:
+        crossStart = i50 - 1
+        crossForward = True
+      else:
+        crossStart = i50 + 1
+        crossForward = False
+      t, _ = getCrossing(tList, y, crossStart, yCross, crossForward)
+      t += cT
+      if (t < -tBit / 2) or (t > tBit / 2):
+        valuesCross.append(np.nan)
+      else:
+        valuesCross.append(t)
+    else:
+      iMin = sliceCenterStart + np.argmin(yCenter)
+      if y[iMin] > 0.2:
+        errorStr = 'Waveform does not reach 20%\n'
+        errorStr += f'  Waveform Index: {waveformI}\n'
+        errorStr += f'  i: {i}\n'
+        errorStr += f'  yMax: {metricPrefix(y[iMin])}\n'
+        raise WaveformException(errorStr, waveformI, i)
+      t, i20 = getCrossing(tList, y, iMin, 0.2)
+      fall20 = t + cT
+      valuesFall20.append(fall20)
+      t, i50 = getCrossing(tList, y, i20, 0.5)
       valuesFall50.append(t + cT)
-      t, ii = getCrossing(t0, y, ii, 0.8)
-      valuesFall80.append(t + cT)
+      t, i80 = getCrossing(tList, y, i50, 0.8)
+      if np.isnan(t):
+        errorStr = 'Waveform does not reach 80%\n'
+        errorStr += f'  Waveform Index: {waveformI}\n'
+        errorStr += f'  i: {i}\n'
+        errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
+        raise WaveformException(errorStr, waveformI, i)
+      fall80 = t + cT
+      valuesFall80.append(fall80)
+      valuesFall.append(fall20 - fall80)
+      if yCross > 0.5:
+        crossStart = i50 + 1
+        crossForward = False
+      else:
+        crossStart = i50 - 1
+        crossForward = True
+      t, _ = getCrossing(tList, y, crossStart, yCross, crossForward)
+      t += cT
+      if (t < -tBit / 2) or (t > tBit / 2):
+        valuesCross.append(np.nan)
+      else:
+        valuesCross.append(t)
 
   values = {
     'rise20': valuesRise20,
     'rise50': valuesRise50,
     'rise80': valuesRise80,
+    'rise': valuesRise,
     'fall20': valuesFall20,
     'fall50': valuesFall50,
-    'fall80': valuesFall80
+    'fall80': valuesFall80,
+    'fall': valuesFall,
+    'cross': valuesCross
   }
   return values
 
@@ -2118,7 +2451,7 @@ def _runnerAdjustMaskMargin(waveformY: np.ndarray, bitCentersT: list[float], bit
       y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
 
     while isHitting(t, y, maskAdjusted.paths) and maskMargin >= -1:
-      maskMargin -= 0.0001
+      maskMargin -= 0.001
       maskAdjusted = mask.adjust(maskMargin)
       offender = i
 
@@ -2133,7 +2466,7 @@ def _runnerAdjustMaskMargin(waveformY: np.ndarray, bitCentersT: list[float], bit
   else:
     t = (t0 + cT).tolist()
     y = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
-  maskAdjusted = mask.adjust(maskMargin + 0.0001)
+  maskAdjusted = mask.adjust(maskMargin + 0.001)
   hits = getHits(t, y, maskAdjusted.paths)
 
   return maskMargin, offender, hits

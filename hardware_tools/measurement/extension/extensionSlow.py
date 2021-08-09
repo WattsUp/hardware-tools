@@ -1,5 +1,7 @@
+import numpy as np
+
 def getCrossingSlow(returnAxis: list, searchAxis: list,
-                    i: int, value: float, silent: bool = False) -> tuple[float, int]:
+                    i: int, value: float, stepForward: bool = False) -> tuple[float, int]:
   '''!@brief Get crossing value in the returnAxis by searching and interpolating searchAxis
 
   Example:
@@ -15,23 +17,15 @@ def getCrossingSlow(returnAxis: list, searchAxis: list,
   @param searchAxis Data axis to find and interpolate value
   @param i Begining index to look at, back up until found
   @param value Value to find and interpolate in searchAxis
-  @param silent True will return None if not found, False will raise Exception if not found
+  @param stepForward True will iterate forward until crossing, False will iterate backwards
   @return tuple (interpolated value, index)
   '''
-  startI = i
-
   # Back up
   while (searchAxis[i] > value) == (searchAxis[i - 1] > value) and i > 0:
-    i -= 1
+    i += 1 if stepForward else -1
 
   if i < 1:
-    if silent:
-      return None
-    errorStr = f'Cannot get crossing of starting at index {startI}'
-    errorStr += f'  returnAxis: {returnAxis}'
-    errorStr += f'  searchAxis: {searchAxis}'
-    errorStr += f'  value:      {value}'
-    raise Exception(errorStr)
+    return (np.nan, 0)
 
   v = (returnAxis[i] - returnAxis[i - 1]) / (searchAxis[i] - searchAxis[i - 1]) * \
       (value - searchAxis[i - 1]) + returnAxis[i - 1]

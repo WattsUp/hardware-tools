@@ -3,7 +3,7 @@ from typing import Union
 import pyvisa
 
 from .equipment import Equipment
-from . import tektronik
+from . import tektronix
 
 def getAvailableEquipment() -> list[str]:
   '''!@brief Get a list of available equipment addresses
@@ -22,10 +22,10 @@ def getEquipmentObject(addr: str) -> Union[Scope]:
   e = Equipment('', addr)
   identity = e.ask('*IDN?')
   if identity.startswith('TEKTRONIX,MSO4'):
-    return tektronik.MSO4000(addr)
+    return tektronix.MSO4000(addr)
   if identity.startswith('TEKTRONIX,MDO4'):
-    return tektronik.MDO4000(addr)
+    return tektronix.MDO4000(addr)
   if identity.startswith('TEKTRONIX,MDO3'):
-    return tektronik.MDO3000(addr)
+    return tektronix.MDO3000(addr)
 
   raise Exception(f'Unknown equipment identity \'{identity}\'')
