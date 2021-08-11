@@ -26,12 +26,15 @@ def interpolateSinc(x, y, xNew) -> np.ndarray:
   yNew = np.dot(y, np.sinc(sincM / T))
   return yNew
 
-def metricPrefix(value: float, unit: str = '') -> str:
+def metricPrefix(value: float, unit: str = '', formatSpecifier: str = '6.1f', formatSpecifierSmall: str = '6.3f', threshold: float=2) -> str:
   '''!@brief Format a value using metric prefixes to constrain string length
 
   @param value Value to format
   @param unit Unit string to append to number and metric prefix
-  @return str \'±xxx.x PU\' where P is metric prefix and U is unit
+  @param formatSpecifier Precision to convert value to string at
+  @param formatSpecifierSmall Precision to convert value to string at if underrange
+  @param threshold Decision threshold multiplier to determine to use order of magnitude: 2 => 1999.9 vs 1 => 1.9
+  @return str '±xxx.x PU' where P is metric prefix and U is unit
   '''
   metricPrefixes = {
     'T': 1e12,
@@ -45,10 +48,10 @@ def metricPrefix(value: float, unit: str = '') -> str:
     'p': 1e-12
   }
   for p, f in metricPrefixes.items():
-    if abs(value) > (2 * f):
-      return f'{value / f:6.1f} {p}{unit}'
+    if abs(value) >= (threshold * f):
+      return f'{value / f:{formatSpecifier}} {p}{unit}'
   p, f = list(metricPrefixes.items())[-1]
-  return f'{value / f:6.3f} {p}{unit}'
+  return f'{value / f:{formatSpecifierSmall}} {p}{unit}'
 
 def elapsedStr(start: datetime.datetime,
                end: datetime.datetime = None) -> str:
@@ -323,8 +326,9 @@ def fitGaussianMix(
   @param tol Tolerance of curve fitting (normalized units)
   @return list of components sorted by amplitude [amplitude: float, mean: float, stddev: float]
   '''
-  xMax = np.average(x)
-  x = np.array(x).reshape(-1, 1) / xMax
+  xSpan = np.amax(x) - np.amin(x)
+  xAvg = np.average(x)
+  x = (np.array(x).reshape(-1, 1) - xAvg) / xSpan
 
   models = []
   for i in range(nMax):
@@ -347,8 +351,8 @@ def fitGaussianMix(
   components = []
   for i in range(mBest.n_components):
     amplitude = mBest.weights_[i]
-    mean = mBest.means_[i][0] * xMax
-    stddev = abs(np.sqrt(mBest.covariances_[i][0][0]) * xMax)
+    mean = mBest.means_[i][0] * xSpan + xAvg
+    stddev = abs(np.sqrt(mBest.covariances_[i][0][0]) * xSpan)
     components.append([amplitude, mean, stddev])
   return sorted(components, key=lambda c: -c[0])
 

@@ -116,7 +116,7 @@ class MaskDecagon(Mask):
     self.paths.append(pathLower)
 
   def adjust(self, factor: float) -> MaskDecagon:
-    if factor > 0:
+    if factor > 1:
       x1 = factor * 0.0 + (1 - factor) * self.x1
       x2 = factor * 0.0 + (1 - factor) * self.x2
       x3 = factor * 0.0 + (1 - factor) * self.x3
@@ -137,7 +137,7 @@ class MaskDecagon(Mask):
 
 class EyeDiagram:
   def __init__(self, waveforms: np.ndarray, waveformInfo: dict, mask: Mask = None, resolution: int = 2000,
-               nBitsMax: int = 5, method: str = 'average', resample: int = 50, yLevels: list = None, hysteresis: float = 0.1) -> None:
+               nBitsMax: int = 5, method: str = 'average', resample: int = 50, yLevels: list = None, hysteresis: float = 0.1, tBit: float = None, pllBandwidth: float = 100e3) -> None:
     '''!@brief Create a new EyeDiagram from a collection of waveforms
 
     Assumes signal has two levels
@@ -154,6 +154,7 @@ class EyeDiagram:
     @param resample n=0 will not resample, n>0 will use sinc interpolation to resample a single bit to at least n segments (tDelta = tBit / n)
     @param yLevels Manually specify fixed levels for state identification, None will auto calculate levels
     @param hysteresis Difference between rising and falling thresholds (units of normalized amplitude)
+    @param pllBandwidth -3dB cutoff frequency of pll feedback (1st order low pass)
     '''
     if len(waveforms.shape) != 3:
       raise Exception(
@@ -169,11 +170,13 @@ class EyeDiagram:
     self.method = method
     self.resample = resample
     self.manualYLevels = yLevels
+    self.manualTBit = tBit
     self.calculated = False
     self.hysteresis = hysteresis
     self.histNMax = 100e3
     self.imageMin = -0.5
     self.imageMax = 1.5
+    self.pllBandwidth = pllBandwidth
 
   def calculate(self, verbose: bool = True, plot: bool = False,
                 nThreads: int = 0) -> dict:
@@ -204,8 +207,8 @@ class EyeDiagram:
     #     f'  High:         {Fore.CYAN}{metricPrefix(self.yOne, self.yUnit)}')
 
     if verbose:
-      print(f'{elapsedStr(start)} {Fore.YELLOW}Determining bit period')
-    self.__calculatePeriod(plot=plot, nThreads=nThreads)
+      print(f'{elapsedStr(start)} {Fore.YELLOW}Determining receiver clock')
+    self.__calculateClock(plot=plot, nThreads=nThreads)
     # if verbose:
     #   print(
     #     f'  Bit period:   {Fore.CYAN}{metricPrefix(self.tBit, self.tUnit)}')
@@ -325,15 +328,15 @@ class EyeDiagram:
     if errorStr:
       raise Exception(errorStr)
 
-  def __calculatePeriod(self, plot: bool = True, nThreads: int = 1) -> None:
-    '''!@brief Calculate period for a single bit
+  def __calculateClock(self, plot: bool = True, nThreads: int = 1) -> None:
+    '''!@brief Calculate clock for each waveform using a pll
 
     Assumes shortest period is a single bit
 
     @param plot True will create plots during calculation (histograms and such). False will not
     @param nThreads Specify number of threads to use
     '''
-    # Histogram horizontal periods for all waveforms
+    # Get waveform edges using hysteresis and 50% interpolation
     if nThreads <= 1:
       self.waveformEdges = [
           getEdgesNumpy(self.waveforms[i],
@@ -352,39 +355,43 @@ class EyeDiagram:
             self.waveforms.shape[0])]
         self.waveformEdges = [p.get() for p in results]
 
-    periods = []
-    for edgesRise, edgesFall in self.waveformEdges:
-      for i in range(1, len(edgesRise)):
-        duration = edgesRise[i] - edgesRise[i - 1]
-        periods.append(duration)
-
-      for i in range(1, len(edgesFall)):
-        duration = edgesFall[i] - edgesFall[i - 1]
-        periods.append(duration)
-    periods = histogramDownsample(periods, self.histNMax)
-
-    # Step 1 Find rough period from just the smallest pulses
     amplitudeThreshold = 0.1
-    components = fitGaussianMix(periods, nMax=self.nBitsMax)
-    components = [c for c in components if c[0] > amplitudeThreshold]
-    components = sorted(components, key=lambda c: c[1])
-    if len(components) > 1:
-      bitPeriodsShort = []
-      weights = []
-      for c in components:
-        if c[1] < (2.5 * components[0][1] / 2):
-          bitPeriodsShort.append(c[1])
-          weights.append(c[0])
-      bitDuration = np.average(bitPeriodsShort, weights=weights) / 2
+    if self.manualTBit is None:
+      # Need to get an estimate for tBit to initialize pll
+      periods = []
+      for edgesRise, edgesFall in self.waveformEdges:
+        for i in range(1, len(edgesRise)):
+          duration = edgesRise[i] - edgesRise[i - 1]
+          periods.append(duration)
+
+        for i in range(1, len(edgesFall)):
+          duration = edgesFall[i] - edgesFall[i - 1]
+          periods.append(duration)
+      periods = histogramDownsample(periods, self.histNMax)
+
+      # Step 1 Find rough period from just the smallest pulses
+      components = fitGaussianMix(periods, nMax=self.nBitsMax)
+      components = [c for c in components if c[0] > amplitudeThreshold]
+      components = sorted(components, key=lambda c: c[1])
+      if len(components) > 1:
+        bitPeriodsShort = []
+        weights = []
+        for c in components:
+          if c[1] < (2.5 * components[0][1] / 2):
+            bitPeriodsShort.append(c[1])
+            weights.append(c[0])
+        tBit = np.average(bitPeriodsShort, weights=weights) / 2
+      else:
+        tBit = components[0][1] / 2
     else:
-      bitDuration = components[0][1] / 2
+      tBit = self.manualTBit
 
     # Step 1.5 Remove glitches
     if nThreads <= 1:
       self.waveformEdges = [
           _runnerCleanEdges(
               self.waveformEdges[i],
-              bitDuration,
+              tBit,
               self.nBitsMin) for i in range(
               self.waveforms.shape[0])]
     else:
@@ -394,184 +401,73 @@ class EyeDiagram:
                 _runnerCleanEdges,
                 args=[
                     self.waveformEdges[i],
-                    bitDuration,
+                    tBit,
                     self.nBitsMin]) for i in range(
                 self.waveforms.shape[0])]
         self.waveformEdges = [p.get() for p in results]
+
+    # Step 2 do clock recovery
+    if nThreads <= 1:
+      output = [
+          _runnerClockRecovery(self.waveformEdges[i],
+                               self.waveforms[i][0][0],
+                               self.tDelta,
+                               tBit,
+                               self.pllBandwidth,
+                               False) for i in range(
+              self.waveforms.shape[0])]
+    else:
+      with Pool(nThreads) as p:
+        results = [p.apply_async(
+            _runnerClockRecovery,
+            args=[self.waveformEdges[i],
+                  self.waveforms[i][0][0],
+                  self.tDelta,
+                  tBit,
+                  self.pllBandwidth,
+                  False]) for i in range(
+            self.waveforms.shape[0])]
+        output = [p.get() for p in results]
+
+    self.clockEdges = []
     periods = []
-    for edgesRise, edgesFall in self.waveformEdges:
-      for i in range(1, len(edgesRise)):
-        duration = edgesRise[i] - edgesRise[i - 1]
-        periods.append(duration)
+    tie = []
+    for o in output:
+      self.clockEdges.append(o[0])
+      periods.extend(o[1])
+      tie.extend(o[2])
 
-      for i in range(1, len(edgesFall)):
-        duration = edgesFall[i] - edgesFall[i - 1]
-        periods.append(duration)
-    periods = histogramDownsample(periods, self.histNMax)
-
-    # Step 2 Include bits of all lengths
-    periodsAdjustedSub = []
-    periodsAdjustedDiv = []
-    for p in periods:
-      nBits = int((p / bitDuration) + 0.5)
-      pSub = p - bitDuration * (nBits - 2)
-      periodsAdjustedSub.append(pSub / 2)
-      periodsAdjustedDiv.append(p / nBits)
-
-    avgSub = np.average(periodsAdjustedSub)
-    avgDiv = np.average(periodsAdjustedDiv)
-    stdDevSub = np.std(periodsAdjustedSub)
-    stdDevDiv = np.std(periodsAdjustedDiv)
-
-    # Choose whichever average is closer to a round number
-    roundnessSub = abs(avgSub - float(f'{avgSub:.2g}'))
-    roundnessDiv = abs(avgDiv - float(f'{avgDiv:.2g}'))
-    if roundnessDiv < roundnessSub:
-      self.tBit = avgDiv
-      self.tBitStdDev = stdDevDiv
-      periodsAdjusted = periodsAdjustedDiv
-    else:
-      self.tBit = avgSub
-      self.tBitStdDev = stdDevSub
-      periodsAdjusted = periodsAdjustedSub
-
-    # if self.method == 'peak' or plot:
-    if plot:
-      components = fitGaussianMix(periodsAdjusted, nMax=self.nBitsMax)
-
-    # Peak is a bad method in this case due to overfitting high component count
-    # if self.method == 'peak':
-    #   self.tBit = gaussianMixCenter(components)
-    # elif self.method == 'average':
-    #   self.tBit = np.average(periodsAdjusted)
-    # else:
-    #   raise Exception(f'Unrecognized measure method: {self.method}')
-
-    # Step 3 Get high and low timing offsets
-    durationsHigh = []
-    durationsLow = []
-    for edgesRise, edgesFall in self.waveformEdges:
-      for i in range(1, min(len(edgesRise), len(edgesFall))):
-        duration = edgesRise[i] - edgesFall[i]
-        if duration > 0:
-          durationsLow.append(duration)
-
-          duration = edgesFall[i] - edgesRise[i - 1]
-          durationsHigh.append(duration)
-        else:
-          duration = -duration
-          durationsHigh.append(duration)
-
-          duration = edgesRise[i] - edgesFall[i - 1]
-          durationsLow.append(duration)
-
-    # Step 4 Find rough low/high offset from just the smallest pulses
-    componentsLow = fitGaussianMix(durationsLow, nMax=self.nBitsMax)
-    componentsLow = [c for c in componentsLow if c[0] > amplitudeThreshold]
-    componentsLow = sorted(componentsLow, key=lambda c: c[1])
-    if len(componentsLow) > 1:
-      bitPeriodsShort = []
-      weights = []
-      for c in componentsLow:
-        if c[1] < (1.5 * componentsLow[0][1]):
-          bitPeriodsShort.append(c[1])
-          weights.append(c[0])
-      lowOffset = self.tBit - np.average(bitPeriodsShort, weights=weights)
-    else:
-      lowOffset = self.tBit - componentsLow[0][1]
-
-    componentsHigh = fitGaussianMix(durationsHigh, nMax=self.nBitsMax)
-    componentsHigh = [c for c in componentsHigh if c[0] > amplitudeThreshold]
-    componentsHigh = sorted(componentsHigh, key=lambda c: c[1])
-    if len(componentsHigh) > 1:
-      bitPeriodsShort = []
-      weights = []
-      for c in componentsHigh:
-        if c[1] < (1.5 * componentsHigh[0][1]):
-          bitPeriodsShort.append(c[1])
-          weights.append(c[0])
-      highOffset = self.tBit - np.average(bitPeriodsShort, weights=weights)
-    else:
-      highOffset = self.tBit - componentsHigh[0][1]
-
-    binsLow, countsLow = binExact(durationsLow)
-    binsHigh, countsHigh = binExact(durationsHigh)
-
-    # Step 5 Include bits of all lengths
-    durationsLow = []
-    for i in range(len(binsLow)):
-      duration = binsLow[i] + lowOffset
-      nBits = int((duration / self.tBit) + 0.5)
-      if nBits == 0:
-        continue
-      duration = binsLow[i] - self.tBit * (nBits - 1)
-      durationsLow.extend([duration] * countsLow[i])
-
-    durationsHigh = []
-    for i in range(len(binsHigh)):
-      duration = binsHigh[i] + highOffset
-      nBits = int((duration / self.tBit) + 0.5)
-      if nBits == 0:
-        continue
-      duration = binsHigh[i] - self.tBit * (nBits - 1)
-      durationsHigh.extend([duration] * countsHigh[i])
-
-    if self.method == 'peak' or plot:
-      componentsLow = fitGaussianMix(durationsLow, nMax=3)
-      componentsHigh = fitGaussianMix(durationsHigh, nMax=3)
-
-    if self.method == 'peak':
-      self.tLow = gaussianMixCenter(componentsLow)
-      self.tHigh = gaussianMixCenter(componentsHigh)
-    elif self.method == 'average':
-      self.tLow = np.average(durationsLow)
-      self.tHigh = np.average(durationsHigh)
-    else:
-      raise Exception(f'Unrecognized measure method: {self.method}')
-    tLowStdDev = np.std(durationsLow)
-    tHighStdDev = np.std(durationsHigh)
+    self.tBit = np.average(periods)
+    self.tBitStdDev = np.std(periods)
 
     if plot:
       def tickFormatterX(x, _):
         return metricPrefix(x, self.tUnit)
       formatterX = FuncFormatter(tickFormatterX)
 
-      allDurations = periodsAdjusted
-      allDurations.extend(durationsHigh)
-      allDurations.extend(durationsLow)
-      yRange = np.linspace(min(allDurations), max(allDurations), 1000)
-      _, subplots = pyplot.subplots(3, 1, sharex=True)
+      periods = histogramDownsample(periods, self.histNMax)
+      components = fitGaussianMix(periods, nMax=self.nBitsMax)
+
+      yRange = np.linspace(min(periods), max(periods), 1000)
+      _, subplots = pyplot.subplots(2, 1, sharex=False)
       subplots[0].set_title('Bit period')
-      subplots[0].hist(periodsAdjusted, 50, density=True, color='b', alpha=0.5)
+      subplots[0].hist(periods, 50, density=True, color='b', alpha=0.5)
       subplots[0].plot(yRange, gaussianMix(yRange, components), color='r')
       subplots[0].axvline(x=self.tBit, color='g')
       subplots[0].axvline(x=(self.tBit + self.tBitStdDev), color='y')
       subplots[0].axvline(x=(self.tBit - self.tBitStdDev), color='y')
 
-      subplots[1].set_title('Low period')
-      subplots[1].hist(durationsLow, 50, density=True, color='b', alpha=0.5)
-      subplots[1].plot(yRange, gaussianMix(yRange, componentsLow), color='r')
-      subplots[1].axvline(x=self.tLow, color='g')
-      subplots[1].axvline(x=(self.tLow + tLowStdDev), color='y')
-      subplots[1].axvline(x=(self.tLow - tLowStdDev), color='y')
-      subplots[1].axvline(x=self.tBit, color='r')
+      tie = histogramDownsample(tie, self.histNMax)
 
-      subplots[2].set_title('High period')
-      subplots[2].hist(durationsHigh, 50, density=True, color='b', alpha=0.5)
-      subplots[2].plot(yRange, gaussianMix(yRange, componentsHigh), color='r')
-      subplots[2].axvline(x=self.tHigh, color='g')
-      subplots[2].axvline(x=(self.tHigh - tHighStdDev), color='y')
-      subplots[2].axvline(x=(self.tHigh + tHighStdDev), color='y')
-      subplots[2].axvline(x=self.tBit, color='r')
+      subplots[1].set_title('Time Interval Error')
+      subplots[1].hist(tie, 50, density=True, color='b', alpha=0.5)
 
       subplots[0].xaxis.set_major_formatter(formatterX)
       subplots[1].xaxis.set_major_formatter(formatterX)
-      subplots[2].xaxis.set_major_formatter(formatterX)
 
       subplots[-1].set_xlabel('Time')
       subplots[0].set_ylabel('Density')
       subplots[1].set_ylabel('Density')
-      subplots[2].set_ylabel('Density')
 
       pyplot.show()
 
@@ -581,35 +477,20 @@ class EyeDiagram:
     @param plot True will create plots during calculation (histograms and such). False will not
     @param nThreads Specify number of threads to use
     '''
-    # Padding to artificially add to pulses to meet 50% duty
-    tHighOffset = self.tBit - self.tHigh
-    tLowOffset = self.tBit - self.tLow
-
-    # Histogram horizontal periods for all waveforms
     if nThreads <= 1:
       output = [
           _runnerBitExtract(
-              self.waveformEdges[i],
+              self.clockEdges[i],
               self.waveforms[i][0][0],
-              self.tDelta,
-              self.tBit,
-              tHighOffset,
-              tLowOffset,
-              self.nBitsMax,
-              f'Waveform #{i}') for i in range(self.waveforms.shape[0])]
+              self.tDelta) for i in range(self.waveforms.shape[0])]
     else:
       with Pool(nThreads) as p:
         results = [p.apply_async(
           _runnerBitExtract,
           args=[
-              self.waveformEdges[i],
+              self.clockEdges[i],
               self.waveforms[i][0][0],
-              self.tDelta,
-              self.tBit,
-              tHighOffset,
-              tLowOffset,
-              self.nBitsMax,
-              f'Waveform #{i}']) for i in range(self.waveforms.shape[0])]
+              self.tDelta]) for i in range(self.waveforms.shape[0])]
         output = [p.get() for p in results]
 
     self.bitCentersT = [o[0] for o in output]
@@ -937,36 +818,36 @@ class EyeDiagram:
     span = (np.amax(valuesT['rise20']) -
             np.amin(valuesT['rise20'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tRise20 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tRise20 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['rise50']) -
             np.amin(valuesT['rise50'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tRise50 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tRise50 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['rise80']) -
             np.amin(valuesT['rise80'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tRise80 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tRise80 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['rise']) - np.amin(valuesT['rise'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tRise spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tRise spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall20']) -
             np.amin(valuesT['fall20'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tFall20 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tFall20 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall50']) -
             np.amin(valuesT['fall50'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tFall50 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tFall50 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall80']) -
             np.amin(valuesT['fall80'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tFall80 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tFall80 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall']) - np.amin(valuesT['fall'])) / self.tBit
     if span > spanThreshold:
-      raise Exception(f'tFall spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tFall spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['cross']) - np.amin(valuesT['cross'])) / self.tBit
     if span > spanThreshold and (m['yCrossP'] > 20 and m['yCrossP'] < 80):
-      raise Exception(f'tCross spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'  {Fore.RED}tCross spans {span:.2f}b > {spanThreshold:.2f}b')
 
     if self.method == 'peak' or plot:
       valuesT['rise20'] = histogramDownsample(valuesT['rise20'], self.histNMax)
@@ -1365,7 +1246,7 @@ class EyeDiagram:
             cY = self.bitCentersY[i][o]
             cT = self.bitCentersT[i][o] / self.tBit
 
-            if factor > 0:
+            if factor > 1:
               t = (tNew + cT).tolist()
               yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
               y = np.dot(yOriginal, referenceSinc).tolist()
@@ -1385,7 +1266,7 @@ class EyeDiagram:
         cY = self.bitCentersY[waveformIndex][i]
         cT = self.bitCentersT[waveformIndex][i] / self.tBit
 
-        if factor > 0:
+        if factor > 1:
           t = (tNew + cT).tolist()
           yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
           y = np.dot(yOriginal, referenceSinc).tolist()
@@ -1648,7 +1529,7 @@ class EyeDiagram:
       cY = self.bitCentersY[waveformIndex][i]
       cT = self.bitCentersT[waveformIndex][i] / self.tBit
 
-      if factor > 0:
+      if factor > 1:
         t = (tNew + cT)
         yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
         y = np.dot(yOriginal, referenceSinc)
@@ -1777,7 +1658,9 @@ class EyeDiagram:
       'yFall': self.thresholdFall,
       'histNMax': self.histNMax,
       'imageMin': self.imageMin,
-      'imageMax': self.imageMax
+      'imageMax': self.imageMax,
+      'manualTBit': self.manualTBit,
+      'pllBandwidth': self.pllBandwidth
     }
     return config
 
@@ -1959,103 +1842,134 @@ def _runnerCleanEdges(
         skip = True
   return edgesRise, edgesFall
 
-def _runnerBitExtract(edges: tuple[list, list], tZero: float, tDelta: float, tBit: float,
-                      tHighOffset: float, tLowOffset: float, nBitsMax: int = 5, debugStr: str = '') -> tuple[list, list]:
+def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
+                         tBit: float, pllBandwidth: float = 100e3, risingEdgesLead: bool = None) -> tuple[list, list]:
+  '''!@brief Runner to recover the clock from edge transitions
+
+  @param edges tuple of rising edges, falling edges
+  @param tZero Time for the first sample
+  @param tDelta Time between samples
+  @param tBit Time for a single bit (initial pll settings)
+  @param pllBandwidth -3dB cutoff frequency of pll feedback (1st order low pass)
+  @param risingEdgesLead True will ensure even edges are rising, False will ensure even edges are falling, None will not check
+  @return tuple[list[float]...] (clockEdges, periods, tie)
+      clockEdges is a list of clock edges, at sampling point
+      periods is a list of period for each edge
+      tie is a list of Time Interval Errors for each edge
+  '''
+  # Interleave edges
+  edgesRise, edgesFall = edges
+  edges = []
+  edges.extend(edgesRise)
+  edges.extend(edgesFall)
+  edges = sorted(edges)
+  if risingEdgesLead is not None:
+    if (edges[0] == edgesRise[0]) != risingEdgesLead:
+      # Remove first edge according to if rising or falling should be even
+      edges = edges[1:]
+  # TODO allow both even and odd edges to adjust period (/2?)
+
+  clockEdges = []
+  ties = []
+  periods = []
+
+  t = edges[0]
+  delay = tBit
+  phase = 0
+
+  duration = (edges[1] - edges[0])
+  offset = -((duration + tBit / 2) % tBit - tBit / 2)
+
+  idealEdge = t
+  phaseError = 0
+  delayError = 0
+  offsetError = t - edges[0]
+  prevPhaseError = 0
+  nBitsEven = 1
+
+  # Run PLL
+  # Adjust delay and phase on even edges
+  # Adjust offset on odd edges
+  evenEdge = True
+  for edge in edges:
+    if evenEdge:
+      nBitsEven = 2
+    else:
+      edge += offset
+    edgeError = t - edge
+    while edgeError < tBit / 2:
+      # Record clock edge
+      clockEdges.append(t + delay / 2 - offset / 2)
+
+      # Adjust delay
+      phaseError = 0
+      delayError = 0
+      offsetError = 0
+      if edgeError > -tBit / 2:
+        tie = (edge - idealEdge)
+        ties.append((edge, tie))
+        if evenEdge:
+          # consider even edges a phase and delay error
+          phaseError = edgeError
+          delayError = (phaseError - prevPhaseError) / nBitsEven
+        else:
+          # consider odd edges an offset error
+          offsetError = edgeError
+      w = 2 * np.pi * delay * pllBandwidth
+      alpha = w / (w + 1)
+      # alpha = 1
+      delay = (1 - alpha) * delay + alpha * (delay - delayError)
+      phase = (1 - alpha) * phase + alpha * (-phaseError)
+      offset = (1 - alpha) * offset + alpha * (offset + offsetError)
+
+      if edgeError > -tBit / 2:
+        # Don't include phase offset in previous phase error
+        if evenEdge:
+          prevPhaseError = phaseError + phase
+
+      # Step to next bit
+      period = delay + phase
+      if period < tDelta:
+        raise Exception(
+          f'Clock recovery has failed with too small period {metricPrefix(period)}')
+      periods.append(period)
+      t += period
+      idealEdge += tBit
+      edgeError = t - edge
+      nBitsEven += 1
+
+    evenEdge = not evenEdge
+
+  # Compensate TIE for wrong tBit
+  ties = np.array(ties)
+  slope = (ties[-1, 1] - ties[0, 1]) / (ties[-1, 0] - ties[0, 0])
+  ties[:, 1] = ties[:, 1] - slope * (ties[:, 0] - ties[0, 0])
+
+  # High pass TIEs to remove spread spectrum clocking artifacts
+  tiesFiltered = [ties[0, 1]]
+  for i in range(1, len(ties)):
+    alpha = 1 / (2 * np.pi * pllBandwidth * (ties[i, 0] - ties[i - 1, 0]) + 1)
+    tiesFiltered.append(
+      alpha * tiesFiltered[i - 1] + alpha * (ties[i, 1] - ties[i - 1, 1]))
+
+  return clockEdges, periods, tiesFiltered
+
+
+def _runnerBitExtract(clockEdges: list, tZero: float,
+                      tDelta: float) -> tuple[list, list]:
   '''!@brief Runner to extract bit centers from list of rising and falling edges
 
   @param edges tuple of rising edges, falling edges
   @param tZero Time for the first sample
   @param tDelta Time between samples
-  @param tBit Time for a single bit
-  @param tHighOffset Time to add to high pulses before calculating number of bits
-  @param tLowOffset Time to add to low pulses before calculating number of bits
-  @param nBitsMax Maximum number of consecutive bits of the same state allowed before an exception is raised
-  @param debugStr Additional string to add to an Exception (aka waveform index)
   @return tuple[list[float], list[int]] (bitCentersT, bitCentersY)
       bitCentersT is a list of centerTs. Use np.linspace(center - sliceHalfWidth * tDelta, c + shw * td, shw * 2 + 1)
       bitCentersY is a list of center indices. Use y[sliceCenter - sliceHalfWidth : c + shw + 1]
   '''
-  edgesRise, edgesFall = edges
-  bitCenters = []
-  if edgesRise[0] < edgesFall[0]:
-    # (i) - (i) are high
-    # (i) - (i - 1) are low
-    for i in range(1, min(len(edgesRise), len(edgesFall))):
-      durationHigh = edgesFall[i] - edgesRise[i] + tHighOffset
-      centerHigh = (edgesFall[i] + edgesRise[i]) / 2
-
-      durationLow = edgesRise[i] - edgesFall[i - 1] + tLowOffset
-      centerLow = (edgesRise[i] + edgesFall[i - 1]) / 2
-
-      nBits = int((durationHigh / tBit) + 0.5)
-      if nBits > nBitsMax or nBits == 0:
-        errorStr = 'Number of consecutive bits of same level wrong\n'
-        errorStr += f'  DebugStr: \'{debugStr}\'\n'
-        errorStr += f'  n: {int(nBits)}\n'
-        errorStr += f'  Duration:  {metricPrefix(durationHigh - tHighOffset)}\n'
-        errorStr += f'  Offsetted: {metricPrefix(durationHigh)}\n'
-        errorStr += f'  t={centerHigh}'
-        raise Exception(errorStr)
-      adjustedBitDuration = durationHigh / nBits
-      firstBit = centerHigh - adjustedBitDuration * (nBits - 1) / 2
-      for iBit in range(nBits):
-        bitCenters.append(firstBit + iBit * adjustedBitDuration)
-
-      nBits = int((durationLow / tBit) + 0.5)
-      if nBits > nBitsMax or nBits == 0:
-        errorStr = 'Number of consecutive bits of same level wrong\n'
-        errorStr += f'  DebugStr: \'{debugStr}\'\n'
-        errorStr += f'  n: {int(nBits)}\n'
-        errorStr += f'  Duration:  {metricPrefix(durationLow - tLowOffset)}\n'
-        errorStr += f'  Offsetted: {metricPrefix(durationLow)}\n'
-        errorStr += f'  t={centerLow}'
-        raise Exception(errorStr)
-      adjustedBitDuration = durationLow / nBits
-      firstBit = centerLow - adjustedBitDuration * (nBits - 1) / 2
-      for iBit in range(nBits):
-        bitCenters.append(firstBit + iBit * adjustedBitDuration)
-  else:
-    # (i) - (i) are low
-    # (i) - (i - 1) are high
-    for i in range(1, min(len(edgesRise), len(edgesFall))):
-      durationHigh = edgesFall[i] - edgesRise[i - 1] + tHighOffset
-      centerHigh = (edgesFall[i] + edgesRise[i - 1]) / 2
-
-      durationLow = edgesRise[i] - edgesFall[i] + tLowOffset
-      centerLow = (edgesRise[i] + edgesFall[i]) / 2
-
-      nBits = int((durationHigh / tBit) + 0.5)
-      if nBits > nBitsMax or nBits == 0:
-        errorStr = 'Number of consecutive bits of same level wrong\n'
-        errorStr += f'  DebugStr: \'{debugStr}\'\n'
-        errorStr += f'  n: {int(nBits)}\n'
-        errorStr += f'  Duration:  {metricPrefix(durationHigh - tHighOffset)}\n'
-        errorStr += f'  Offsetted: {metricPrefix(durationHigh)}\n'
-        errorStr += f'  t={centerHigh}'
-        raise Exception(errorStr)
-      adjustedBitDuration = durationHigh / nBits
-      firstBit = centerHigh - adjustedBitDuration * (nBits - 1) / 2
-      for iBit in range(nBits):
-        bitCenters.append(firstBit + iBit * adjustedBitDuration)
-
-      nBits = int((durationLow / tBit) + 0.5)
-      if nBits > nBitsMax or nBits == 0:
-        errorStr = 'Number of consecutive bits of same level wrong\n'
-        errorStr += f'  DebugStr: \'{debugStr}\'\n'
-        errorStr += f'  n: {int(nBits)}\n'
-        errorStr += f'  Duration:  {metricPrefix(durationLow - tLowOffset)}\n'
-        errorStr += f'  Offsetted: {metricPrefix(durationLow)}\n'
-        errorStr += f'  t={centerLow}'
-        raise Exception(errorStr)
-      adjustedBitDuration = durationLow / nBits
-      firstBit = centerLow - adjustedBitDuration * (nBits - 1) / 2
-      for iBit in range(nBits):
-        bitCenters.append(firstBit + iBit * adjustedBitDuration)
-
   bitCentersT = []
   bitCentersY = []
 
-  for b in bitCenters[5:-5]:
+  for b in clockEdges[5:-5]:
     bitCenterAdjusted = b % tDelta
     # xMin = -bitCenterAdjusted - sliceHalfWidth * tDelta
     # xMax = -bitCenterAdjusted + sliceHalfWidth * tDelta
@@ -2123,7 +2037,7 @@ def _runnerCollectValuesY(waveformY: np.ndarray, bitCentersT: list[float], bitCe
     transition = (waveformY[cY - iBitWidthOriginal]
                   > yHalf) != (waveformY[cY] > yHalf)
 
-    if factor > 0:
+    if factor > 1:
       yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
       y = np.dot(yOriginal, referenceSinc).tolist()
     else:
@@ -2138,7 +2052,7 @@ def _runnerCollectValuesY(waveformY: np.ndarray, bitCentersT: list[float], bitCe
       if transition and t >= -0.05 and t <= 0.05:
         valuesCross.append(y[ii])
 
-    if np.mean(bitValues) > yHalf:
+    if np.average(bitValues) > yHalf:
       valuesOne.extend(bitValues)
     else:
       valuesZero.extend(bitValues)
@@ -2215,7 +2129,7 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
     if (waveformY[cY - iBitWidthOriginal] > 0.5) == (waveformY[cY] > 0.5):
       continue
 
-    if factor > 0:
+    if factor > 1:
       yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
       y = np.dot(yOriginal, referenceSinc).tolist()
     else:
@@ -2354,7 +2268,7 @@ def _runnerCollectMaskHits(waveformY: np.ndarray, bitCentersT: list[float], bitC
     cY = bitCentersY[i]
     cT = bitCentersT[i] / tBit
 
-    if factor > 0:
+    if factor > 1:
       t = (tNew + cT).tolist()
       yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
       y = np.dot(yOriginal, referenceSinc).tolist()
@@ -2423,7 +2337,7 @@ def _runnerAdjustMaskMargin(waveformY: np.ndarray, bitCentersT: list[float], bit
   cY = bitCentersY[initialOffenders[0]]
   cT = bitCentersT[initialOffenders[0]] / tBit
 
-  if factor > 0:
+  if factor > 1:
     t = (tNew + cT).tolist()
     yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
     y = np.dot(yOriginal, referenceSinc).tolist()
@@ -2442,7 +2356,7 @@ def _runnerAdjustMaskMargin(waveformY: np.ndarray, bitCentersT: list[float], bit
     cY = bitCentersY[i]
     cT = bitCentersT[i] / tBit
 
-    if factor > 0:
+    if factor > 1:
       t = (tNew + cT).tolist()
       yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
       y = np.dot(yOriginal, referenceSinc).tolist()
@@ -2459,7 +2373,7 @@ def _runnerAdjustMaskMargin(waveformY: np.ndarray, bitCentersT: list[float], bit
   cY = bitCentersY[offender]
   cT = bitCentersT[offender] / tBit
 
-  if factor > 0:
+  if factor > 1:
     t = (tNew + cT).tolist()
     yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
     y = np.dot(yOriginal, referenceSinc).tolist()
@@ -2520,7 +2434,7 @@ def _runnerGenerateHeatMap(waveformY: np.ndarray, bitCentersT: list[float], bitC
     cY = bitCentersY[i]
     cT = bitCentersT[i] / tBit
 
-    if factor > 0:
+    if factor > 1:
       t = (tNew + cT)
       yOriginal = waveformY[cY - iBitWidth: cY + iBitWidth + 1]
       y = np.dot(yOriginal, referenceSinc)
