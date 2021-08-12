@@ -406,36 +406,79 @@ class EyeDiagram:
                 self.waveforms.shape[0])]
         self.waveformEdges = [p.get() for p in results]
 
-    # Step 2 do clock recovery
+    # Step 2 do clock recovery, do both rising and falling edges leading
     if nThreads <= 1:
-      output = [
+      outputFalse = [
           _runnerClockRecovery(self.waveformEdges[i],
                                self.waveforms[i][0][0],
                                self.tDelta,
                                tBit,
                                self.pllBandwidth,
-                               False) for i in range(
+                               False, plot) for i in range(
+              self.waveforms.shape[0])]
+      outputTrue = [
+          _runnerClockRecovery(self.waveformEdges[i],
+                               self.waveforms[i][0][0],
+                               self.tDelta,
+                               tBit,
+                               self.pllBandwidth,
+                               True, plot) for i in range(
               self.waveforms.shape[0])]
     else:
       with Pool(nThreads) as p:
-        results = [p.apply_async(
+        resultsFalse = [p.apply_async(
             _runnerClockRecovery,
             args=[self.waveformEdges[i],
                   self.waveforms[i][0][0],
                   self.tDelta,
                   tBit,
                   self.pllBandwidth,
-                  False]) for i in range(
+                  False, plot]) for i in range(
             self.waveforms.shape[0])]
-        output = [p.get() for p in results]
+        resultsTrue = [p.apply_async(
+            _runnerClockRecovery,
+            args=[self.waveformEdges[i],
+                  self.waveforms[i][0][0],
+                  self.tDelta,
+                  tBit,
+                  self.pllBandwidth,
+                  True, plot]) for i in range(
+            self.waveforms.shape[0])]
+        outputFalse = [p.get() for p in resultsFalse]
+        outputTrue = [p.get() for p in resultsTrue]
+
+    periodsFalse = []
+    for o in outputFalse:
+      periodsFalse.extend(o[1])
+    periodsTrue = []
+    for o in outputTrue:
+      periodsTrue.extend(o[1])
+    # Choose whichever one is more consistent
+    if np.std(periodsFalse) < np.std(periodsTrue):
+      output = outputFalse
+    else:
+      output = outputTrue
 
     self.clockEdges = []
     periods = []
     tie = []
+    phaseErrors = []
+    offsetErrors = []
+    delayErrors = []
+    phases = []
+    offsets = []
+    delays = []
     for o in output:
       self.clockEdges.append(o[0])
       periods.extend(o[1])
       tie.extend(o[2])
+      if plot:
+        phases.extend(o[3])
+        phaseErrors.extend(o[4])
+        offsets.extend(o[5])
+        offsetErrors.extend(o[6])
+        delays.extend(o[7])
+        delayErrors.extend(o[8])
 
     self.tBit = np.average(periods)
     self.tBitStdDev = np.std(periods)
@@ -449,7 +492,7 @@ class EyeDiagram:
       components = fitGaussianMix(periods, nMax=self.nBitsMax)
 
       yRange = np.linspace(min(periods), max(periods), 1000)
-      _, subplots = pyplot.subplots(2, 1, sharex=False)
+      _, subplots = pyplot.subplots(6, 1, sharex=False)
       subplots[0].set_title('Bit period')
       subplots[0].hist(periods, 50, density=True, color='b', alpha=0.5)
       subplots[0].plot(yRange, gaussianMix(yRange, components), color='r')
@@ -457,10 +500,22 @@ class EyeDiagram:
       subplots[0].axvline(x=(self.tBit + self.tBitStdDev), color='y')
       subplots[0].axvline(x=(self.tBit - self.tBitStdDev), color='y')
 
-      tie = histogramDownsample(tie, self.histNMax)
-
       subplots[1].set_title('Time Interval Error')
-      subplots[1].hist(tie, 50, density=True, color='b', alpha=0.5)
+      subplots[1].hist(tie, 100, density=True, color='b', alpha=0.5)
+
+      subplots[2].set_title('PLL Errors')
+      subplots[2].plot(phaseErrors, color='r')
+      subplots[2].plot(offsetErrors, color='g')
+      subplots[2].plot(delayErrors, color='b')
+      
+      subplots[3].set_title('PLL Phases')
+      subplots[3].plot(phases, color='r')
+
+      subplots[4].set_title('PLL Offsets')
+      subplots[4].plot(offsets, color='g')
+      
+      subplots[3].set_title('PLL Delays')
+      subplots[5].plot(delays, color='b')
 
       subplots[0].xaxis.set_major_formatter(formatterX)
       subplots[1].xaxis.set_major_formatter(formatterX)
@@ -1843,7 +1898,7 @@ def _runnerCleanEdges(
   return edgesRise, edgesFall
 
 def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
-                         tBit: float, pllBandwidth: float = 100e3, risingEdgesLead: bool = None) -> tuple[list, list]:
+                         tBit: float, pllBandwidth: float = 100e3, risingEdgesLead: bool = None, debug: bool = False) -> tuple[list, list]:
   '''!@brief Runner to recover the clock from edge transitions
 
   @param edges tuple of rising edges, falling edges
@@ -1852,10 +1907,14 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
   @param tBit Time for a single bit (initial pll settings)
   @param pllBandwidth -3dB cutoff frequency of pll feedback (1st order low pass)
   @param risingEdgesLead True will ensure even edges are rising, False will ensure even edges are falling, None will not check
-  @return tuple[list[float]...] (clockEdges, periods, tie)
+  @param debug True will return more data for debugging purposes, see return, False will not
+  @return tuple[list[float]...] (clockEdges, periods, tie, [phases], [phaseErrors], [offsets], [offsetErrors], [delays], [delayErrors])
       clockEdges is a list of clock edges, at sampling point
       periods is a list of period for each edge
-      tie is a list of Time Interval Errors for each edge
+      tie is a list of Time Interval Errors for each data edge (not clock edge)
+      if debug is True:
+      phases, offsets, delays are lists of the PLL parameters for each clockEdge
+      phaseErrors, offsetErrors, delayErrors are lists of the PLL error parameters for each clockEdge
   '''
   # Interleave edges
   edgesRise, edgesFall = edges
@@ -1867,7 +1926,6 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
     if (edges[0] == edgesRise[0]) != risingEdgesLead:
       # Remove first edge according to if rising or falling should be even
       edges = edges[1:]
-  # TODO allow both even and odd edges to adjust period (/2?)
 
   clockEdges = []
   ties = []
@@ -1886,6 +1944,14 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
   offsetError = t - edges[0]
   prevPhaseError = 0
   nBitsEven = 1
+
+  # Debug information
+  phases = []
+  offsets = []
+  delays = []
+  phaseErrors = []
+  offsetErrors = []
+  delayErrors = []
 
   # Run PLL
   # Adjust delay and phase on even edges
@@ -1906,7 +1972,10 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
       delayError = 0
       offsetError = 0
       if edgeError > -tBit / 2:
-        tie = (edge - idealEdge)
+        if evenEdge:
+          tie = (edge - idealEdge)
+        else:
+          tie = (edge - idealEdge - offset)
         ties.append((edge, tie))
         if evenEdge:
           # consider even edges a phase and delay error
@@ -1914,30 +1983,37 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
           delayError = (phaseError - prevPhaseError) / nBitsEven
         else:
           # consider odd edges an offset error
-          offsetError = edgeError
+          offsetError = -edgeError
       w = 2 * np.pi * delay * pllBandwidth
       alpha = w / (w + 1)
       # alpha = 1
       delay = (1 - alpha) * delay + alpha * (delay - delayError)
       phase = (1 - alpha) * phase + alpha * (-phaseError)
-      offset = (1 - alpha) * offset + alpha * (offset + offsetError)
-
+      offset = (1 - alpha) * offset + alpha * (offset - offsetError)
       if edgeError > -tBit / 2:
         # Don't include phase offset in previous phase error
         if evenEdge:
           prevPhaseError = phaseError + phase
-
-      # Step to next bit
+      
       period = delay + phase
       if period < tDelta:
         raise Exception(
           f'Clock recovery has failed with too small period {metricPrefix(period)}')
+
+      # Record statistical information
       periods.append(period)
+      phases.append(phase)
+      offsets.append(offset)
+      delays.append(delay)
+      phaseErrors.append(phaseError)
+      offsetErrors.append(offsetError)
+      delayErrors.append(delayError)
+
+      # Step to next bit
       t += period
       idealEdge += tBit
       edgeError = t - edge
       nBitsEven += 1
-
     evenEdge = not evenEdge
 
   # Compensate TIE for wrong tBit
@@ -1952,6 +2028,8 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
     tiesFiltered.append(
       alpha * tiesFiltered[i - 1] + alpha * (ties[i, 1] - ties[i - 1, 1]))
 
+  if debug:
+    return clockEdges, periods, tiesFiltered, phases, phaseErrors, offsets, offsetErrors, delays, delayErrors
   return clockEdges, periods, tiesFiltered
 
 

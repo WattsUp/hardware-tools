@@ -292,7 +292,7 @@ def binExact(values: Iterable) -> tuple[list, list]:
   counts = [counts[b] for b in bins]
   return bins, counts
 
-def histogramDownsample(values: np.array, nMax:int=50e3, binCount=100) -> np.array:
+def histogramDownsample(values: np.array, nMax:int=50e3, binCount=500) -> np.array:
   '''!@ Reduce the number of samples to at most nMax. Preseves sample frequency
 
   Bins the values, scale the counts to total of nMax, then undoes the binning.
