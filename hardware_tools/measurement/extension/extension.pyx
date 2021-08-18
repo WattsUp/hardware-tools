@@ -28,10 +28,11 @@ cdef tuple get_crossing_c(list returnAxis,
   '''
 
   # Back up
-  while (searchAxis[i] > value) == (searchAxis[i - 1] > value) and i > 0:
+  cdef Py_ssize_t n = len(searchAxis)
+  while i > 0 and i < n and (searchAxis[i] > value) == (searchAxis[i - 1] > value):
     i += 1 if stepForward else -1
 
-  if i < 1:
+  if i < 1 or i >= n:
     return (np.nan, 0)
 
   v = (returnAxis[i] - returnAxis[i - 1]) / (searchAxis[i] - searchAxis[i - 1]) * \

@@ -21,10 +21,11 @@ def getCrossingSlow(returnAxis: list, searchAxis: list,
   @return tuple (interpolated value, index)
   '''
   # Back up
-  while (searchAxis[i] > value) == (searchAxis[i - 1] > value) and i > 0:
+  n = len(searchAxis)
+  while i > 0 and i < n and (searchAxis[i] > value) == (searchAxis[i - 1] > value):
     i += 1 if stepForward else -1
 
-  if i < 1:
+  if i < 1 or i >= n:
     return (np.nan, 0)
 
   v = (returnAxis[i] - returnAxis[i - 1]) / (searchAxis[i] - searchAxis[i - 1]) * \

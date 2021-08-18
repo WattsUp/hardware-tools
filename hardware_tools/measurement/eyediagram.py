@@ -178,11 +178,12 @@ class EyeDiagram:
     self.imageMax = 1.5
     self.pllBandwidth = pllBandwidth
 
-  def calculate(self, verbose: bool = True, plot: bool = False,
+  def calculate(self, printProgress: bool = True, indent: int = 0, plot: bool = False,
                 nThreads: int = 0) -> dict:
     '''!@brief Calculate and prepare eye diagram
 
-    @param verbose True will print progress statements. False will not
+    @param printProgress True or int will print progress statements (int specifies indent). False will not
+    @param indent Base indentation for progress statements
     @param plot True will create plots during calculation (histograms and such). False will not
     @param multithreaded Specify number of threads to use, 0=all, 1=single, or n
     @return dict Report dictionary of measures and images, see getMeasures() and getImage()
@@ -193,50 +194,39 @@ class EyeDiagram:
     else:
       nThreads = min(nThreads, cpu_count())
 
-    if verbose:
+    if printProgress:
       print(
-        f'{elapsedStr(start)} {Fore.GREEN}Starting calculation with {nThreads} threads')
-      print(f'{elapsedStr(start)} {Fore.YELLOW}Finding threshold levels')
+        f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}Starting eye diagram calculation with {nThreads} threads')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Finding threshold levels')
     self.__calculateLevels(plot=plot, nThreads=nThreads)
-    # if verbose:
-    #   print(
-    #     f'  Low:          {Fore.CYAN}{metricPrefix(self.yZero, self.yUnit)}')
-    #   print(
-    #     f'  Crossing:     {Fore.CYAN}{metricPrefix(self.thresholdHalf, self.yUnit)}')
-    #   print(
-    #     f'  High:         {Fore.CYAN}{metricPrefix(self.yOne, self.yUnit)}')
 
-    if verbose:
-      print(f'{elapsedStr(start)} {Fore.YELLOW}Determining receiver clock')
+    if printProgress:
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Determining receiver clock')
     self.__calculateClock(plot=plot, nThreads=nThreads)
-    # if verbose:
-    #   print(
-    #     f'  Bit period:   {Fore.CYAN}{metricPrefix(self.tBit, self.tUnit)}')
-    #   print(
-    #     f'  Duty cycle:   {Fore.CYAN}{self.tHigh / (2 * self.tBit) * 100:6.2f}%')
-    #   print(
-    # f'  Frequency:    {Fore.CYAN}{metricPrefix(1/self.tBit, self.tUnit)}⁻¹')
 
-    if verbose:
-      print(f'{elapsedStr(start)} {Fore.YELLOW}Extracting bit centers')
+    if printProgress:
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Extracting bit centers')
     self.__extractBitCenters(plot=plot, nThreads=nThreads)
-    # if verbose:
-    #   print(f'  Number of bits: {Fore.CYAN}{self.nBits}')
 
     self.calculated = True
-    if verbose:
-      print(f'{elapsedStr(start)} {Fore.YELLOW}Measuring waveform')
-    self.__measureWaveform(plot=plot, printProgress=verbose, nThreads=nThreads)
-    if verbose:
-      self.printMeasures()
+    if printProgress:
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Measuring waveform')
+    self.__measureWaveform(
+        plot=plot,
+        printProgress=printProgress,
+        indent=2 + indent,
+        nThreads=nThreads)
     self.calculated = False
 
-    if verbose:
-      print(f'{elapsedStr(start)} {Fore.YELLOW}Generating images')
-    self.__generateImages(printProgress=verbose, nThreads=nThreads)
+    if printProgress:
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Generating images')
+    self.__generateImages(
+        printProgress=printProgress,
+        indent=2 + indent,
+        nThreads=nThreads)
 
-    if verbose:
-      print(f'{elapsedStr(start)} {Fore.GREEN}Complete')
+    if printProgress:
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}Complete eye diagram')
 
     self.calculated = True
     return self.measures
@@ -507,13 +497,13 @@ class EyeDiagram:
       subplots[2].plot(phaseErrors, color='r')
       subplots[2].plot(offsetErrors, color='g')
       subplots[2].plot(delayErrors, color='b')
-      
+
       subplots[3].set_title('PLL Phases')
       subplots[3].plot(phases, color='r')
 
       subplots[4].set_title('PLL Offsets')
       subplots[4].plot(offsets, color='g')
-      
+
       subplots[3].set_title('PLL Delays')
       subplots[5].plot(delays, color='b')
 
@@ -596,11 +586,12 @@ class EyeDiagram:
       pyplot.show()
 
   def __measureWaveform(self, plot: bool = True,
-                        printProgress: bool = True, nThreads: int = 1) -> None:
+                        printProgress: bool = True, indent: int = 0, nThreads: int = 1) -> None:
     '''!@brief Extract center positions of bits
 
     @param plot True will create plots during calculation (histograms and such). False will not
     @param printProgress True will print progress statements. False will not
+    @param indent Base indentation for progress statements
     @param nThreads Specify number of threads to use
     '''
     self.measures = {}
@@ -608,7 +599,7 @@ class EyeDiagram:
 
     start = datetime.datetime.now()
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.GREEN}Starting measurement')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}Starting measurement')
 
     nBits = 0
     for b in self.bitCentersT:
@@ -617,7 +608,7 @@ class EyeDiagram:
 
     if printProgress:
       print(
-        f'  {elapsedStr(start)} {Fore.YELLOW}Measuring \'0\', \'0.5\', \'1\' values')
+        f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Measuring \'0\', \'0.5\', \'1\' values')
 
     if nThreads <= 1:
       output = [
@@ -655,7 +646,7 @@ class EyeDiagram:
 
     if printProgress:
       print(
-        f'  {elapsedStr(start)} {Fore.YELLOW}Computing \'0\', \'0.5\', \'1\' statistics')
+        f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Computing \'0\', \'0.5\', \'1\' statistics')
 
     if self.method == 'average':
       m['yZero'] = np.average(valuesY['zero'])
@@ -670,19 +661,19 @@ class EyeDiagram:
       componentsZero = fitGaussianMix(valuesY['zero'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}yZero has {len(componentsZero)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}yZero has {len(componentsZero)} modes')
 
       valuesY['cross'] = histogramDownsample(valuesY['cross'], self.histNMax)
       componentsCross = fitGaussianMix(valuesY['cross'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}yCross has {len(componentsCross)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}yCross has {len(componentsCross)} modes')
 
       valuesY['one'] = histogramDownsample(valuesY['one'], self.histNMax)
       componentsOne = fitGaussianMix(valuesY['one'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}yOne has {len(componentsOne)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}yOne has {len(componentsOne)} modes')
 
     if self.method == 'peak':
       m['yZero'] = gaussianMixCenter(componentsZero)
@@ -755,7 +746,7 @@ class EyeDiagram:
       pyplot.show()
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.YELLOW}Measuring edges values')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Measuring edges values')
 
     # Horizontal domain
     m['tBit'] = self.tBit
@@ -840,12 +831,12 @@ class EyeDiagram:
         valuesT[k].extend(v)
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.YELLOW}Computing edges statistics')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Computing edges statistics')
 
     crossNan = np.count_nonzero(np.isnan(valuesT['cross']))
     if crossNan > 0:
       print(
-        f'  {Fore.RED}{crossNan}/{len(valuesT["cross"])}={crossNan/len(valuesT["cross"]) *100:.2f}% bits did not reach yCross')
+        f'{"":{indent}}{Fore.RED}{crossNan}/{len(valuesT["cross"])}={crossNan/len(valuesT["cross"]) *100:.2f}% bits did not reach yCross')
       valuesT['cross'] = np.array(valuesT['cross'])
       valuesT['cross'] = valuesT['cross'][~np.isnan(valuesT['cross'])].tolist()
 
@@ -873,91 +864,91 @@ class EyeDiagram:
     span = (np.amax(valuesT['rise20']) -
             np.amin(valuesT['rise20'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tRise20 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tRise20 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['rise50']) -
             np.amin(valuesT['rise50'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tRise50 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tRise50 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['rise80']) -
             np.amin(valuesT['rise80'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tRise80 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tRise80 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['rise']) - np.amin(valuesT['rise'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tRise spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tRise spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall20']) -
             np.amin(valuesT['fall20'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tFall20 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tFall20 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall50']) -
             np.amin(valuesT['fall50'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tFall50 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tFall50 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall80']) -
             np.amin(valuesT['fall80'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tFall80 spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tFall80 spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['fall']) - np.amin(valuesT['fall'])) / self.tBit
     if span > spanThreshold:
-      print(f'  {Fore.RED}tFall spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tFall spans {span:.2f}b > {spanThreshold:.2f}b')
     span = (np.amax(valuesT['cross']) - np.amin(valuesT['cross'])) / self.tBit
     if span > spanThreshold and (m['yCrossP'] > 20 and m['yCrossP'] < 80):
-      print(f'  {Fore.RED}tCross spans {span:.2f}b > {spanThreshold:.2f}b')
+      print(f'{"":{indent}}{Fore.RED}tCross spans {span:.2f}b > {spanThreshold:.2f}b')
 
     if self.method == 'peak' or plot:
       valuesT['rise20'] = histogramDownsample(valuesT['rise20'], self.histNMax)
       componentsRise20 = fitGaussianMix(valuesT['rise20'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tRise20 has {len(componentsRise20)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tRise20 has {len(componentsRise20)} modes')
 
       valuesT['rise50'] = histogramDownsample(valuesT['rise50'], self.histNMax)
       componentsRise50 = fitGaussianMix(valuesT['rise50'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tRise50 has {len(componentsRise50)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tRise50 has {len(componentsRise50)} modes')
 
       valuesT['rise80'] = histogramDownsample(valuesT['rise80'], self.histNMax)
       componentsRise80 = fitGaussianMix(valuesT['rise80'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tRise80 has {len(componentsRise80)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tRise80 has {len(componentsRise80)} modes')
 
       valuesT['rise'] = histogramDownsample(valuesT['rise'], self.histNMax)
       componentsRise = fitGaussianMix(valuesT['rise'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tRise has {len(componentsRise)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tRise has {len(componentsRise)} modes')
 
       valuesT['fall20'] = histogramDownsample(valuesT['fall20'], self.histNMax)
       componentsFall20 = fitGaussianMix(valuesT['fall20'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tFall20 has {len(componentsFall20)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tFall20 has {len(componentsFall20)} modes')
 
       valuesT['fall50'] = histogramDownsample(valuesT['fall50'], self.histNMax)
       componentsFall50 = fitGaussianMix(valuesT['fall50'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tFall50 has {len(componentsFall50)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tFall50 has {len(componentsFall50)} modes')
 
       valuesT['fall80'] = histogramDownsample(valuesT['fall80'], self.histNMax)
       componentsFall80 = fitGaussianMix(valuesT['fall80'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tFall80 has {len(componentsFall80)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tFall80 has {len(componentsFall80)} modes')
 
       valuesT['fall'] = histogramDownsample(valuesT['fall'], self.histNMax)
       componentsFall = fitGaussianMix(valuesT['fall'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tFall has {len(componentsFall)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tFall has {len(componentsFall)} modes')
 
       valuesT['cross'] = histogramDownsample(valuesT['cross'], self.histNMax)
       componentsTCross = fitGaussianMix(valuesT['cross'], nMax=3)
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.CYAN}tCross has {len(componentsTCross)} modes')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}tCross has {len(componentsTCross)} modes')
 
     if self.method == 'peak':
       m["tRise20"] = gaussianMixCenter(componentsRise20)
@@ -1166,7 +1157,7 @@ class EyeDiagram:
 
     if self.mask:
       if printProgress:
-        print(f'  {elapsedStr(start)} {Fore.YELLOW}Checking mask for hits')
+        print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Checking mask for hits')
 
       if nThreads <= 1:
         output = [
@@ -1208,7 +1199,7 @@ class EyeDiagram:
       m['ber'] = m['offenderCount'] / m['nBits']
 
       if printProgress:
-        print(f'  {elapsedStr(start)} {Fore.YELLOW}Finding mask margin')
+        print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Finding mask margin')
 
       if nThreads <= 1:
         output = [
@@ -1347,23 +1338,24 @@ class EyeDiagram:
       m['maskMargin'] = None
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.GREEN}Complete measurement')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}Complete measurement')
 
-  def __generateImages(self, printProgress: bool = True,
+  def __generateImages(self, printProgress: bool = True, indent: int = 0,
                        nThreads: int = 1) -> None:
     '''!@brief Extract center positions of bits
 
     @param printProgress True will print progress statements. False will not
+    @param indent Base indentation for progress statements
     @param nThreads Specify number of threads to use
     '''
     start = datetime.datetime.now()
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.GREEN}Starting image generation')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}Starting image generation')
 
     heatMap = np.zeros((self.resolution, self.resolution), dtype=np.int32)
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.YELLOW}Layering bit waveforms')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Layering bit waveforms')
 
     if nThreads <= 1:
       output = [
@@ -1397,7 +1389,7 @@ class EyeDiagram:
       heatMap += o
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.YELLOW}Transforming into heatmap')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Transforming into heatmap')
 
     heatMap = heatMap.T[::-1, :]
     heatMap = heatMap.astype(np.float32)
@@ -1413,7 +1405,7 @@ class EyeDiagram:
     self.imageClean = Image.fromarray((255 * npImageClean).astype('uint8'))
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing grid')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Drawing grid')
 
     zero = int(
       ((0 - self.imageMin) / (self.imageMax - self.imageMin)) * self.resolution)
@@ -1451,7 +1443,7 @@ class EyeDiagram:
     if self.mask:
 
       if printProgress:
-        print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing mask')
+        print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Drawing mask')
 
       # Draw mask
       npImageMask = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
@@ -1469,7 +1461,7 @@ class EyeDiagram:
 
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.YELLOW}Drawing subset of hits and offending bit waveforms')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Drawing subset of hits and offending bit waveforms')
 
       # Draw hits and offending bit waveforms
       npImageHits = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
@@ -1493,7 +1485,7 @@ class EyeDiagram:
       self.imageHits = Image.fromarray((255 * npImageHits).astype('uint8'))
 
       if printProgress:
-        print(f'  {elapsedStr(start)} {Fore.YELLOW}Drawing mask at margin')
+        print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Drawing mask at margin')
 
       # Draw margin mask
       npImageMask = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
@@ -1509,7 +1501,7 @@ class EyeDiagram:
 
       if printProgress:
         print(
-          f'  {elapsedStr(start)} {Fore.YELLOW}Drawing worst offending bit waveform')
+          f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Drawing worst offending bit waveform')
 
       # Draw hits and offending bit waveforms
       npImageHits = np.zeros(npImageClean.shape, dtype=npImageClean.dtype)
@@ -1539,7 +1531,7 @@ class EyeDiagram:
       self.imageMargin = None
 
     if printProgress:
-      print(f'  {elapsedStr(start)} {Fore.GREEN}Complete image generation')
+      print(f'{"":{indent}}{elapsedStr(start)} {Fore.CYAN}Complete image generation')
 
   def __drawBits(self, image: np.ndarray, waveformIndex: int,
                  bitIndices: list[int]) -> None:
@@ -1604,46 +1596,49 @@ class EyeDiagram:
         rr, cc, val = trimImage(rr, cc, self.resolution, val=val)
         image[rr, cc, 3] = val + (1 - val) * image[rr, cc, 3]
 
-  def printMeasures(self) -> None:
-    '''!@brief Print measures to console'''
+  def printMeasures(self, indent: int = 0) -> None:
+    '''!@brief Print measures to console
+    
+    @param indent Base indentation for statements
+    '''
     if not self.calculated:
       raise Exception(
         'Eye diagram must be calculated before printing measures')
     print(
-      f'  yZero:        {Fore.CYAN}{metricPrefix(self.measures["yZero"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yZeroStdDev"], self.yUnit)}')
+      f'{"":{indent}}yZero:        {Fore.CYAN}{metricPrefix(self.measures["yZero"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yZeroStdDev"], self.yUnit)}')
     print(
-      f'  yCross:     {Fore.CYAN}{self.measures["yCrossP"]:6.2f} %   {Fore.BLUE}σ= {self.measures["yCrossPStdDev"]:6.2f} %')
+      f'{"":{indent}}yCross:     {Fore.CYAN}{self.measures["yCrossP"]:6.2f} %   {Fore.BLUE}σ= {self.measures["yCrossPStdDev"]:6.2f} %')
     print(
-      f'  yOne:         {Fore.CYAN}{metricPrefix(self.measures["yOne"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yOneStdDev"], self.yUnit)}')
-    print(f'  SNR:           {Fore.CYAN}{self.measures["snr"]:6.2f}')
+      f'{"":{indent}}yOne:         {Fore.CYAN}{metricPrefix(self.measures["yOne"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yOneStdDev"], self.yUnit)}')
+    print(f'{"":{indent}}SNR:           {Fore.CYAN}{self.measures["snr"]:6.2f}')
     print(
-      f'  eyeAmplitude: {Fore.CYAN}{metricPrefix(self.measures["eyeAmplitude"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["eyeAmplitudeStdDev"], self.yUnit)}')
+      f'{"":{indent}}eyeAmplitude: {Fore.CYAN}{metricPrefix(self.measures["eyeAmplitude"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["eyeAmplitudeStdDev"], self.yUnit)}')
     print(
-      f'  eyeHeight:    {Fore.CYAN}{metricPrefix(self.measures["eyeHeight"], self.yUnit)}      {Fore.BLUE}{self.measures["eyeHeightP"]:6.2f} % ')
+      f'{"":{indent}}eyeHeight:    {Fore.CYAN}{metricPrefix(self.measures["eyeHeight"], self.yUnit)}      {Fore.BLUE}{self.measures["eyeHeightP"]:6.2f} % ')
     print(
-      f'  tBit:         {Fore.CYAN}{metricPrefix(self.measures["tBit"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tBitStdDev"], self.tUnit)}')
+      f'{"":{indent}}tBit:         {Fore.CYAN}{metricPrefix(self.measures["tBit"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tBitStdDev"], self.tUnit)}')
     print(
-      f'  fBit:         {Fore.CYAN}{metricPrefix(self.measures["fBit"], self.tUnit)}⁻¹ {Fore.BLUE}σ={metricPrefix(self.measures["fBitStdDev"], self.tUnit)}⁻¹')
+      f'{"":{indent}}fBit:         {Fore.CYAN}{metricPrefix(self.measures["fBit"], self.tUnit)}⁻¹ {Fore.BLUE}σ={metricPrefix(self.measures["fBitStdDev"], self.tUnit)}⁻¹')
     print(
-      f'  tLow:         {Fore.CYAN}{metricPrefix(self.measures["tLow"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tLowStdDev"], self.tUnit)}')
+      f'{"":{indent}}tLow:         {Fore.CYAN}{metricPrefix(self.measures["tLow"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tLowStdDev"], self.tUnit)}')
     print(
-      f'  tHigh:        {Fore.CYAN}{metricPrefix(self.measures["tHigh"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tHighStdDev"], self.tUnit)}')
+      f'{"":{indent}}tHigh:        {Fore.CYAN}{metricPrefix(self.measures["tHigh"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tHighStdDev"], self.tUnit)}')
     print(
-      f'  tRise:        {Fore.CYAN}{metricPrefix(self.measures["tRise"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tRiseStdDev"], self.tUnit)}')
+      f'{"":{indent}}tRise:        {Fore.CYAN}{metricPrefix(self.measures["tRise"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tRiseStdDev"], self.tUnit)}')
     print(
-      f'  tFall:        {Fore.CYAN}{metricPrefix(self.measures["tFall"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tFallStdDev"], self.tUnit)}')
+      f'{"":{indent}}tFall:        {Fore.CYAN}{metricPrefix(self.measures["tFall"], self.tUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["tFallStdDev"], self.tUnit)}')
     print(
-      f'  tJitter:      {Fore.CYAN}{metricPrefix(self.measures["tJitterPP"], self.tUnit)}.pp  {Fore.BLUE}{metricPrefix(self.measures["tJitterRMS"], self.tUnit)}.rms')
+      f'{"":{indent}}tJitter:      {Fore.CYAN}{metricPrefix(self.measures["tJitterPP"], self.tUnit)}.pp  {Fore.BLUE}{metricPrefix(self.measures["tJitterRMS"], self.tUnit)}.rms')
     print(
-      f'  eyeWidth:     {Fore.CYAN}{metricPrefix(self.measures["eyeWidth"], self.tUnit)}      {Fore.BLUE}{self.measures["eyeWidthP"]:6.2f} %')
+      f'{"":{indent}}eyeWidth:     {Fore.CYAN}{metricPrefix(self.measures["eyeWidth"], self.tUnit)}      {Fore.BLUE}{self.measures["eyeWidthP"]:6.2f} %')
     print(
-      f'  dutyCycleDist: {Fore.CYAN}{self.measures["dcd"]:6.2f} %   {Fore.BLUE}σ= {self.measures["dcdStdDev"]:6.2f} %')
+      f'{"":{indent}}dutyCycleDist: {Fore.CYAN}{self.measures["dcd"]:6.2f} %   {Fore.BLUE}σ= {self.measures["dcdStdDev"]:6.2f} %')
     print(
-      f'  nBits:        {Fore.CYAN}{metricPrefix(self.measures["nBits"], "b")}')
+      f'{"":{indent}}nBits:        {Fore.CYAN}{metricPrefix(self.measures["nBits"], "b")}')
     if self.mask:
       print(
-        f'  nBadBits:     {Fore.CYAN}{metricPrefix(self.measures["offenderCount"], "b")}       {Fore.BLUE}{self.measures["ber"]:9.2e}')
-      print(f'  maskMargin:    {Fore.CYAN}{self.measures["maskMargin"]:5.1f}%')
+        f'{"":{indent}}nBadBits:     {Fore.CYAN}{metricPrefix(self.measures["offenderCount"], "b")}       {Fore.BLUE}{self.measures["ber"]:9.2e}')
+      print(f'{"":{indent}}maskMargin:    {Fore.CYAN}{self.measures["maskMargin"]:5.1f}%')
 
   def getMeasures(self) -> dict:
     '''!@brief Get measures
@@ -1994,7 +1989,7 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
         # Don't include phase offset in previous phase error
         if evenEdge:
           prevPhaseError = phaseError + phase
-      
+
       period = delay + phase
       if period < tDelta:
         raise Exception(
