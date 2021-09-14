@@ -7,6 +7,7 @@ from .equipment import Equipment
 class Scope(Equipment):
 
   settings = [
+    'SAMPLE_RATE',
     'TIME_SCALE',
     'TIME_OFFSET',
     'TIME_POINTS',
@@ -44,13 +45,13 @@ class Scope(Equipment):
     'SINGLE_FORCE'
   ]
 
-  def configureChannel(self, channel: str, setting: str, value) -> str:
+  def configureChannel(self, channel: str, setting: str, value) -> object:
     '''!@brief Configure a channel setting to a new value
 
     @param channel The channel to configure (see self.channels)
     @param setting The setting to change (see self.channelSettings)
     @param value The value to change to
-    @return str Setting change validation
+    @return object Setting change validation (most likely float)
     '''
     raise Exception('configureChannel called on base Scope')
 

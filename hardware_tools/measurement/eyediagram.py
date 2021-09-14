@@ -135,6 +135,22 @@ class MaskDecagon(Mask):
       y4 = factor * 0.5 + (1 - factor) * self.y4
     return MaskDecagon(x1, x2, x3, y1, y2, y3, y4)
 
+  def toDict(self) -> dict:
+    '''!@brief Get a dictionary representation of the Mask
+
+    @return dict
+    '''
+    return {
+      'type': 'decagon',
+      'x1': self.x1,
+      'x2': self.x2,
+      'x3': self.x3,
+      'y1': self.y1,
+      'y2': self.y2,
+      'y3': self.y3,
+      'y4': self.y4
+    }
+
 class EyeDiagram:
   def __init__(self, waveforms: np.ndarray, waveformInfo: dict, mask: Mask = None, resolution: int = 2000,
                nBitsMax: int = 5, method: str = 'average', resample: int = 50, yLevels: list = None, hysteresis: float = 0.1, tBit: float = None, pllBandwidth: float = 100e3) -> None:
@@ -400,7 +416,6 @@ class EyeDiagram:
     if nThreads <= 1:
       outputFalse = [
           _runnerClockRecovery(self.waveformEdges[i],
-                               self.waveforms[i][0][0],
                                self.tDelta,
                                tBit,
                                self.pllBandwidth,
@@ -408,7 +423,6 @@ class EyeDiagram:
               self.waveforms.shape[0])]
       outputTrue = [
           _runnerClockRecovery(self.waveformEdges[i],
-                               self.waveforms[i][0][0],
                                self.tDelta,
                                tBit,
                                self.pllBandwidth,
@@ -419,7 +433,6 @@ class EyeDiagram:
         resultsFalse = [p.apply_async(
             _runnerClockRecovery,
             args=[self.waveformEdges[i],
-                  self.waveforms[i][0][0],
                   self.tDelta,
                   tBit,
                   self.pllBandwidth,
@@ -428,7 +441,6 @@ class EyeDiagram:
         resultsTrue = [p.apply_async(
             _runnerClockRecovery,
             args=[self.waveformEdges[i],
-                  self.waveforms[i][0][0],
                   self.tDelta,
                   tBit,
                   self.pllBandwidth,
@@ -452,6 +464,7 @@ class EyeDiagram:
     self.clockEdges = []
     periods = []
     tie = []
+    nBits = []
     phaseErrors = []
     offsetErrors = []
     delayErrors = []
@@ -462,13 +475,16 @@ class EyeDiagram:
       self.clockEdges.append(o[0])
       periods.extend(o[1])
       tie.extend(o[2])
+      nBits.extend(o[3])
       if plot:
-        phases.extend(o[3])
-        phaseErrors.extend(o[4])
-        offsets.extend(o[5])
-        offsetErrors.extend(o[6])
-        delays.extend(o[7])
-        delayErrors.extend(o[8])
+        phases.extend(o[4])
+        phaseErrors.extend(o[5])
+        offsets.extend(o[6])
+        offsetErrors.extend(o[7])
+        delays.extend(o[8])
+        delayErrors.extend(o[9])
+
+    self.bitDistribution = binExact(nBits)
 
     self.tBit = np.average(periods)
     self.tBitStdDev = np.std(periods)
@@ -605,6 +621,18 @@ class EyeDiagram:
     for b in self.bitCentersT:
       nBits += len(b)
     m['nBits'] = nBits
+
+    m['maxStateLength'] = max(self.bitDistribution[0])
+    m['averageStateLength'] = 0
+    m['longStateP'] = 0
+    nStates = 0
+    for length, count in zip(*self.bitDistribution):
+      m['averageStateLength'] += length * count
+      if length != 1:
+        m['longStateP'] += count
+      nStates += count
+    m['averageStateLength'] = m['averageStateLength'] / nStates
+    m['longStateP'] = 100 * m['longStateP'] / nStates
 
     if printProgress:
       print(
@@ -1598,7 +1626,7 @@ class EyeDiagram:
 
   def printMeasures(self, indent: int = 0) -> None:
     '''!@brief Print measures to console
-    
+
     @param indent Base indentation for statements
     '''
     if not self.calculated:
@@ -1610,7 +1638,8 @@ class EyeDiagram:
       f'{"":{indent}}yCross:     {Fore.CYAN}{self.measures["yCrossP"]:6.2f} %   {Fore.BLUE}σ= {self.measures["yCrossPStdDev"]:6.2f} %')
     print(
       f'{"":{indent}}yOne:         {Fore.CYAN}{metricPrefix(self.measures["yOne"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["yOneStdDev"], self.yUnit)}')
-    print(f'{"":{indent}}SNR:           {Fore.CYAN}{self.measures["snr"]:6.2f}')
+    print(
+      f'{"":{indent}}SNR:           {Fore.CYAN}{self.measures["snr"]:6.2f}')
     print(
       f'{"":{indent}}eyeAmplitude: {Fore.CYAN}{metricPrefix(self.measures["eyeAmplitude"], self.yUnit)}   {Fore.BLUE}σ={metricPrefix(self.measures["eyeAmplitudeStdDev"], self.yUnit)}')
     print(
@@ -1638,7 +1667,8 @@ class EyeDiagram:
     if self.mask:
       print(
         f'{"":{indent}}nBadBits:     {Fore.CYAN}{metricPrefix(self.measures["offenderCount"], "b")}       {Fore.BLUE}{self.measures["ber"]:9.2e}')
-      print(f'{"":{indent}}maskMargin:    {Fore.CYAN}{self.measures["maskMargin"]:5.1f}%')
+      print(
+        f'{"":{indent}}maskMargin:    {Fore.CYAN}{self.measures["maskMargin"]:5.1f}%')
 
   def getMeasures(self) -> dict:
     '''!@brief Get measures
@@ -1672,6 +1702,9 @@ class EyeDiagram:
     offenderCount:                    number of bits that hit the mask,  units=unitless
     ber:                              offenderCount / nBits,  units=unitless
     maskMargin:                       100 * largest mask adjust without hits,  units=percent
+    maxStateLength:                   largest number of consecutive bits with same state
+    averageStateLength:               average number of consecutive bits with same state
+    longStateP:                       percent of consecutive bits with same state longer than 1
 
     @return dict Dictionary of measured values
     '''
@@ -1892,21 +1925,21 @@ def _runnerCleanEdges(
         skip = True
   return edgesRise, edgesFall
 
-def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
-                         tBit: float, pllBandwidth: float = 100e3, risingEdgesLead: bool = None, debug: bool = False) -> tuple[list, list]:
+def _runnerClockRecovery(edges: tuple[list, list], tDelta: float,
+                         tBit: float, pllBandwidth: float = 100e3, risingEdgesLead: bool = None, debug: bool = False) -> tuple[list, list, list]:
   '''!@brief Runner to recover the clock from edge transitions
 
   @param edges tuple of rising edges, falling edges
-  @param tZero Time for the first sample
   @param tDelta Time between samples
   @param tBit Time for a single bit (initial pll settings)
   @param pllBandwidth -3dB cutoff frequency of pll feedback (1st order low pass)
   @param risingEdgesLead True will ensure even edges are rising, False will ensure even edges are falling, None will not check
   @param debug True will return more data for debugging purposes, see return, False will not
-  @return tuple[list[float]...] (clockEdges, periods, tie, [phases], [phaseErrors], [offsets], [offsetErrors], [delays], [delayErrors])
+  @return tuple[list[float]...] (clockEdges, periods, tie, nBits, [phases], [phaseErrors], [offsets], [offsetErrors], [delays], [delayErrors])
       clockEdges is a list of clock edges, at sampling point
       periods is a list of period for each edge
       tie is a list of Time Interval Errors for each data edge (not clock edge)
+      nBits is a list of bits for each data edge (not clock edge) aka number of same state periods
       if debug is True:
       phases, offsets, delays are lists of the PLL parameters for each clockEdge
       phaseErrors, offsetErrors, delayErrors are lists of the PLL error parameters for each clockEdge
@@ -1925,6 +1958,7 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
   clockEdges = []
   ties = []
   periods = []
+  nBits = []
 
   t = edges[0]
   delay = tBit
@@ -1953,6 +1987,7 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
   # Adjust offset on odd edges
   evenEdge = True
   for edge in edges:
+    nBitsSame = 0
     if evenEdge:
       nBitsEven = 2
     else:
@@ -2009,7 +2044,9 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
       idealEdge += tBit
       edgeError = t - edge
       nBitsEven += 1
+      nBitsSame += 1
     evenEdge = not evenEdge
+    nBits.append(nBitsSame)
 
   # Compensate TIE for wrong tBit
   ties = np.array(ties)
@@ -2024,8 +2061,8 @@ def _runnerClockRecovery(edges: tuple[list, list], tZero: float, tDelta: float,
       alpha * tiesFiltered[i - 1] + alpha * (ties[i, 1] - ties[i - 1, 1]))
 
   if debug:
-    return clockEdges, periods, tiesFiltered, phases, phaseErrors, offsets, offsetErrors, delays, delayErrors
-  return clockEdges, periods, tiesFiltered
+    return clockEdges, periods, tiesFiltered, nBits, phases, phaseErrors, offsets, offsetErrors, delays, delayErrors
+  return clockEdges, periods, tiesFiltered, nBits
 
 
 def _runnerBitExtract(clockEdges: list, tZero: float,

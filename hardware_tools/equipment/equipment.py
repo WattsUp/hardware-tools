@@ -51,12 +51,12 @@ class Equipment:
     '''
     return self.instrument.read_raw()
 
-  def configure(self, setting: str, value) -> str:
+  def configure(self, setting: str, value) -> object:
     '''!@brief Configure a setting to a new value
 
     @param setting The setting to change (see self.settings)
     @param value The value to change to
-    @return str Setting change validation
+    @return object Setting change validation (most likely a float)
     '''
     raise Exception('configure called on base Equipment')
 

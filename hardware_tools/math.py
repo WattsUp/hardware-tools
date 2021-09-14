@@ -26,7 +26,8 @@ def interpolateSinc(x, y, xNew) -> np.ndarray:
   yNew = np.dot(y, np.sinc(sincM / T))
   return yNew
 
-def metricPrefix(value: float, unit: str = '', formatSpecifier: str = '6.1f', formatSpecifierSmall: str = '6.3f', threshold: float=2) -> str:
+def metricPrefix(value: float, unit: str = '', formatSpecifier: str = '6.1f',
+                 formatSpecifierSmall: str = '6.3f', threshold: float = 2) -> str:
   '''!@brief Format a value using metric prefixes to constrain string length
 
   @param value Value to format
@@ -63,10 +64,29 @@ def elapsedStr(start: datetime.datetime,
   '''
   if end is None:
     end = datetime.datetime.now()
-  d = end - start
-  s = d.total_seconds()
-  minutes, seconds = divmod(s, 60)
-  return f"{int(minutes):02}:{seconds:05.2f}"
+  return timeStr((end - start).total_seconds())
+
+def timeStr(duration: float, subSeconds: bool = True,
+            hours: bool = True) -> str:
+  '''!@brief Format time as HH:MM:SS.ss
+
+  @param duration Time in seconds
+  @param subSeconds True will include time less than a second '.ss', False will not
+  @param hours True will include hours 'HH:', False will not
+  @return str '[HH:]MM:SS[.ss]'
+  '''
+  minutes, seconds = divmod(duration, 60)
+  if hours:
+    hours, minutes = divmod(minutes, 60)
+    buf = f'{int(hours):02}:'
+  else:
+    buf = f''
+  buf += f'{int(minutes):02}:'
+  if subSeconds:
+    buf += f'{seconds:05.2f}'
+  else:
+    buf += f'{int(seconds):02}'
+  return buf
 
 class Point:
   def __init__(self, x, y) -> None:
@@ -292,7 +312,8 @@ def binExact(values: Iterable) -> tuple[list, list]:
   counts = [counts[b] for b in bins]
   return bins, counts
 
-def histogramDownsample(values: np.array, nMax:int=50e3, binCount=500) -> np.array:
+def histogramDownsample(values: np.array, nMax: int = 50e3,
+                        binCount=500) -> np.array:
   '''!@ Reduce the number of samples to at most nMax. Preseves sample frequency
 
   Bins the values, scale the counts to total of nMax, then undoes the binning.
@@ -385,9 +406,10 @@ def layerNumpyImageRGBA(below: np.ndarray, above: np.ndarray) -> np.ndarray:
   out[:, :, 3] = alphaOut
   return out
 
-def trimImage(rr: np.ndarray, cc:np.ndarray, size:int, val:np.ndarray=None)-> Union[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]:
+def trimImage(rr: np.ndarray, cc: np.ndarray, size: int,
+              val: np.ndarray = None) -> Union[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]:
   '''!@brief Trim row and column selectors to image size, discards out of bounds
-  
+
   @param rr Row indices
   @param cc Column indices
   @param size Resolution of the image
@@ -410,7 +432,7 @@ def trimImage(rr: np.ndarray, cc:np.ndarray, size:int, val:np.ndarray=None)-> Un
 
 def imageToBase64Image(image: Image) -> bytes:
   '''!@brief Convert a PIL.Image to base64 encoded PNG
-  
+
   @param image Image to convert
   @return bytes base64 encoded PNG image
   '''

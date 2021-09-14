@@ -41,33 +41,40 @@ class MSO4000(Scope):
       'CLEARMENU'
     ])
 
-  def configure(self, setting: str, value) -> str:
+  def configure(self, setting: str, value) -> object:
     setting = setting.upper()
     if setting not in self.settings:
       raise Exception(
         f'{self.name}@{self.addr} cannot configure setting \'{setting}\'')
 
-    if setting == 'TIME_SCALE':
+    if setting == 'SAMPLE_RATE':
+      try:
+        sampleRate = value[0]
+        nPoints = value[1]
+      except Exception:
+        raise Exception(
+          'SAMPLE_RATE expects value to be (sampleRate, nPoints)')
+      nPoints = self.configure("TIME_POINTS", nPoints)
+      timePerDiv = (nPoints / sampleRate) / 10
+      self.configure("TIME_SCALE", timePerDiv)
+      return float(self.ask(f'HORIZONTAL:SAMPLERATE?'))
+    elif setting == 'TIME_SCALE':
       self.send(f'HORIZONTAL:SCALE {float(value):.6E}')
-      value = self.ask(f'HORIZONTAL:SCALE?')
-      return f'{setting}={value}s'
+      return float(self.ask(f'HORIZONTAL:SCALE?'))
     elif setting == 'TIME_OFFSET':
       self.send(f'HORIZONTAL:DELAY:MODE ON')
       self.send(f'HORIZONTAL:DELAY:TIME {float(value):.6E}')
-      value = self.ask(f'HORIZONTAL:DELAY:TIME?')
-      return f'{setting}={value}s'
+      return float(self.ask(f'HORIZONTAL:DELAY:TIME?'))
     elif setting == 'TIME_POINTS':
       self.send(f'HORIZONTAL:RECORDLENGTH {int(value)}')
-      value = self.ask(f'HORIZONTAL:RECORDLENGTH?')
-      return f'{setting}={value}pts'
+      return int(self.ask(f'HORIZONTAL:RECORDLENGTH?'))
     elif setting == 'TRIGGER_MODE':
       value = value.upper()
       if value not in ['AUTO', 'NORM', 'NORMAL']:
         raise Exception(
           f'{self.name}@{self.addr} cannot set trigger mode \'{value}\'')
       self.send(f'TRIGGER:A:MODE {value}')
-      value = self.ask(f'TRIGGER:A:MODE?')
-      return f'{setting}={value}'
+      return self.ask(f'TRIGGER:A:MODE?')
     elif setting == 'TRIGGER_SOURCE':
       value = value.upper()
       if value not in self.channels:
@@ -75,8 +82,7 @@ class MSO4000(Scope):
           f'{self.name}@{self.addr} cannot set trigger off of chanel \'{value}\'')
       self.send(f'TRIGGER:A:TYPE EDGE')
       self.send(f'TRIGGER:A:EDGE:SOURCE {value}')
-      value = self.ask(f'TRIGGER:A:EDGE:SOURCE?')
-      return f'{setting}={value}'
+      return self.ask(f'TRIGGER:A:EDGE:SOURCE?')
     elif setting == 'TRIGGER_COUPLING':
       value = value.upper()
       if value not in ['AC', 'DC', 'HFR', 'HFREJ',
@@ -85,8 +91,7 @@ class MSO4000(Scope):
           f'{self.name}@{self.addr} cannot set trigger coupling to \'{value}\'')
       self.send(f'TRIGGER:A:TYPE EDGE')
       self.send(f'TRIGGER:A:EDGE:COUPling {value}')
-      value = self.ask(f'TRIGGER:A:EDGE:COUPling?')
-      return f'{setting}={value}'
+      return self.ask(f'TRIGGER:A:EDGE:COUPling?')
     elif setting == 'TRIGGER_POLARITY':
       value = value.upper()
       if value not in ['RIS', 'RISE', 'FALL', 'EITH', 'EITHER']:
@@ -94,8 +99,7 @@ class MSO4000(Scope):
           f'{self.name}@{self.addr} cannot set trigger polarity to \'{value}\'')
       self.send(f'TRIGGER:A:TYPE EDGE')
       self.send(f'TRIGGER:A:EDGE:SLOPE {value}')
-      value = self.ask(f'TRIGGER:A:EDGE:SLOPE?')
-      return f'{setting}={value}'
+      return self.ask(f'TRIGGER:A:EDGE:SLOPE?')
     elif setting == 'ACQUIRE_MODE':
       value = value.upper()
       if value not in ['SAM', 'SAMPLE', 'PEAK', 'PEAKDETECT',
@@ -103,13 +107,12 @@ class MSO4000(Scope):
         raise Exception(
           f'{self.name}@{self.addr} cannot set acquire mode to \'{value}\'')
       self.send(f'ACQUIRE:MODE {value}')
-      value = self.ask(f'ACQUIRE:MODE?')
-      return f'{setting}={value}'
+      return self.ask(f'ACQUIRE:MODE?')
 
     raise Exception(
       f'{self.name}@{self.addr} cannot configure setting \'{setting}\'')
 
-  def configureChannel(self, channel: str, setting: str, value) -> str:
+  def configureChannel(self, channel: str, setting: str, value) -> object:
     setting = setting.upper()
     if setting not in self.channelSettings:
       raise Exception(
@@ -122,56 +125,46 @@ class MSO4000(Scope):
     if setting == 'SCALE':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:SCALE {float(value):.6E}')
-        value = self.ask(f'{channel}:SCALE?')
-        return f'{channel}.{setting}={value}'
+        return float(self.ask(f'{channel}:SCALE?'))
     elif setting == 'POSITION':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:POSITION {float(value):.6E}')
-        value = self.ask(f'{channel}:POSITION?')
-        return f'{channel}.{setting}={value}'
+        return float(self.ask(f'{channel}:POSITION?'))
     elif setting == 'OFFSET':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:OFFSET {float(value):.6E}')
-        value = self.ask(f'{channel}:OFFSET?')
-        return f'{channel}.{setting}={value}'
+        return float(self.ask(f'{channel}:OFFSET?'))
     elif setting == 'LABEL':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         value = value.encode('ascii', errors='ignore').decode()
         self.send(f'{channel}:LABEL \'{value[:30]}\'')
-        value = self.ask(f'{channel}:LABEL?')
-        return f'{channel}.{setting}={value}'
+        return self.ask(f'{channel}:LABEL?')
     elif setting == 'BANDWIDTH':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         if isinstance(value, str):
           self.send(f'{channel}:BANDWIDTH {value}')
         else:
           self.send(f'{channel}:BANDWIDTH {float(value):.6E}')
-        value = self.ask(f'{channel}:BANDWIDTH?')
-        return f'{channel}.{setting}={value}'
+        return float(self.ask(f'{channel}:BANDWIDTH?'))
     elif setting == 'ACTIVE':
       self.send(f'SELECT:{channel} {value}')
-      value = self.ask(f'SELECT:{channel}?')
-      return f'{channel}.{setting}={value}'
+      return self.ask(f'SELECT:{channel}?')
     elif setting == 'TERMINATION':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:TERMINATION {value}')
-        value = self.ask(f'{channel}:TERMINATION?')
-        return f'{channel}.{setting}={value}'
+        return self.ask(f'{channel}:TERMINATION?')
     elif setting == 'INVERT':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:INVERT {value}')
-        value = self.ask(f'{channel}:INVERT?')
-        return f'{channel}.{setting}={value}'
+        return self.ask(f'{channel}:INVERT?')
     elif setting == 'PROBE_ATTENUATION':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:PROBE:GAIN {1 / float(value):.6E}')
-        value = self.ask(f'{channel}:PROBE:GAIN?')
-        return f'{channel}.PROBE_GAIN={value}'
+        return 1 / float(self.ask(f'{channel}:PROBE:GAIN?'))
     elif setting == 'PROBE_GAIN':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         self.send(f'{channel}:PROBE:GAIN {float(value):.6E}')
-        value = self.ask(f'{channel}:PROBE:GAIN?')
-        return f'{channel}.{setting}={value}'
+        return float(self.ask(f'{channel}:PROBE:GAIN?'))
     elif setting == 'COUPLING':
       if channel in ['CH1', 'CH2', 'CH3', 'CH4']:
         value = value.upper()
@@ -180,12 +173,10 @@ class MSO4000(Scope):
           raise Exception(
             f'{self.name}@{self.addr} cannot set chanel \'{channel}\' coupling to \'{value}\'')
         self.send(f'{channel}:COUPLING {value}')
-        value = self.ask(f'{channel}:COUPLING?')
-        return f'{channel}.{setting}={value}'
+        return self.ask(f'{channel}:COUPLING?')
     elif setting == 'TRIGGER_LEVEL':
       self.send(f'TRIGGER:A:LEVEL:{channel} {float(value):.6E}')
-      value = self.ask(f'TRIGGER:A:LEVEL:{channel}?')
-      return f'{channel}.{setting}={value}'
+      return float(self.ask(f'TRIGGER:A:LEVEL:{channel}?'))
 
     raise Exception(
       f'{self.name}@{self.addr} cannot configure chanel \'{channel}\' setting \'{setting}\'')
