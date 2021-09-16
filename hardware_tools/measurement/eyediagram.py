@@ -868,25 +868,49 @@ class EyeDiagram:
       valuesT['cross'] = np.array(valuesT['cross'])
       valuesT['cross'] = valuesT['cross'][~np.isnan(valuesT['cross'])].tolist()
 
+    edgeNan = np.count_nonzero(np.isnan(valuesT['rise']))
+    edgeNan += np.count_nonzero(np.isnan(valuesT['fall']))
+    if edgeNan > 0:
+      edges = len(valuesT['rise'])
+      edges += len(valuesT['fall'])
+      print(
+        f'{"":{indent}}{Fore.RED}{edgeNan}/{edges}={edgeNan/edges *100:.2f}% bits did not reach 0.2UA or 0.8UA')
+      valuesT['rise'] = np.array(valuesT['rise'])
+      valuesT['rise'] = valuesT['rise'][~np.isnan(valuesT['rise'])].tolist()
+      valuesT['fall'] = np.array(valuesT['fall'])
+      valuesT['fall'] = valuesT['fall'][~np.isnan(valuesT['fall'])].tolist()
+    valuesT['rise20'] = np.array(valuesT['rise20'])
+    valuesT['rise20'] = valuesT['rise20'][~np.isnan(valuesT['rise20'])].tolist()
+    valuesT['rise50'] = np.array(valuesT['rise50'])
+    valuesT['rise50'] = valuesT['rise50'][~np.isnan(valuesT['rise50'])].tolist()
+    valuesT['rise80'] = np.array(valuesT['rise80'])
+    valuesT['rise80'] = valuesT['rise80'][~np.isnan(valuesT['rise80'])].tolist()
+    valuesT['fall20'] = np.array(valuesT['fall20'])
+    valuesT['fall20'] = valuesT['fall20'][~np.isnan(valuesT['fall20'])].tolist()
+    valuesT['fall50'] = np.array(valuesT['fall50'])
+    valuesT['fall50'] = valuesT['fall50'][~np.isnan(valuesT['fall50'])].tolist()
+    valuesT['fall80'] = np.array(valuesT['fall80'])
+    valuesT['fall80'] = valuesT['fall80'][~np.isnan(valuesT['fall80'])].tolist()
+
     if self.method == 'average':
-      m["tRise20"] = np.average(valuesT['rise20'])
-      m["tRise50"] = np.average(valuesT['rise50'])
-      m["tRise80"] = np.average(valuesT['rise80'])
-      m["tRise"] = np.average(valuesT['rise'])
-      m["tFall20"] = np.average(valuesT['fall20'])
-      m["tFall50"] = np.average(valuesT['fall50'])
-      m["tFall80"] = np.average(valuesT['fall80'])
-      m["tFall"] = np.average(valuesT['fall'])
-      m["tCross"] = np.average(valuesT['cross'])
-    m["tRise20StdDev"] = np.std(valuesT['rise20'])
-    m["tRise50StdDev"] = np.std(valuesT['rise50'])
-    m["tRise80StdDev"] = np.std(valuesT['rise80'])
-    m["tRiseStdDev"] = np.std(valuesT['rise'])
-    m["tFall20StdDev"] = np.std(valuesT['fall20'])
-    m["tFall50StdDev"] = np.std(valuesT['fall50'])
-    m["tFall80StdDev"] = np.std(valuesT['fall80'])
-    m["tFallStdDev"] = np.std(valuesT['fall'])
-    m["tCrossStdDev"] = np.std(valuesT['cross'])
+      m['tRise20'] = np.average(valuesT['rise20'])
+      m['tRise50'] = np.average(valuesT['rise50'])
+      m['tRise80'] = np.average(valuesT['rise80'])
+      m['tRise'] = np.average(valuesT['rise'])
+      m['tFall20'] = np.average(valuesT['fall20'])
+      m['tFall50'] = np.average(valuesT['fall50'])
+      m['tFall80'] = np.average(valuesT['fall80'])
+      m['tFall'] = np.average(valuesT['fall'])
+      m['tCross'] = np.average(valuesT['cross'])
+    m['tRise20StdDev'] = np.std(valuesT['rise20'])
+    m['tRise50StdDev'] = np.std(valuesT['rise50'])
+    m['tRise80StdDev'] = np.std(valuesT['rise80'])
+    m['tRiseStdDev'] = np.std(valuesT['rise'])
+    m['tFall20StdDev'] = np.std(valuesT['fall20'])
+    m['tFall50StdDev'] = np.std(valuesT['fall50'])
+    m['tFall80StdDev'] = np.std(valuesT['fall80'])
+    m['tFallStdDev'] = np.std(valuesT['fall'])
+    m['tCrossStdDev'] = np.std(valuesT['cross'])
 
     spanThreshold = 0.25
     span = (np.amax(valuesT['rise20']) -
@@ -2249,23 +2273,26 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
     if (waveformY[cY] > 0.5):
       iMax = sliceCenterStart + np.argmax(yCenter)
       if y[iMax] < 0.8:
-        errorStr = 'Waveform does not reach 80%\n'
-        errorStr += f'  Waveform Index: {waveformI}\n'
-        errorStr += f'  i: {i}\n'
-        errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
-        raise WaveformException(errorStr, waveformI, i)
-      t, i80 = getCrossing(tList, y, iMax, 0.8)
+        # errorStr = 'Waveform does not reach 80%\n'
+        # errorStr += f'  Waveform Index: {waveformI}\n'
+        # errorStr += f'  i: {i}\n'
+        # errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
+        # raise WaveformException(errorStr, waveformI, i)
+        t = tList[iMax]
+        i80 = iMax
+      else:
+        t, i80 = getCrossing(tList, y, iMax, 0.8)
       rise80 = t + cT
       valuesRise80.append(rise80)
       t, i50 = getCrossing(tList, y, i80, 0.5)
       valuesRise50.append(t + cT)
       t, i20 = getCrossing(tList, y, i50, 0.2)
-      if np.isnan(t):
-        errorStr = 'Waveform does not reach 20%\n'
-        errorStr += f'  Waveform Index: {waveformI}\n'
-        errorStr += f'  i: {i}\n'
-        errorStr += f'  yMax: {metricPrefix(y[iMin])}\n'
-        raise WaveformException(errorStr, waveformI, i)
+      # if np.isnan(t):
+      #   errorStr = 'Waveform does not reach 20%\n'
+      #   errorStr += f'  Waveform Index: {waveformI}\n'
+      #   errorStr += f'  i: {i}\n'
+      #   errorStr += f'  yMax: {metricPrefix(y[iMin])}\n'
+      #   raise WaveformException(errorStr, waveformI, i)
       rise20 = t + cT
       valuesRise20.append(rise20)
       valuesRise.append(rise80 - rise20)
@@ -2284,23 +2311,26 @@ def _runnerCollectValuesT(waveformY: np.ndarray, bitCentersT: list[float], bitCe
     else:
       iMin = sliceCenterStart + np.argmin(yCenter)
       if y[iMin] > 0.2:
-        errorStr = 'Waveform does not reach 20%\n'
-        errorStr += f'  Waveform Index: {waveformI}\n'
-        errorStr += f'  i: {i}\n'
-        errorStr += f'  yMax: {metricPrefix(y[iMin])}\n'
-        raise WaveformException(errorStr, waveformI, i)
-      t, i20 = getCrossing(tList, y, iMin, 0.2)
+        # errorStr = 'Waveform does not reach 20%\n'
+        # errorStr += f'  Waveform Index: {waveformI}\n'
+        # errorStr += f'  i: {i}\n'
+        # errorStr += f'  yMax: {metricPrefix(y[iMin])}\n'
+        # raise WaveformException(errorStr, waveformI, i)
+        t = tList[iMin]
+        i20 = iMin
+      else:
+        t, i20 = getCrossing(tList, y, iMin, 0.2)
       fall20 = t + cT
       valuesFall20.append(fall20)
       t, i50 = getCrossing(tList, y, i20, 0.5)
       valuesFall50.append(t + cT)
       t, i80 = getCrossing(tList, y, i50, 0.8)
-      if np.isnan(t):
-        errorStr = 'Waveform does not reach 80%\n'
-        errorStr += f'  Waveform Index: {waveformI}\n'
-        errorStr += f'  i: {i}\n'
-        errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
-        raise WaveformException(errorStr, waveformI, i)
+      # if np.isnan(t):
+      #   errorStr = 'Waveform does not reach 80%\n'
+      #   errorStr += f'  Waveform Index: {waveformI}\n'
+      #   errorStr += f'  i: {i}\n'
+      #   errorStr += f'  yMax: {metricPrefix(y[iMax])}\n'
+      #   raise WaveformException(errorStr, waveformI, i)
       fall80 = t + cT
       valuesFall80.append(fall80)
       valuesFall.append(fall20 - fall80)
