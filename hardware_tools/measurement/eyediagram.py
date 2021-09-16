@@ -671,6 +671,7 @@ class EyeDiagram:
     for o in output:
       for k, v in o.items():
         valuesY[k].extend(v)
+    output = None
 
     if printProgress:
       print(
@@ -772,6 +773,7 @@ class EyeDiagram:
       subplots[2].set_ylabel('Density')
 
       pyplot.show()
+    valuesY = None
 
     if printProgress:
       print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Measuring edges values')
@@ -857,6 +859,7 @@ class EyeDiagram:
     for o in output:
       for k, v in o.items():
         valuesT[k].extend(v)
+    output = None
 
     if printProgress:
       print(f'{"":{indent}}{elapsedStr(start)} {Fore.YELLOW}Computing edges statistics')
@@ -874,23 +877,29 @@ class EyeDiagram:
       edges = len(valuesT['rise'])
       edges += len(valuesT['fall'])
       print(
-        f'{"":{indent}}{Fore.RED}{edgeNan}/{edges}={edgeNan/edges *100:.2f}% bits did not reach 0.2UA or 0.8UA')
+        f'{"":{indent}}{Fore.RED}{edgeNan}/{edges}={edgeNan/edges *100:.2f}% bits did not reach 0.2UA and/or 0.8UA')
       valuesT['rise'] = np.array(valuesT['rise'])
       valuesT['rise'] = valuesT['rise'][~np.isnan(valuesT['rise'])].tolist()
       valuesT['fall'] = np.array(valuesT['fall'])
       valuesT['fall'] = valuesT['fall'][~np.isnan(valuesT['fall'])].tolist()
     valuesT['rise20'] = np.array(valuesT['rise20'])
-    valuesT['rise20'] = valuesT['rise20'][~np.isnan(valuesT['rise20'])].tolist()
+    valuesT['rise20'] = valuesT['rise20'][~np.isnan(
+      valuesT['rise20'])].tolist()
     valuesT['rise50'] = np.array(valuesT['rise50'])
-    valuesT['rise50'] = valuesT['rise50'][~np.isnan(valuesT['rise50'])].tolist()
+    valuesT['rise50'] = valuesT['rise50'][~np.isnan(
+      valuesT['rise50'])].tolist()
     valuesT['rise80'] = np.array(valuesT['rise80'])
-    valuesT['rise80'] = valuesT['rise80'][~np.isnan(valuesT['rise80'])].tolist()
+    valuesT['rise80'] = valuesT['rise80'][~np.isnan(
+      valuesT['rise80'])].tolist()
     valuesT['fall20'] = np.array(valuesT['fall20'])
-    valuesT['fall20'] = valuesT['fall20'][~np.isnan(valuesT['fall20'])].tolist()
+    valuesT['fall20'] = valuesT['fall20'][~np.isnan(
+      valuesT['fall20'])].tolist()
     valuesT['fall50'] = np.array(valuesT['fall50'])
-    valuesT['fall50'] = valuesT['fall50'][~np.isnan(valuesT['fall50'])].tolist()
+    valuesT['fall50'] = valuesT['fall50'][~np.isnan(
+      valuesT['fall50'])].tolist()
     valuesT['fall80'] = np.array(valuesT['fall80'])
-    valuesT['fall80'] = valuesT['fall80'][~np.isnan(valuesT['fall80'])].tolist()
+    valuesT['fall80'] = valuesT['fall80'][~np.isnan(
+      valuesT['fall80'])].tolist()
 
     if self.method == 'average':
       m['tRise20'] = np.average(valuesT['rise20'])
@@ -1206,6 +1215,7 @@ class EyeDiagram:
       subplots[3].set_ylabel('Counts')
 
       pyplot.show()
+    valuesT = None
 
     if self.mask:
       if printProgress:
@@ -1246,6 +1256,7 @@ class EyeDiagram:
         self.offenders.append(o[0])
         offenderCount += len(o[0])
         self.hits.extend(o[1])
+      output = None
 
       m['offenderCount'] = offenderCount
       m['ber'] = m['offenderCount'] / m['nBits']
@@ -1286,6 +1297,8 @@ class EyeDiagram:
       output = [(output[i], i) for i in range(len(output))]
       output = sorted(output, key=lambda o: o[0])
       self.maskMarginPair = output[0]
+      output = None
+
       m['maskMargin'] = 100 * self.maskMarginPair[0][0]
 
       if plot:
