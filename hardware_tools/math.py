@@ -5,7 +5,9 @@ import io
 import numpy as np
 from PIL import Image
 from scipy import optimize
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.mixture import GaussianMixture
+from sklearn.utils._testing import ignore_warnings
 from typing import Iterable, Union
 
 def interpolateSinc(x, y, xNew) -> np.ndarray:
@@ -282,18 +284,60 @@ def fitGaussian(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
   opt[0] = opt[0] * sumY
   return opt
 
-def binLinear(values: Iterable, binCount: int = 100) -> tuple[list, list]:
+def binLinear(values: Iterable, binCount: int = 100,
+              density: bool = None) -> tuple[list, list]:
   '''!@brief Bin values with equal width bins
 
   @param values Values iterable over
   @param binCount Number of equal width bins
+  @param density Value passed into np.histogram. Roughly True to get a PDF
   @return tuple[list, list] (bins: list, counts: list)
   '''
-  minValue = min(values)
-  maxValue = max(values)
-  edges = np.linspace(minValue, maxValue, binCount + 1)
-  counts, _ = np.histogram(values, edges)
+  try:
+    _ = binCount[0]
+    edges = binCount
+  except TypeError:
+    minValue = min(values)
+    maxValue = max(values)
+    if minValue == maxValue:
+      minValue *= 0.95
+      maxValue *= 1.05
+    if minValue == maxValue:
+      minValue = 0
+      maxValue = 1
+    edges = np.linspace(minValue, maxValue, binCount + 1)
+  counts, edges = np.histogram(values, edges, density=density)
   bins = edges[:-1] + (edges[1] - edges[0]) / 2
+  return bins, counts
+
+def binExponential(values: Iterable, binCount: int = 100,
+                   density: bool = None) -> tuple[list, list]:
+  '''!@brief Bin values with equal exponential width bins
+
+  @param values Values iterable over
+  @param binCount Number of equal exponential width bins
+  @param density Value passed into np.histogram. Roughly True to get a PDF
+  @return tuple[list, list] (bins: list, counts: list)
+  '''
+  with np.errstate(divide='ignore'):
+    valuesExp = np.log10(values)
+  minValue = min(valuesExp)
+  maxValue = max(valuesExp)
+  if np.isneginf(minValue):
+    maxValue = int(np.ceil(maxValue))
+    edges = [np.NINF]
+    bins = np.arange(maxValue - (binCount - 1),
+                     maxValue + 1, 1, dtype=np.float64)
+    edges.extend(bins + 0.5)
+    bins = list(bins)
+  else:
+    edges = np.linspace(minValue, maxValue, binCount + 1)
+    bins = edges[:-1] + (edges[1] - edges[0]) / 2
+
+  counts, _ = np.histogram(valuesExp, edges, density=False)
+  if density:
+    counts = counts / 1 / counts.sum()
+
   return bins, counts
 
 def binExact(values: Iterable) -> tuple[list, list]:
@@ -338,6 +382,7 @@ def histogramDownsample(values: np.array, nMax: int = 50e3,
     values.extend([bins[i]] * count)
   return np.array(values)
 
+@ignore_warnings(category=ConvergenceWarning)
 def fitGaussianMix(
   x: list, nMax: int = 10, tol: float = 1e-3) -> list[tuple[float, float, float]]:
   '''!@brief Fit a mixture of gaussian curves, returning the best combination
@@ -348,6 +393,8 @@ def fitGaussianMix(
   @return list of components sorted by amplitude [amplitude: float, mean: float, stddev: float]
   '''
   xSpan = np.amax(x) - np.amin(x)
+  if xSpan == 0:
+    return [[1, x[0], 0]]
   xAvg = np.average(x)
   x = (np.array(x).reshape(-1, 1) - xAvg) / xSpan
 
