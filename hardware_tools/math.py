@@ -324,7 +324,10 @@ def binExponential(values: Iterable, binCount: int = 100,
   minValue = min(valuesExp)
   maxValue = max(valuesExp)
   if np.isneginf(minValue):
-    maxValue = int(np.ceil(maxValue))
+    if np.isneginf(maxValue):
+      maxValue = 0
+    else:
+      maxValue = int(np.ceil(maxValue))
     edges = [np.NINF]
     bins = np.arange(maxValue - (binCount - 1),
                      maxValue + 1, 1, dtype=np.float64)

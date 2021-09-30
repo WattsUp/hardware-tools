@@ -292,12 +292,8 @@ class EyeDiagram:
     self.thresholdHalf = (self.yOne + self.yZero) / 2
 
     # Check high level is not close to low level
-    errorStr = None
-    if self.thresholdFall < (
-      self.yZero + yZeroStdDev) or self.thresholdRise > (self.yOne - yOneStdDev):
-      errorStr = f'{Fore.RED}Too low signal to noise ratio{Fore.RESET}\n'
-      errorStr += f'  Low:  {Fore.BLUE}{metricPrefix(self.yZero, self.yUnit)} σ={metricPrefix(yZeroStdDev, self.yUnit)}{Fore.RESET}\n'
-      errorStr += f'  High: {Fore.BLUE}{metricPrefix(self.yOne, self.yUnit)} σ={metricPrefix(yOneStdDev, self.yUnit)}{Fore.RESET}'
+    snr = (self.yOne - self.yZero) / (yZeroStdDev + yOneStdDev)
+    self.lowSNR = snr < 2
 
     if plot:
       yRange = np.linspace(yMin, yMax, 1000)
@@ -331,9 +327,6 @@ class EyeDiagram:
 
       pyplot.show()
 
-    if errorStr:
-      raise Exception(errorStr)
-
   def __calculateClock(self, plot: bool = True, nThreads: int = 1) -> None:
     '''!@brief Calculate clock for each waveform using a pll
 
@@ -342,6 +335,22 @@ class EyeDiagram:
     @param plot True will create plots during calculation (histograms and such). False will not
     @param nThreads Specify number of threads to use
     '''
+    if self.lowSNR:
+      if self.manualTBit is None:
+        self.tBit = 10e-9
+      else:
+        self.tBit = self.manualTBit
+      self.tBitStdDev = 0
+
+      self.clockEdges = []
+      for i in range(self.waveforms.shape[0]):
+        t = self.waveforms[i][0][0] + self.tBit
+        clockEdges = np.arange(t, self.waveforms[i][0][-1], self.tBit)
+        self.clockEdges.append(clockEdges.tolist())
+
+      self.bitDistribution = ([0], [1])
+      return
+
     # Get waveform edges using hysteresis and 50% interpolation
     if nThreads <= 1:
       self.waveformEdges = [
