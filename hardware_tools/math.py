@@ -300,8 +300,9 @@ def binLinear(values: Iterable, binCount: int = 100,
     minValue = min(values)
     maxValue = max(values)
     if minValue == maxValue:
-      minValue *= 0.95
-      maxValue *= 1.05
+      center = minValue
+      minValue = center - abs(center) * 0.05
+      maxValue = center + abs(center) * 0.05
     if minValue == maxValue:
       minValue = 0
       maxValue = 1
@@ -402,7 +403,7 @@ def fitGaussianMix(
   x = (np.array(x).reshape(-1, 1) - xAvg) / xSpan
 
   models = []
-  for i in range(nMax):
+  for i in range(min(len(x), nMax)):
     models.append(GaussianMixture(i + 1, tol=tol).fit(x))
 
   aic = [m.aic(x) for m in models]
