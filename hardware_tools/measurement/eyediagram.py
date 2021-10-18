@@ -1467,6 +1467,7 @@ class EyeDiagram:
 
     heatMap = heatMap.T[::-1, :]
     heatMap = heatMap.astype(np.float32)
+    self.rawHeatMap = heatMap.copy()
 
     # Replace 0s with nan to be colored transparent
     heatMap[heatMap == 0] = np.nan
@@ -1838,6 +1839,27 @@ class EyeDiagram:
         output['hits'] = self.imageHits
         output['margin'] = self.imageMargin
     return output
+
+  def getRawHeatMap(self, asString:bool=False)-> Union[np.ndarray, bytes]:
+    '''!@brief Get generated raw heatmap, optionally as a base64 encoded string
+
+    Decode base64 as follows
+    with io.BytesIO(base64.b64decode(data)) as file
+      with np.load(file) as zip:
+        rawHeatMap = zip[zip.files[0]]
+
+    @param asString True will return base64 encoded string for the numpy array
+    @return Union[np.ndarray, bytes] numpy array or base64 encoded numpy array
+    '''
+    if not self.calculated:
+      raise Exception('Eye diagram must be calculated before getting images')
+    if asString:
+      with io.BytesIO() as file:
+        np.savez_compressed(file, self.rawHeatMap)
+        buf = file.getvalue()
+      return base64.b64encode(buf)
+    return self.rawHeatMap
+
 
 class WaveformException(Exception):
 
