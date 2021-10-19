@@ -1,14 +1,16 @@
+from hardware_tools.equipment import utility
 from unittest import TestCase
 
-from hardware_tools.equipment import *
-
-import matplotlib.pyplot as pyplot
+import json
 # from scipy.fft import fft, fftfreq
+
+import time
+import numpy as np
 
 def test() -> None:
   for r in utility.getAvailableEquipment():
     if r.startswith('USB'):
-      s = tektronik.MDO3000(r)
+      s = utility.getEquipmentObject(r)
       break
 
   print(s)
@@ -21,9 +23,9 @@ def test() -> None:
   print(s.configure('TRIGGER_POLARITY', 'EITH'))
   print(s.configure('ACQUIRE_MODE', 'SAMPLE'))
 
-  print(s.configureChannel('CH1', 'SCALE', 10e-6))
+  print(s.configureChannel('CH1', 'SCALE', 0.001e-6))
   print(s.configureChannel('CH1', 'OFFSET', 0))
-  print(s.configureChannel('CH1', 'POSITION', 0))
+  print(s.configureChannel('CH1', 'POSITION', 3))
   print(s.configureChannel('CH1', 'LABEL', 'Clock'))
   print(s.configureChannel('CH1', 'BANDWIDTH', 'FULL'))
   print(s.configureChannel('CH3', 'ACTIVE', 1))
@@ -69,29 +71,66 @@ def test() -> None:
   # s.command('STOP')
   # print('Run/Stop auto trigger', s.ask('ACQuire:NUMACq?'))
 
-  s.command('CLEARMENU')
-  s.command('AUTOSCALE', 'CH1')
+  # s.command('CLEARMENU')
+  s.command('AUTOSCALE', channel='CH1')
 
   s.command('SINGLE_FORCE')
-  data1Pair = s.readWaveform('CH1', interpolate=1)
-  data1 = data1Pair[0]
-  print(f'{1/data1Pair[1]["tIncr"]:.3g}')
-  data10Pair = s.readWaveform('CH1', interpolate=10)
-  data10 = data10Pair[0]
-  print(f'{1/data10Pair[1]["tIncr"]:.3g}')
+  dataPair = s.readWaveform('CH1', addNoise=True)
 
-  # n = len(data10[0])
-  # yf = fft(data10[1])
-  # xf = fftfreq(n, data10[0][1] - data10[0][0])[:n//2]
-  # pyplot.plot(xf, 2.0/n * np.abs(yf[0:n//2]))
+def collectTestData():
+  for r in utility.getAvailableEquipment():
+    if r.startswith('USB'):
+      s = utility.getEquipmentObject(r)
+      break
 
-  # n = len(data1[0])
-  # yf = fft(data1[1])
-  # xf = fftfreq(n, data1[0][1] - data1[0][0])[:n//2]
-  # pyplot.plot(xf, 2.0/n * np.abs(yf[0:n//2]))
-  # pyplot.xlim([0, 1/(data1[0][1] - data1[0][0])])
+  s.configure('TIME_SCALE', 0.1e-9)
+  s.configure('TIME_OFFSET', 0e-9)
+  s.configure('TIME_POINTS', 1e6)
+  s.configure('TRIGGER_MODE', 'NORMAL')
+  s.configure('TRIGGER_SOURCE', 'CH1')
+  s.configure('TRIGGER_COUPLING', 'DC')
+  s.configure('TRIGGER_POLARITY', 'RISE')
+  s.configure('ACQUIRE_MODE', 'SAMPLE')
 
-  pyplot.plot(data1[0], data1[1])
-  pyplot.plot(data10[0], data10[1])
-  pyplot.xlim([0, 30e-9])
-  pyplot.show()
+  s.configureChannel('CH1', 'SCALE', 8e-6)
+  s.configureChannel('CH1', 'OFFSET', 0)
+  s.configureChannel('CH1', 'POSITION', -3.5)
+  s.configureChannel('CH1', 'LABEL', '')
+  s.configureChannel('CH1', 'BANDWIDTH', 'FULL')
+  s.configureChannel('CH1', 'INVERT', 'OFF')
+  # s.configureChannel('CH1', 'TRIGGER_LEVEL', 10e-6)
+  s.configureChannel('CH1', 'TRIGGER_LEVEL', -1000)
+  s.configureChannel('CH1', 'ACTIVE', 1)
+  s.configureChannel('CH2', 'ACTIVE', 0)
+  s.configureChannel('CH3', 'ACTIVE', 0)
+  s.configureChannel('CH4', 'ACTIVE', 0)
+
+  s.command('AUTOSCALE', channel='CH1')
+
+  waveforms = []
+
+  s.command('SINGLE_FORCE')
+  data, info = s.readWaveform('CH1', addNoise=True)
+  if info['clippingTop']:
+    print('Clipped top')
+  if info['clippingBottom']:
+    print('Clipped bottom')
+
+  waveforms.append(data)
+
+  for _ in range(1, 10):
+    s.command('SINGLE_FORCE')
+    data, info = s.readWaveform('CH1', addNoise=True)
+    waveforms.append(data)
+    if info['clippingTop']:
+      print('Clipped top')
+    if info['clippingBottom']:
+      print('Clipped bottom')
+
+  info['clippingTop'] = int(info['clippingTop'])
+  info['clippingBottom'] = int(info['clippingBottom'])
+
+  waveforms = np.array(waveforms)
+  np.save('data/waveforms1M.npy', waveforms)
+  with open('data/waveformInfo1M.json', 'w') as file:
+    json.dump(info, file)

@@ -1,4 +1,8 @@
 numpy
 pyvisa
-time
-struct
+cython
+colorama
+matplotlib
+scipy
+sklearn
+Pillow
