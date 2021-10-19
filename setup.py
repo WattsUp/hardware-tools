@@ -1,92 +1,107 @@
-import numpy
+"""Setup and install hardware-tools
+
+Typical usage:
+  python setup.py develop
+  python setup.py install
+  python setup.py test
+"""
+
 import os
 import setuptools
-
-from setuptools import setup, find_packages
-import setuptools.command.develop
 import setuptools.command.build_py
+import setuptools.command.develop
 
 from tools import gitsemver
 
-with open('README.md') as f:
-  longDescription = f.read()
+module_folder = "hardware_tools"
 
-with open('requirements.txt') as f:
-  required = f.read().splitlines()
+with open("README.md", encoding="utf-8") as file:
+  longDescription = file.read()
 
-version = gitsemver.getVersion()
-with open('hardware_tools/version.py', 'w') as file:
-  file.write(f'version = \'{version}\'\n')
-  file.write(f'versionFull = \'{version.fullStr()}\'\n')
+required = [
+    "numpy", "pyvisa", "cython", "colorama", "matplotlib", "scipy", "sklearn",
+    "Pillow", "scikit-image"
+]
+
+version = gitsemver.get_version()
+with open(f"{module_folder}/version.py", "w", encoding="utf-8") as file:
+  file.write('"""Module version information\n"""\n\n')
+  file.write(f'version = "{version}"\n')
+  file.write(f'version_full = "{version.full_str()}"\n')
 
 cwd = os.path.dirname(os.path.abspath(__file__))
 
-try:
-  from Cython.Build import cythonize
-except ImportError:
-  def cythonize(*args, **kwargs):
-    from Cython.Build import cythonize
-    return cythonize(*args, **kwargs)
 
-def findPyx(path='.'):
-  pyxFiles = []
+def find_pyx(path="."):
+  pyx_files = []
   for root, _, filenames in os.walk(path):
-    for file in filenames:
-      if file.endswith('.pyx'):
-        pyxFiles.append(os.path.join(root, file))
-  return pyxFiles
+    for f in filenames:
+      if f.endswith(".pyx"):
+        pyx_files.append(os.path.join(root, f))
+  return pyx_files
 
-def findCythonExtensions(path='.'):
-  extensions = cythonize(findPyx(path), language_level=3)
-  for ext in extensions:
-    ext.include_dirs = [numpy.get_include()]
+
+def find_cython_extensions(path="."):
+  pyx_files = find_pyx(path)
+  if len(pyx_files) == 0:
+    return []
+  import Cython.Build  # pylint: disable=import-outside-toplevel
+  extensions = Cython.Build.cythonize(pyx_files, language_level=3)
+  if "numpy" in required:
+    import numpy  # pylint: disable=import-outside-toplevel
+
+    for ext in extensions:
+      ext.include_dirs = [numpy.get_include()]
   return extensions
 
+
 class BuildPy(setuptools.command.build_py.build_py):
+
   def run(self):
     setuptools.command.build_py.build_py.run(self)
 
+
 class Develop(setuptools.command.develop.develop):
+
   def run(self):
     setuptools.command.develop.develop.run(self)
 
 
-setup(
-    name='hardware-tools',
-    version=version,
-    description='A library for automating hardware development and testing',
+setuptools.setup(
+    name="hardware-tools",
+    version=str(version),
+    description="A library for automating hardware development and testing",
     long_description=longDescription,
-    long_description_content_type='text/markdown',
-    license='MIT',
-    ext_modules=findCythonExtensions(),
-    packages=find_packages(),
-    package_data={'hardware_tools': []},
+    long_description_content_type="text/markdown",
+    license="MIT",
+    ext_modules=find_cython_extensions(),
+    packages=setuptools.find_packages(),
+    package_data={module_folder: []},
     install_requires=required,
-    tests_require=['json'],
-    test_suite='tests',
+    extras_require={},
+    test_suite="tests",
     scripts=[],
-    author='Bradley Davis',
-    author_email='me@bradleydavis.tech',
-    url='https://github.com/WattsUp/hardware-tools',
+    author="Bradley Davis",
+    author_email="me@bradleydavis.tech",
+    url="https://github.com/WattsUp/hardware-tools",
     classifiers=[
-        'Programming Language :: Python :: 3',
-        'Operating System :: OS Independent',
-        'Development Status :: 2 - Pre-Alpha',
-        'License :: OSI Approved :: MIT License',
-        'Intended Audience :: Developers',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)',
-        'Topic :: Scientific/Engineering :: Information Analysis',
-        'Topic :: Scientific/Engineering :: Visualization',
+        "Programming Language :: Python :: 3",
+        "Operating System :: OS Independent",
+        "Development Status :: 2 - Pre-Alpha",
+        "License :: OSI Approved :: MIT License",
+        "Intended Audience :: Developers",
+        "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+        "Topic :: Scientific/Engineering :: Information Analysis",
+        "Topic :: Scientific/Engineering :: Visualization",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
     ],
-    python_requires='>=3.6',
+    python_requires=">=3.7",
     include_package_data=True,
     cmdclass={
-        'build_py': BuildPy,
-        'develop': Develop,
+        "build_py": BuildPy,
+        "develop": Develop,
     },
     zip_safe=False,
 )

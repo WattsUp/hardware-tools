@@ -1,6 +1,6 @@
 from . import version
 
-__version__ = version.versionFull
+__version__ = version.version_full
 
 __all__ = ['equipment', 'measurement', 'math']
 

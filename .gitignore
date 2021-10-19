@@ -11,3 +11,9 @@ build
 dist
 *.c
 version.py
+
+# Test artifacts
+.test
+.coverage
+coverage.json
+testing.json

@@ -1,10 +1,14 @@
 from __future__ import annotations
+
+import sys
+
 from hardware_tools.measurement.extension.extensionSlow import getCrossingSlow
 import colorama
 from colorama import Fore
 import datetime
 import matplotlib
-matplotlib.use('WXAgg')
+if sys.platform == "win32":
+  matplotlib.use('WXAgg')
 import matplotlib.pyplot as pyplot
 from matplotlib.ticker import FuncFormatter
 from multiprocessing import Pool, cpu_count
