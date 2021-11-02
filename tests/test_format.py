@@ -7,7 +7,6 @@ import datetime
 import random
 import string
 
-import autodict
 import numpy as np
 import time_machine
 
@@ -18,15 +17,9 @@ class TestStringFormat(unittest.TestCase):
   """Test math methods
   """
 
-  _TEST_CONFIG = "testing.json"
-
   def test_metric_prefix(self):
     x = np.random.uniform(2, 1000)
     unit = random.choice(string.ascii_letters)
-
-    with autodict.JSONAutoDict(self._TEST_CONFIG) as c:
-      c["strformat"]["metric_prefix"]["x"] = x
-      c["strformat"]["metric_prefix"]["unit"] = unit
 
     specifier = "6.1f"
     specifier_small = "6.3f"
@@ -74,19 +67,14 @@ class TestStringFormat(unittest.TestCase):
     seconds = np.random.uniform(0, 60)
     duration = hours * 3600 + minutes * 60 + seconds
 
-    with autodict.JSONAutoDict(self._TEST_CONFIG) as c:
-      c["strformat"]["time_str"]["hours"] = hours
-      c["strformat"]["time_str"]["minutes"] = minutes
-      c["strformat"]["time_str"]["seconds"] = seconds
-
     s = strformat.time_str(duration, sub=True, hours=True)
     self.assertEqual(s, f"{hours:02}:{minutes:02}:{seconds:05.2f}")
 
     s = strformat.time_str(duration, sub=False, hours=True)
-    self.assertEqual(s, f"{hours:02}:{minutes:02}:{seconds:05.2f}"[:-3])
+    self.assertEqual(s, f"{hours:02}:{minutes:02}:{int(seconds):02}")
 
     s = strformat.time_str(duration, sub=False, hours=False)
-    self.assertEqual(s, f"{hours * 60 + minutes:02}:{seconds:05.2f}"[:-3])
+    self.assertEqual(s, f"{hours * 60 + minutes:02}:{int(seconds):02}")
 
   def test_elapsed_str(self):
     hours = np.random.randint(0, 100)
@@ -95,12 +83,6 @@ class TestStringFormat(unittest.TestCase):
     duration = hours * 3600 + minutes * 60 + seconds
     start = datetime.datetime.now(datetime.timezone.utc)
     end = start + datetime.timedelta(seconds=duration)
-
-    with autodict.JSONAutoDict(self._TEST_CONFIG) as c:
-      c["strformat"]["elapsed_str"]["hours"] = hours
-      c["strformat"]["elapsed_str"]["minutes"] = minutes
-      c["strformat"]["elapsed_str"]["seconds"] = seconds
-      c["strformat"]["elapsed_str"]["start"] = start.isoformat()
 
     s = strformat.elapsed_str(start, end=end, sub=True, hours=True)
     self.assertEqual(s, f"{hours:02}:{minutes:02}:{seconds:05.2f}")

@@ -16,4 +16,4 @@ version.py
 .test
 .coverage
 coverage.json
-testing.json
+testing.log

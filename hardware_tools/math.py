@@ -1,492 +1,637 @@
+"""Collection of math functions
+"""
+
 from __future__ import annotations
+
 import base64
-import datetime
 import io
-import numpy as np
-from PIL import Image
-from scipy import optimize
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.mixture import GaussianMixture
-from sklearn.utils._testing import ignore_warnings
 from typing import Iterable, Union
 
-def interpolateSinc(x, y, xNew) -> np.ndarray:
-  '''!@brief Resample a time series using sinc interpolation
+import numpy as np
+import PIL.Image
+from scipy import optimize
+import sklearn.exceptions
+import sklearn.mixture
+import sklearn.utils._testing
 
-  @param x Input sample points
-  @param y Input sample values
-  @param xNew Output sample points
-  @return np.ndarray Output sample values
-  '''
-  if len(x) != len(y):
-    raise Exception(f'Cannot interpolate arrays of different lengths')
-  if len(x) < 2:
-    raise Exception(f'Cannot interpolate arrays with fewer than 2 elements')
-  T = x[1] - x[0]
-  sincM = np.tile(xNew, (len(x), 1)) - \
-      np.tile(x[:, np.newaxis], (1, len(xNew)))
-  yNew = np.dot(y, np.sinc(sincM / T))
-  return yNew
 
-def metricPrefix(value: float, unit: str = '', formatSpecifier: str = '6.1f',
-                 formatSpecifierSmall: str = '6.3f', threshold: float = 2) -> str:
-  '''!@brief Format a value using metric prefixes to constrain string length
+def interpolate_sinc(x: np.ndarray, xp: np.ndarray,
+                     yp: np.ndarray) -> np.ndarray:
+  """Resample a time series using sinc interpolation
 
-  @param value Value to format
-  @param unit Unit string to append to number and metric prefix
-  @param formatSpecifier Precision to convert value to string at
-  @param formatSpecifierSmall Precision to convert value to string at if underrange
-  @param threshold Decision threshold multiplier to determine to use order of magnitude: 2 => 1999.9 vs 1 => 1.9
-  @return str '±xxx.x PU' where P is metric prefix and U is unit
-  '''
-  metricPrefixes = {
-    'T': 1e12,
-    'G': 1e9,
-    'M': 1e6,
-    'k': 1e3,
-    ' ': 1e0,
-    'm': 1e-3,
-    'µ': 1e-6,
-    'n': 1e-9,
-    'p': 1e-12
-  }
-  for p, f in metricPrefixes.items():
-    if abs(value) >= (threshold * f):
-      return f'{value / f:{formatSpecifier}} {p}{unit}'
-  p, f = list(metricPrefixes.items())[-1]
-  return f'{value / f:{formatSpecifierSmall}} {p}{unit}'
+  Adds a sinc function at each point then resamples at x. x is expected to
+  be regularly sampled (constant sinc width). x does not need to be
+  regularly sampled.
 
-def elapsedStr(start: datetime.datetime,
-               end: datetime.datetime = None) -> str:
-  '''!@brief Calculate elapsed time since start and format as MM:SS.ss
+  Args:
+    x: The x-coordinates at which to evaluate the interpolated values
+    xp: The x-coordinates of the data points, regularly sampled
+    yp: The y-coordinates of the data points, same length as xp (>= 2)
 
-  @param start Start timestamp
-  @param end End timestamp (None will default to now)
-  @return str 'MM:SS.ss'
-  '''
-  if end is None:
-    end = datetime.datetime.now()
-  return timeStr((end - start).total_seconds())
+  Returns:
+    The interpolated values, same shape as x
 
-def timeStr(duration: float, subSeconds: bool = True,
-            hours: bool = True) -> str:
-  '''!@brief Format time as HH:MM:SS.ss
+  Raises:
+    ValueError: If xp and yp are not the same length, have fewer than 2 points,
+    are not 1D. Checking for regularly sampled xp is expensive and not checked.
+  """
+  if len(xp.shape) != 1:
+    raise ValueError("Input must be 1D")
+  if xp.shape != yp.shape:
+    raise ValueError("Input must be same shape")
+  if xp.shape[0] < 2:
+    raise ValueError("Input must have at least 2 points")
+  period = xp[1] - xp[0]
+  sinc = np.tile(x, (len(xp), 1)) - np.tile(xp[:, np.newaxis], (1, len(x)))
+  y = np.dot(yp, np.sinc(sinc / period))
+  return y
 
-  @param duration Time in seconds
-  @param subSeconds True will include time less than a second '.ss', False will not
-  @param hours True will include hours 'HH:', False will not
-  @return str '[HH:]MM:SS[.ss]'
-  '''
-  minutes, seconds = divmod(duration, 60)
-  if hours:
-    hours, minutes = divmod(minutes, 60)
-    buf = f'{int(hours):02}:'
-  else:
-    buf = f''
-  buf += f'{int(minutes):02}:'
-  if subSeconds:
-    buf += f'{seconds:05.2f}'
-  else:
-    buf += f'{int(seconds):02}'
-  return buf
 
-class Point:
-  def __init__(self, x, y) -> None:
-    '''!@brief Create a new Point
+class Point2D:
+  """2D Point class with an x-coordinate and y-coordinate
 
-    @param x X coordinate
-    @param y Y coordinate
-    '''
+  Attributes:
+    x: X-coordinate (horizontal)
+    y: Y-coordinate (vertical)
+  """
+
+  def __init__(self, x: float, y: float) -> None:
+    """Initialize a Point2D
+
+    Args:
+      x: X-coordinate (horizontal)
+      y: Y-coordinate (vertical)
+    """
     self.x = x
     self.y = y
 
   def __str__(self) -> str:
-    '''!@brief Get a string representation of the Point
-
-    @return str
-    '''
     return f"({self.x}, {self.y})"
 
-  def inRectangle(self, start: Point, end: Point):
-    '''!@brief Check if point lies in rectangle formed by start and stop
+  def in_rect(self, start: Point2D, end: Point2D) -> bool:
+    """Check if point lies in rectangle formed by start and stop
 
-    @param start Point of line segment
-    @param end Point of line segment
-    @return bool True if self is within all edges of rectangle
-    '''
+    Args:
+      start: One corner of rectangle
+      end: Second corner of rectangle
+
+    Returns:
+      True if self is within all edges of rectangle or on an edge
+    """
     if ((self.x <= max(start.x, end.x)) and (self.x >= min(start.x, end.x)) and
-            (self.y <= max(start.y, end.y)) and (self.y >= min(start.y, end.y))):
+        (self.y <= max(start.y, end.y)) and (self.y >= min(start.y, end.y))):
       return True
     return False
 
   @staticmethod
-  def orientation(p: Point, q: Point, r: Point) -> int:
-    '''!@brief Compute the orientation of three points
+  def orientation(p: Point2D, q: Point2D, r: Point2D) -> int:
+    """Compute the orientation of three points from p->q->r
 
-    @param p Point 1
-    @param q Point 2
-    @param r Point 3
-    @return int -1=anticlockwise, 0=colinear, 1=clockwise
-    '''
+    Anticlockwise:
+      r--q
+        /
+       /
+      p
+
+    Linear:
+      p---q---r
+
+    Clockwise:
+         q-----r
+        /
+       /
+      p
+
+    Args:
+      p: Point 1
+      q: Point 2
+      r: Point 3
+
+    Returns:
+      -1: anticlockwise
+      0: colinear
+      1: clockwise
+    """
     val = ((q.y - p.y) * (r.x - q.x)) - ((q.x - p.x) * (r.y - q.y))
+    norm = ((p.x**2 + p.y**2) * (q.x**2 + q.y**2) * (r.x**2 + r.y**2))**(1 / 3)
+    val = val / norm
+    if abs(val) < np.finfo(type(val)).eps * 10:
+      return 0
     return np.sign(val)
 
-class Line:
-  def __init__(self, x1, y1, x2, y2) -> None:
-    '''!@brief Create a new Point
 
-    @param x1 X coordinate of first point
-    @param y1 Y coordinate of first point
-    @param x2 X coordinate of second point
-    @param y2 Y coordinate of second point
-    '''
-    self.p = Point(x1, y1)
-    self.q = Point(x2, y2)
+class Line2D:
+  """2D Line formed between two points
+
+  Attributes:
+    p: First point
+    q: second point
+  """
+
+  def __init__(self, x1: float, y1: float, x2: float, y2: float) -> None:
+    """Initialize Line2D
+
+    Args:
+      x1: X-coordinate of first point
+      y1: Y-coordinate of first point
+      x2: X-coordinate of second point
+      y2: Y-coordinate of second point
+    """
+    self.p = Point2D(x1, y1)
+    self.q = Point2D(x2, y2)
 
   def __str__(self) -> str:
-    '''!@brief Get a string representation of the Line
-
-    @return str
-    '''
     return f"({self.p}, {self.q})"
 
-  def intersecting(self, l: Line) -> bool:
-    '''!@brief Check if two line segments intersect
+  def intersecting(self, l: Line2D) -> bool:
+    """Check if two line segments intersect
 
-    @param l Second line segment
-    @return bool True if line segments intersect, false otherwise
-    '''
-    return self.intersectingPQ(l.p, l.q)
+    Checks line segments, not lines of infinite length
 
-  def intersectingPQ(self, p: Point, q: Point) -> bool:
-    '''!@brief Check if two line segments intersect
+    Args:
+      l: Second line segment
 
-    @param p First Point of second line segment
-    @param q Second Point of second line segment
-    @return bool True if line segments intersect, false otherwise
-    '''
+    Returns:
+      True if line segments intersect
+    """
+    return self.intersecting_points(l.p, l.q)
+
+  def intersecting_points(self, p: Point2D, q: Point2D) -> bool:
+    """Check if two line segments intersect
+
+    Checks line segments, not lines of infinite length
+
+    Args:
+      p: First point of second line segment
+      q: Second point of second line segment
+
+    Returns:
+      True if line segments intersect
+    """
     # 4 Combinations of points
-    o1 = Point.orientation(self.p, self.q, p)
-    o2 = Point.orientation(self.p, self.q, q)
-    o3 = Point.orientation(p, q, self.p)
-    o4 = Point.orientation(p, q, self.q)
+    o1 = Point2D.orientation(self.p, self.q, p)
+    o2 = Point2D.orientation(self.p, self.q, q)
+    o3 = Point2D.orientation(p, q, self.p)
+    o4 = Point2D.orientation(p, q, self.q)
 
     # General case
     if (o1 != o2) and (o3 != o4):
       return True
 
-    # self.p, self.q, p are colinear and p2 lies in self
-    if (o1 == 0) and p.inRectangle(self.p, self.q):
+    # self.p, self.q, p are colinear and p lies in self
+    if (o1 == 0) and p.in_rect(self.p, self.q):
       return True
 
-    # self.p, self.q, q are colinear and q2 lies in self
-    if (o2 == 0) and q.inRectangle(self.p, self.q):
+    # self.p, self.q, q are colinear and q lies in self
+    if (o2 == 0) and q.in_rect(self.p, self.q):
       return True
 
     # p, q, self.p are colinear and self.p lies in pq
-    if (o3 == 0) and self.p.inRectangle(p, q):
+    if (o3 == 0) and self.p.in_rect(p, q):
       return True
 
     # p, q, self.q are colinear and self.q lies in pq
-    if (o4 == 0) and self.q.inRectangle(p, q):
-      return True
+    if (o4 == 0) and self.q.in_rect(p, q):
+      # Should always be false because no situation only satisfies only 1 of
+      # these checks
+      return True  # pragma: no cover
 
     return False
 
-  def intersection(self, l: Line) -> Point:
-    '''!@brief Get the intersection of two lines [not line segments]
+  def intersection(self, l: Line2D) -> Point2D:
+    """Get the intersection of two lines [not line segments]
 
-    @param l Second line
-    @return Point Intersection point, None if lines do not intersect aka parallel
-    '''
-    return self.intersectionPQ(l.p, l.q)
+    Args:
+      l: Second line
 
-  def intersectionPQ(self, p: Point, q: Point) -> Point:
-    '''!@brief Get the intersection of two lines [not line segments]
+    Returns:
+      Intersection point, None if lines to do not intersect
+    """
+    return self.intersection_points(l.p, l.q)
 
-    @param p First Point of second line
-    @param q Second Point of second line
-    @return Point Intersection point, None if lines do not intersect aka parallel
-    '''
-    def lineParams(p: Point, q: Point):
-      A = p.y - q.y
-      B = q.x - p.x
-      C = p.x * q.y - q.x * p.y
-      return A, B, -C
-    l1 = lineParams(self.p, self.q)
-    l2 = lineParams(p, q)
+  def intersection_points(self, p: Point2D, q: Point2D) -> Point2D:
+    """Get the intersection of two lines [not line segments]
+
+    Args:
+      p: First point of second line segment
+      q: Second point of second line segment
+
+    Returns:
+      Intersection point, None if lines are parallel
+    """
+
+    def line_params(p: Point2D, q: Point2D) -> list[float]:
+      """Convert pair of points to line parameters
+
+      Args:
+        p: First point
+        q: Second point
+
+      Returns:
+        list[dy, dx, det([p, q])]
+      """
+      dy = p.y - q.y
+      dx = q.x - p.x
+      det = p.x * q.y - q.x * p.y
+      return dy, dx, -det
+
+    l1 = line_params(self.p, self.q)
+    l2 = line_params(p, q)
     det = l1[0] * l2[1] - l1[1] * l2[0]
-    detX = l2[1] * l1[2] - l2[2] * l1[1]
-    detY = l1[0] * l2[2] - l1[2] * l2[0]
+    det_x = l2[1] * l1[2] - l2[2] * l1[1]
+    det_y = l1[0] * l2[2] - l1[2] * l2[0]
     if det == 0:
       return None
-    return Point(detX / det, detY / det)
+    return Point2D(det_x / det, det_y / det)
 
 
-def gaussian(x: np.ndarray, amplitude: float, mean: float,
-             stddev: float) -> np.ndarray:
-  '''!@brief Gaussian function
+class Gaussian:
+  """Gaussian function
 
-  @param x
-  @param amplitude peak value
-  @param mean
-  @param stddev
-  @return np.ndarray gaussian calculated at x values
-  '''
-  return amplitude * np.exp(-((x - mean) / stddev) **
-                            2 / 2) / (stddev * np.sqrt(2 * np.pi))
+  y = A / (sqrt(2pi*stddev^2)) * exp(-((x - mu) / stddev)^2 / 2)
 
-def gaussianMix(x: np.ndarray, components: list[float]) -> np.ndarray:
-  '''!@brief Gaussian function
+  Attributes:
+    amplitude: A
+    mean: mu
+    stddev: sigma
+  """
 
-  @param x
-  @return list of components [amplitude: float, mean: float, stddev: float]
-  @return np.ndarray gaussian calculated at x values
-  '''
-  y = np.array([gaussian(x, *components[i]) for i in range(len(components))])
-  return np.dot(y.T, [1] * len(components))
+  def __init__(self, amplitude: float, mean: float, stddev: float) -> None:
+    """Initialize Gaussian
 
-def gaussianMixCenter(components: list[float]) -> float:
-  '''!@brief Compute the center of a gaussian mix distribution
+    y = A / (sqrt(2pi*stddev^2)) * exp(-((x - mu) / stddev)^2 / 2)
 
-  Returns exact results for n=1. Approximate for n>1 cause math is hard
+    Args:
+      amplitude: A
+      mean: mu
+      stddev: sigma
+    """
+    self.amplitude = amplitude
+    self.mean = mean
+    self.stddev = stddev
 
-  @param list of components [amplitude: float, mean: float, stddev: float]
-  @return float Center of gaussian where peak occurs
-  '''
-  if len(components) == 1:
-    return components[0][1]
-  xMin = min([c[1] for c in components])
-  xMax = max([c[1] for c in components])
-  x = np.linspace(xMin, xMax, 1000)
-  y = gaussianMix(x, components)
-  x = x[np.argmax(y)]
-  x = np.linspace(x - (xMax - xMin) / 1000, x + (xMax - xMin) / 1000, 1000)
-  y = gaussianMix(x, components)
-  return x[np.argmax(y)]
+  def __repr__(self) -> str:
+    return f"{{A={self.amplitude}, mu={self.mean}, stddev={self.stddev}}}"
+
+  @staticmethod
+  def y(x: Union[float, np.ndarray], amplitude: float, mean: float,
+        stddev: float) -> Union[float, np.ndarray]:
+    """Compute gaussian function at values of x
+
+    Args:
+      x: Single or multiple values of x
+      amplitude: A
+      mean: mu
+      stddev: sigma
+
+    Returns:
+      Single or multiple values of y
+    """
+    return amplitude * np.exp(-(
+        (x - mean) / stddev)**2 / 2) / (np.sqrt(2 * np.pi * stddev**2))
+
+  def compute(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    """Compute gaussian function at values of x
+
+    Args:
+      x: Single or multiple values of x
+
+    Returns:
+      Single or multiple values of y
+    """
+    return Gaussian.y(x, self.amplitude, self.mean, self.stddev)
+
+  @staticmethod
+  def fit_pdf(x: np.ndarray, frequency: np.ndarray) -> Gaussian:
+    """Fit a gaussian function to PDF data
+
+    Args:
+      x: sample values
+      frequency: frequency of values
+
+    Returns:
+      Gaussian function
+    """
+    # Normalize frequency
+    total = np.sum(frequency)
+    frequency = frequency / total
+
+    guess_mean = np.average(x, weights=frequency)
+    guess_stddev = np.sqrt(np.average((x - guess_mean)**2, weights=frequency))
+    opt = optimize.curve_fit(Gaussian.y,
+                             x,
+                             frequency,
+                             p0=[np.max(frequency), guess_mean,
+                                 guess_stddev])[0]
+
+    # Undo normalization
+    opt[0] = opt[0] * total
+    return Gaussian(opt[0], opt[1], opt[2])
 
 
-def fitGaussian(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
-  '''!@brief Fit a gaussian function to data
+class GaussianMix:
+  """Gaussian mix function, sum of multiple gaussian functions
 
-  @param x X values
-  @param y Y values
-  @return amplitude: float, mean: float, stddev: float
-  '''
-  sumY = np.max(y)
-  y = y / sumY
+  y = sum(A / (sqrt(2pi*stddev^2)) * exp(-((x - mu) / stddev)^2 / 2))
 
-  guessMean = np.average(x, weights=y)
-  guessStdDev = (x[-1] - x[0]) / 10
-  opt, _ = optimize.curve_fit(
-      gaussian, x, y, p0=[
-          np.max(y), guessMean, guessStdDev])
-  opt[0] = opt[0] * sumY
-  return opt
+  Attributes:
+    components: list of gaussian functions
+  """
 
-def binLinear(values: Iterable, binCount: int = 100,
-              density: bool = None) -> tuple[list, list]:
-  '''!@brief Bin values with equal width bins
+  def __init__(self, components: list[Gaussian]) -> None:
+    """Initialize Gaussian
 
-  @param values Values iterable over
-  @param binCount Number of equal width bins
-  @param density Value passed into np.histogram. Roughly True to get a PDF
-  @return tuple[list, list] (bins: list, counts: list)
-  '''
-  try:
-    _ = binCount[0]
-    edges = binCount
-  except TypeError:
-    minValue = min(values)
-    maxValue = max(values)
-    if minValue == maxValue:
-      center = minValue
-      minValue = center - abs(center) * 0.05
-      maxValue = center + abs(center) * 0.05
-    if minValue == maxValue:
-      minValue = 0
-      maxValue = 1
-    edges = np.linspace(minValue, maxValue, binCount + 1)
-  counts, edges = np.histogram(values, edges, density=density)
-  bins = edges[:-1] + (edges[1] - edges[0]) / 2
-  return bins, counts
+    y = sum(A / (sqrt(2pi*stddev^2)) * exp(-((x - mu) / stddev)^2 / 2))
 
-def binExponential(values: Iterable, binCount: int = 100,
-                   density: bool = None) -> tuple[list, list]:
-  '''!@brief Bin values with equal exponential width bins
+    Args:
+      components: list of gaussian functions
+    """
+    self.components = components
 
-  @param values Values iterable over
-  @param binCount Number of equal exponential width bins
-  @param density Value passed into np.histogram. Roughly True to get a PDF
-  @return tuple[list, list] (bins: list, counts: list)
-  '''
-  with np.errstate(divide='ignore'):
-    valuesExp = np.log10(values)
-  minValue = min(valuesExp)
-  maxValue = max(valuesExp)
-  if np.isneginf(minValue):
-    if np.isneginf(maxValue):
-      maxValue = 0
+  def __repr__(self) -> str:
+    return str(self.components)
+
+  def compute(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+    """Compute gaussian mix function at values of x
+
+    Args:
+      x: Single or multiple values of x
+
+    Returns:
+      Single or multiple values of y
+    """
+    y = np.array([c.compute(x) for c in self.components])
+    return np.dot(y.T, [1] * len(self.components))
+
+  def center(self) -> float:
+    """Compute the center of gaussian mix distribution
+
+    Returns:
+      Center of gaussian where peak occurs. Exact result for n=1, approximate
+      for n>1
+    """
+    if len(self.components) == 1:
+      return self.components[0].mean
+
+    x_min = min([c.mean for c in self.components])
+    x_max = max([c.mean for c in self.components])
+    x = np.linspace(x_min, x_max, 1000)
+    y = self.compute(x)
+    x = x[np.argmax(y)]
+    x = np.linspace(x - (x_max - x_min) / 1000, x + (x_max - x_min) / 1000,
+                    1000)
+    y = self.compute(x)
+    return x[np.argmax(y)]
+
+  @staticmethod
+  # @sklearn.utils._testing.ignore_warnings(
+  #     category=sklearn.exceptions.ConvergenceWarning)
+  def fit_samples(y: np.ndarray,
+                  n_max: int = 10,
+                  tol: float = 1e-3) -> GaussianMix:
+    """Fit a Gaussian mixture to sampled data
+
+    Args:
+      y: Sample values
+      n_max: Maximum number of components
+      tol: Tolerance of fit (normalized units)
+
+    Returns:
+      GaussianMix with best fit
+    """
+    y_span = np.amax(y) - np.amin(y)
+    if y_span == 0:
+      return [[1, y[0], 0]]
+    y_avg = np.average(y)
+    y_norm = y.copy().reshape(-1, 1)
+    y_norm = (y_norm - y_avg) / y_span
+
+    models = []
+    for i in range(min(len(y_norm), n_max)):
+      models.append(sklearn.mixture.GaussianMixture(i + 1, tol=tol).fit(y_norm))
+
+    aic = [m.aic(y_norm) for m in models]
+    m_best = models[np.argmin(aic)]
+
+    components = []
+    for i in range(m_best.n_components):
+      amplitude = m_best.weights_[i]
+      mean = m_best.means_[i][0] * y_span + y_avg
+      stddev = abs(np.sqrt(m_best.covariances_[i][0][0]) * y_span)
+      components.append(Gaussian(amplitude, mean, stddev))
+    components = sorted(components, key=lambda c: -c.amplitude)
+    return GaussianMix(components)
+
+
+class Bin:
+  """Collection of binning and other histogram functions
+  """
+
+  @staticmethod
+  def linear(y: np.array,
+             bin_count: int = 100,
+             density: bool = None) -> tuple[np.array, np.array]:
+    """Bin values with equal width bins
+
+    Args:
+      y: Sample values
+      bin_count: Number of equal width bins
+      density: Passed to np.histogram, roughly True to get a PDF
+
+    Returns:
+      counts, edges
+    """
+    y_min = min(y)
+    y_max = max(y)
+    if y_min == y_max:
+      if y_min == 0:
+        y_min = -1
+        y_max = 1
+      else:
+        center = y_min
+        y_min = center - abs(center) * 0.05
+        y_max = center + abs(center) * 0.05
+    edges = np.linspace(y_min, y_max, bin_count + 1)
+    return np.histogram(y, edges, density=density)
+
+  @staticmethod
+  def exact(y: Iterable) -> tuple[list, list]:
+    """Bin values with exact indices
+
+    Args:
+      y: Sample values
+
+    Returns:
+      counts, bins
+    """
+    counts = {}
+    for e in y:
+      if e in counts:
+        counts[e] += 1
+      else:
+        counts[e] = 1
+    bins = sorted(counts.keys())
+    counts = [counts[b] for b in bins]
+    return counts, bins
+
+  @staticmethod
+  def exact_np(y: Iterable) -> tuple[np.ndarray, np.ndarray]:
+    """Bin values with exact indices
+
+    Args:
+      y: Sample values
+
+    Returns:
+      counts, bins as np arrays
+    """
+    counts = {}
+    for e in y:
+      if e in counts:
+        counts[e] += 1
+      else:
+        counts[e] = 1
+    bins = sorted(counts.keys())
+    counts = [counts[b] for b in bins]
+    return np.array(counts), np.array(bins)
+
+  @staticmethod
+  def exponential(y: Iterable,
+                  bin_count: int = 100,
+                  density: bool = None) -> tuple[np.array, np.array]:
+    """Bin values with equal exponential width bins
+
+    Args:
+      y: Sample values
+      bin_count: Number of equal exponential width bins
+      density: Passed to np.histogram, roughly True to get a PDF
+
+    Returns:
+      counts, edges
+    """
+    with np.errstate(divide="ignore"):
+      y_exp = np.log10(y)
+    y_min = min(y_exp)
+    y_max = max(y_exp)
+    if np.isneginf(y_min):
+      if np.isneginf(y_max):
+        y_max = 0
+      else:
+        y_max = int(np.ceil(y_max))
+      edges = [np.NINF]
+      bins = np.arange(y_max - (bin_count - 1), y_max + 1, 1, dtype=np.float64)
+      edges.extend(bins)
+      edges = np.array(edges)
+      counts, _ = np.histogram(y_exp, edges, density=False)
+      if density:
+        counts = counts / 1 / counts.sum()
+      return counts, edges
     else:
-      maxValue = int(np.ceil(maxValue))
-    edges = [np.NINF]
-    bins = np.arange(maxValue - (binCount - 1),
-                     maxValue + 1, 1, dtype=np.float64)
-    edges.extend(bins + 0.5)
-    bins = list(bins)
-  else:
-    edges = np.linspace(minValue, maxValue, binCount + 1)
-    bins = edges[:-1] + (edges[1] - edges[0]) / 2
+      edges = np.linspace(y_min, y_max, bin_count + 1)
+      return np.histogram(y_exp, edges, density=density)
 
-  counts, _ = np.histogram(valuesExp, edges, density=False)
-  if density:
-    counts = counts / 1 / counts.sum()
+  @staticmethod
+  def downsample(y: np.ndarray, n_max: int = 50e3, bin_count=500) -> np.ndarray:
+    """Reduce the number of samples to at most n_max, preserving sample
+    frequency
 
-  return bins, counts
+    Bins the values, scales the counts to total of n_max, then undoes the
+    binning. Does use floor for sample count, be wary of loss of low frequency
+    samples.
 
-def binExact(values: Iterable) -> tuple[list, list]:
-  '''!@brief Bin values with exact indices
+    Args:
+      y: Sample values
+      n_max: Maximum number of samples in returned dataset
+      bin_count: Number of equal width bins, None for exact binning
 
-  @param values Values iterable over
-  @return tuple[list, list] (bins: list, counts: list)
-  '''
-  counts = {}
-  for e in values:
-    if e in counts:
-      counts[e] += 1
+    Returns:
+      Downsampled dataset samples
+    """
+    scale = n_max / len(y)
+    if scale >= 1:
+      return y
+    if bin_count is not None:
+      counts, edges = Bin.linear(y, bin_count=bin_count, density=False)
+      bins = (edges[:-1] + edges[1:]) / 2
     else:
-      counts[e] = 1
-  bins = sorted(counts.keys())
-  counts = [counts[b] for b in bins]
-  return bins, counts
-
-def histogramDownsample(values: np.array, nMax: int = 50e3,
-                        binCount=500) -> np.array:
-  '''!@ Reduce the number of samples to at most nMax. Preseves sample frequency
-
-  Bins the values, scale the counts to total of nMax, then undoes the binning.
-  Does use floor for sample count, be wary of loss of low frequency samples.
+      counts, bins = Bin.exact(y)
+    y_down = []
+    for i in range(len(counts)):
+      count_down = int(np.floor(counts[i] * scale))
+      y_down.extend([bins[i]] * count_down)
+    return np.array(y_down)
 
 
-  @param values Samples
-  @param nMax Maximum number of samples
-  @param binCount Number of equal-width bins to use, None for exact binning
-  @return np.array Downsampled samples
-  '''
-  scale = nMax / len(values)
-  if scale >= 1:
-    return values
-  if binCount:
-    bins, counts = binLinear(values, binCount=binCount)
-  else:
-    bins, counts = binExact(values)
-  values = []
-  for i in range(len(bins)):
-    count = int(np.floor(counts[i] * scale))
-    values.extend([bins[i]] * count)
-  return np.array(values)
+class Image:
+  """Collection of image processing functions
+  """
 
-@ignore_warnings(category=ConvergenceWarning)
-def fitGaussianMix(
-  x: list, nMax: int = 10, tol: float = 1e-3) -> list[tuple[float, float, float]]:
-  '''!@brief Fit a mixture of gaussian curves, returning the best combination
+  @staticmethod
+  def layer_rgba(below: np.ndarray, above: np.ndarray) -> np.ndarray:
+    """Layer a RGBA image on top of another using alpha compositing
 
-  @param x Samples
-  @param nMax Maximum number of components
-  @param tol Tolerance of curve fitting (normalized units)
-  @return list of components sorted by amplitude [amplitude: float, mean: float, stddev: float]
-  '''
-  xSpan = np.amax(x) - np.amin(x)
-  if xSpan == 0:
-    return [[1, x[0], 0]]
-  xAvg = np.average(x)
-  x = (np.array(x).reshape(-1, 1) - xAvg) / xSpan
+    Images are np.arrays [row, column, channel=4]
 
-  models = []
-  for i in range(min(len(x), nMax)):
-    models.append(GaussianMixture(i + 1, tol=tol).fit(x))
+    Args:
+      below: Image on bottom of stack
+      above: Image on top of stack
 
-  aic = [m.aic(x) for m in models]
-  mBest = models[np.argmin(aic)]
+    Returns:
+      Combined image
 
-  # xRange = np.linspace(np.amin(x), np.amax(x), 1000)
-  # logprob = mBest.score_samples(xRange.reshape(-1, 1))
-  # responsibilities = mBest.predict_proba(xRange.reshape(-1, 1))
-  # pdf = np.exp(logprob)
-  # pdf_individual = responsibilities * pdf[:, np.newaxis]
+    Raises:
+      ValueError if image shapes (resolution) don't match or they are not 4
+      channels
+    """
+    if below.shape != above.shape:
+      raise ValueError(
+          f"Images must be same shape {below.shape} vs. {above.shape}")
+    if below.shape[2] != 4:
+      raise ValueError("Image is not RGBA")
 
-  # pyplot.hist(x * xMax, 30, density=True, histtype='stepfilled', alpha=0.4)
-  # pyplot.plot(xRange * xMax, pdf / xMax, '-k')
-  # pyplot.plot(xRange * xMax, pdf_individual / xMax, '--k')
-  # pyplot.show()
+    alpha_a = above[:, :, 3]
+    alpha_b = below[:, :, 3]
+    alpha_out = alpha_a + np.multiply(alpha_b, 1 - alpha_a)
+    out = np.zeros(below.shape, dtype=below.dtype)
+    out[:, :, 0] = np.divide(
+        np.multiply(above[:, :, 0], alpha_a) +
+        np.multiply(np.multiply(below[:, :, 0], alpha_b), 1 - alpha_a),
+        alpha_out,
+        where=alpha_out != 0)
+    out[:, :, 1] = np.divide(
+        np.multiply(above[:, :, 1], alpha_a) +
+        np.multiply(np.multiply(below[:, :, 1], alpha_b), 1 - alpha_a),
+        alpha_out,
+        where=alpha_out != 0)
+    out[:, :, 2] = np.divide(
+        np.multiply(above[:, :, 2], alpha_a) +
+        np.multiply(np.multiply(below[:, :, 2], alpha_b), 1 - alpha_a),
+        alpha_out,
+        where=alpha_out != 0)
+    out[:, :, 3] = alpha_out
+    return out
 
-  components = []
-  for i in range(mBest.n_components):
-    amplitude = mBest.weights_[i]
-    mean = mBest.means_[i][0] * xSpan + xAvg
-    stddev = abs(np.sqrt(mBest.covariances_[i][0][0]) * xSpan)
-    components.append([amplitude, mean, stddev])
-  return sorted(components, key=lambda c: -c[0])
+  @staticmethod
+  def np_to_base64(image: np.ndarray) -> bytes:
+    """Convert a numpy image to base64 encoded PNG
 
-def layerNumpyImageRGBA(below: np.ndarray, above: np.ndarray) -> np.ndarray:
-  '''!@brief Layer a RGBA image on top of another using alpha compositing
+    Args:
+      image: Image to convert, shape=[row, column, channels] from 0.0 to 1.0
 
-  @param below Image on bottom of stack
-  @param above Image on top of stack
-  @return np.ndarray Alpha composited image
-  '''
-  if below.shape != above.shape:
-    raise Exception(
-      f'Cannot layer images of different shapes {below.shape} vs. {above.shape}')
-  if below.shape[2] != 4 or above.shape[2] != 4:
-    raise Exception(f'Image is not RGBA')
+    Returns:
+      base64 encoded PNG image
+    """
+    image = PIL.Image.fromarray((255 * image).astype("uint8"))
+    with io.BytesIO() as buf:
+      image.save(buf, "PNG")
+      return base64.b64encode(buf.getvalue())
 
-  alphaA = above[:, :, 3]
-  alphaB = below[:, :, 3]
-  alphaOut = alphaA + np.multiply(alphaB, 1 - alphaA)
-  out = np.zeros(below.shape, dtype=below.dtype)
-  out[:, :, 0] = np.divide(np.multiply(above[:, :, 0], alphaA) +
-                           np.multiply(np.multiply(below[:, :, 0], alphaB), 1 -
-                                       alphaA), alphaOut, where=alphaOut != 0)
-  out[:, :, 1] = np.divide(np.multiply(above[:, :, 1], alphaA) +
-                           np.multiply(np.multiply(below[:, :, 1], alphaB), 1 -
-                                       alphaA), alphaOut, where=alphaOut != 0)
-  out[:, :, 2] = np.divide(np.multiply(above[:, :, 2], alphaA) +
-                           np.multiply(np.multiply(below[:, :, 2], alphaB), 1 -
-                                       alphaA), alphaOut, where=alphaOut != 0)
-  out[:, :, 3] = alphaOut
-  return out
+  @staticmethod
+  def np_to_file(image: np.ndarray, path: str):
+    """Save a numpy image to file
 
-def trimImage(rr: np.ndarray, cc: np.ndarray, size: int,
-              val: np.ndarray = None) -> Union[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray, np.ndarray]]:
-  '''!@brief Trim row and column selectors to image size, discards out of bounds
-
-  @param rr Row indices
-  @param cc Column indices
-  @param size Resolution of the image
-  @param val Values, optional
-  @return tuple[np.ndarray...]
-    (rr, cc) Trimmed to image size if val was not provided
-    (rr, cc, val) Trimmed to image size if val was provided
-  '''
-  mask = []
-  mask.extend(np.where(rr < 0)[0])
-  mask.extend(np.where(rr >= size)[0])
-  mask.extend(np.where(cc < 0)[0])
-  mask.extend(np.where(cc >= size)[0])
-  rr = np.delete(rr, mask)
-  cc = np.delete(cc, mask)
-  if val is None:
-    return rr, cc
-  val = np.delete(val, mask)
-  return rr, cc, val
-
-def imageToBase64Image(image: Image) -> bytes:
-  '''!@brief Convert a PIL.Image to base64 encoded PNG
-
-  @param image Image to convert
-  @return bytes base64 encoded PNG image
-  '''
-  b = io.BytesIO()
-  image.save(b, 'PNG')
-  return base64.b64encode(b.getvalue())
+    Args:
+      image: Image to save, shape=[row, column, channels] from 0.0 to 1.0
+      path: Path to output file
+    """
+    image = PIL.Image.fromarray((255 * image).astype("uint8"))
+    image.save(path)
