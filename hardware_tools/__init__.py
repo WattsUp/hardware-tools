@@ -9,7 +9,7 @@ __version__ = version.version_full
 
 __all__ = ["equipment", "measurement", "math"]
 
-from hardware_tools import equipment
-from hardware_tools import measurement
+# from hardware_tools import equipment
+# from hardware_tools import measurement
 
 from hardware_tools import math

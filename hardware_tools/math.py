@@ -238,10 +238,10 @@ class Line2D:
     l1 = line_params(self.p, self.q)
     l2 = line_params(p, q)
     det = l1[0] * l2[1] - l1[1] * l2[0]
-    det_x = l2[1] * l1[2] - l2[2] * l1[1]
-    det_y = l1[0] * l2[2] - l1[2] * l2[0]
     if det == 0:
       return None
+    det_x = l2[1] * l1[2] - l2[2] * l1[1]
+    det_y = l1[0] * l2[2] - l1[2] * l2[0]
     return Point2D(det_x / det, det_y / det)
 
 
