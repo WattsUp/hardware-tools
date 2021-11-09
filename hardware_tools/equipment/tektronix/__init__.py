@@ -1,5 +1,4 @@
-__all__ = ['MDO3000', 'MDO4000', 'MSO4000']
+"""Tektronix branded equipment
+"""
 
-from .MDO3000 import MDO3000
-from .MDO4000 import MDO4000
-from .MSO4000 import MSO4000
+from hardware_tools.equipment.tektronix.family_mso4000 import *

@@ -268,7 +268,7 @@ class TestMath(unittest.TestCase):
 
     error = np.sqrt(np.mean(errors**2))
 
-    self.assertLess(error, 0.1)
+    self.assertLess(error, 0.15)
 
   def test_bin_linear(self):
     bin_count = np.random.randint(5, 100)

@@ -1,31 +1,41 @@
-from hardware_tools.equipment.scope import Scope
-from typing import Union
+"""Utility functions to ease equipment connection
+"""
+
 import pyvisa
 
-from .equipment import Equipment
-from . import tektronix
+from hardware_tools.equipment.equipment import Equipment
+from hardware_tools.equipment import tektronix
 
-def getAvailableEquipment() -> list[str]:
-  '''!@brief Get a list of available equipment addresses
 
-  @return list[str] List of VISA address strings
-  '''
+def get_available() -> list[str]:
+  """Get a list of available equipment addresses
+
+  Returns:
+    List of VISA address strings
+  """
   rm = pyvisa.ResourceManager()
   return rm.list_resources()
 
-def getEquipmentObject(addr: str) -> Union[Scope]:
-  '''!@brief Ask equipment for identity and create appropriate Equipment object
 
-  @param addr The address of the equipment
-  @return Equipment Appropriate Equipment object
-  '''
-  e = Equipment('', addr)
-  identity = e.ask('*IDN?')
-  if identity.startswith('TEKTRONIX,MSO4'):
-    return tektronix.MSO4000(addr)
-  if identity.startswith('TEKTRONIX,MDO4'):
-    return tektronix.MDO4000(addr)
-  if identity.startswith('TEKTRONIX,MDO3'):
-    return tektronix.MDO3000(addr)
+def connect(address: str) -> Equipment:
+  """Open an address to an Equipment and return the appropriate derrived object
 
-  raise Exception(f'Unknown equipment identity \'{identity}\'')
+  Queries the identity and switches based on reply.
+
+  Args:
+    address: Address to the Equipment (VISA resource string)
+
+  Returns:
+    Derrived class of Equipment as appropriate
+  """
+  rm = pyvisa.ResourceManager()
+  with rm.open_resource(address) as instrument:
+    identity = instrument.query("*IDN?").strip()
+  if identity.startswith("TEKTRONIX,MSO4"):
+    return tektronix.MSO4000(address)
+  if identity.startswith("TEKTRONIX,MDO4"):
+    return tektronix.MDO4000(address)
+  if identity.startswith("TEKTRONIX,MDO3"):
+    return tektronix.MDO3000(address)
+
+  raise LookupError(f"Unknown equipment identity '{identity}'")

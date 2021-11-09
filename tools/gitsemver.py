@@ -142,7 +142,7 @@ def check_semver(cmd: str, minimum: str) -> bool:
   try:
     output = subprocess.check_output(cmd, universal_newlines=True)
   except Exception:  # pylint: disable=broad-except
-    print(f'Unable to run "{cmd[0]}". Is command correctly specified?',
+    print(f"Unable to run '{cmd[0]}'. Is command correctly specified?",
           file=sys.stderr)
     return False
   matches = re.search(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)",

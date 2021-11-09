@@ -23,13 +23,13 @@ class TestIntersections(unittest.TestCase):
 
     p_intersect = intersections_slow.get(x0, y0, x1, y1, x0, y1, x1, y0)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 3)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 3)
+    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
+    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
 
     p_intersect = intersections_slow.get(x1, y1, x0, y0, x1, y0, x0, y1)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 3)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 3)
+    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
+    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
 
     p_intersect = intersections_slow.get(x0, y0, x1, y1, x0, y0, x1, y1)
     self.assertIsNone(p_intersect)
@@ -88,13 +88,13 @@ class TestIntersections(unittest.TestCase):
 
     p_intersect = intersections_fast.get(x0, y0, x1, y1, x0, y1, x1, y0)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 3)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 3)
+    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
+    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
 
     p_intersect = intersections_fast.get(x1, y1, x0, y0, x1, y0, x0, y1)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 3)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 3)
+    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
+    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
 
     p_intersect = intersections_fast.get(x0, y0, x1, y1, x0, y0, x1, y1)
     self.assertIsNone(p_intersect)
@@ -149,7 +149,7 @@ class TestIntersections(unittest.TestCase):
     mask = [[(0, -1), (10, 1)]]
     self.assertTrue(intersections_slow.is_hitting_np(t, y, mask))
 
-    mask = [[(1, 3), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
+    mask = [[(1, 2), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
             [(0.75, -0.9), (1, 0.9), (1.25, -0.9)]]
     self.assertFalse(intersections_slow.is_hitting_np(t, y, mask))
 
@@ -160,10 +160,10 @@ class TestIntersections(unittest.TestCase):
     hits = sorted(hits, key=lambda h: h[0])
     self.assertEqual(len(hits), len(targets))
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 3)
-      self.assertAlmostEqual(hit[1], target[1], 3)
+      self.assertAlmostEqual(hit[0], target[0], 2)
+      self.assertAlmostEqual(hit[1], target[1], 2)
 
-    mask = [[(1, 3), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
+    mask = [[(1, 2), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
             [(0.75, -0.9), (1, 0.9), (1.25, -0.9)]]
     hits = intersections_slow.get_hits_np(t, y, mask)
     self.assertEqual(0, len(hits))
@@ -188,7 +188,7 @@ class TestIntersections(unittest.TestCase):
     mask = [[(0, -1), (10, 1)]]
     self.assertTrue(intersections_fast.is_hitting_np(t, y, mask))
 
-    mask = [[(1, 3), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
+    mask = [[(1, 2), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
             [(0.75, -0.9), (1, 0.9), (1.25, -0.9)]]
     self.assertFalse(intersections_fast.is_hitting_np(t, y, mask))
 
@@ -199,10 +199,10 @@ class TestIntersections(unittest.TestCase):
     hits = sorted(hits, key=lambda h: h[0])
     self.assertEqual(len(hits), len(targets))
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 3)
-      self.assertAlmostEqual(hit[1], target[1], 3)
+      self.assertAlmostEqual(hit[0], target[0], 2)
+      self.assertAlmostEqual(hit[1], target[1], 2)
 
-    mask = [[(1, 3), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
+    mask = [[(1, 2), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
             [(0.75, -0.9), (1, 0.9), (1.25, -0.9)]]
     hits = intersections_fast.get_hits_np(t, y, mask)
     self.assertEqual(0, len(hits))

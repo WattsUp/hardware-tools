@@ -1,7 +1,8 @@
-__all__ = ['tektronix', 'equipment', 'scope', 'utility']
+"""Collection of equipment interfaces to physical testing hardware
+"""
 
-from . import equipment
-from . import scope
-from . import utility
+__all__ = ["equipment", "scope", "utility"]
 
-from . import tektronix
+from hardware_tools.equipment.equipment import Equipment
+from hardware_tools.equipment.scope import Scope
+from hardware_tools.equipment.utility import *
