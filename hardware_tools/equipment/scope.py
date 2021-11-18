@@ -45,6 +45,11 @@ class Scope(equipment.Equipment):
 
     Returns:
       Setting change validation
+
+    Raises:
+      KeyError if setting is improper
+
+      ValueError if value is improper
     """
     pass  # pragma: no cover
 
@@ -61,6 +66,13 @@ class Scope(equipment.Equipment):
       timeout: Time in seconds to wait until giving up
       silent: True will not print anythin except errors
       channel: The channel to perform on if applicable (see self.channels)
+
+    Raises:
+      KeyError if command is improper
+
+      ValueError if channel is improper
+
+      TimeoutError if timeout was exceeded
     """
     pass  # pragma: no cover
 
@@ -81,11 +93,15 @@ class Scope(equipment.Equipment):
       add_noise: True will add uniform noise to the LSB for antialiasing
 
     Returns:
-      Samples: [[t0, t1,..., tn], [y0, y1,..., yn]]
+      Samples: [[x0, x1,..., xn], [y0, y1,..., yn]]
       Dictionary of sampling information:
-        t_unit: str = Unit string for horizontal axis
+        config_string: str = Human readable string describing configuration
+        x_unit: str = Unit string for horizontal axis
         y_unit: str = Unit string for vertical axis
-        t_incr: float = Step between horizontal axis values
+        x_incr: float = Step between horizontal axis values
         y_incr: float = Step between vertical axis values (LSB)
+
+    Raises:
+      ValueError if channel is improper
     """
     pass  # pragma: no cover

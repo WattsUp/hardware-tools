@@ -1,8 +1,11 @@
 """Test module hardware_tools.equipment.tektronix.family_mso4000
 """
 
+import io
 import re
+import struct
 import unittest
+from unittest import mock
 
 import numpy as np
 import pyvisa
@@ -17,34 +20,48 @@ class MockMDO3054(mock_pyvisa.Resource):
   """Mock Tektronix MDO3054
   """
 
-  record_length = 1000
-  horizontal_scale = 1e-9
-  sample_frequency = min(2.5e9, record_length / (10 * horizontal_scale))
-  trigger_a_mode = "AUTO"
-  trigger_a_source = "CH1"
-  trigger_a_coupling = "DC"
-  trigger_a_slope = "FALL"
-  acquire_mode = "SAMPLE"
+  def __init__(self, address: str) -> None:
+    super().__init__(address)
+    self.record_length = 1000
+    self.horizontal_scale = 1e-9
+    self.horizontal_delay = 0
+    self.sample_frequency = min(
+        2.5e9, self.record_length / (10 * self.horizontal_scale))
+    self.trigger_a_mode = "AUTO"
+    self.trigger_a_source = "CH1"
+    self.trigger_a_coupling = "DC"
+    self.trigger_a_slope = "FALL"
+    self.trigger_state = "AUTO"
+    self.acquire_mode = "SAMPLE"
+    self.acquire_single = False
+    self.acquire_state_running = True
+    self.acquire_num = 0
+    self.data_source = "CH1"
+    self.data_start = 1
+    self.data_stop = self.record_length
 
-  channels = {
-      c: {
-          "scale": 1,
-          "position": 0,
-          "offset": 0,
-          "label": c,
-          "bandwidth": 500e6,
-          "termination": 1e6,
-          "invert": False,
-          "gain": 1,
-          "coupling": "DC",
-          "trigger": 0
-      } for c in ["CH1", "CH2", "CH3", "CH4"]
-  }
+    self.waveform_amp = 0.125
+    self.waveform_offset = 0.125
+
+    self.channels = {
+        c: {
+            "scale": 0.1,
+            "position": 0,
+            "offset": 0,
+            "label": c,
+            "bandwidth": 500e6,
+            "termination": 1e6,
+            "invert": False,
+            "gain": 1,
+            "coupling": "DC",
+            "trigger": 0
+        } for c in ["CH1", "CH2", "CH3", "CH4"]
+    }
 
   def write(self, command: str) -> None:
     self.queue_tx.append(command)
     command = re.split(":| ", command.upper())
-    if command[0] in ["HEADER", "VERBOSE"]:
+    if command[0] in ["HEADER", "VERBOSE", "CLEARMENU"]:
       return
     if command[0] == "HORIZONTAL":
       if command[1] == "RECORDLENGTH":
@@ -85,6 +102,8 @@ class MockMDO3054(mock_pyvisa.Resource):
           self.horizontal_delay = min(5e3, max(min_delay, value))
           return
     if command[0] == "TRIGGER":
+      if command[1] == "FORCE":
+        return
       if command[1] == "A":
         if command[2] == "TYPE":
           return
@@ -103,7 +122,7 @@ class MockMDO3054(mock_pyvisa.Resource):
             ]
             if value in choices:
               self.trigger_a_source = value
-            return
+              return
           if command[3] == "COUPLING":
             value = command[4]
             choices = [
@@ -137,7 +156,28 @@ class MockMDO3054(mock_pyvisa.Resource):
         ]
         if value in choices:
           self.acquire_mode = value
-        return
+          return
+      if command[1] == "STATE":
+        if command[2] in ["1", "ON", "RUN"]:
+          self.acquire_num = 1
+          if self.acquire_single:
+            self.trigger_state = "SAVE"
+            self.acquire_state_running = False
+          else:
+            self.trigger_state = "TRIGGER"
+            self.acquire_state_running = True
+          return
+        if command[2] in ["0", "OFF", "STOP"]:
+          self.acquire_state_running = False
+          self.trigger_state = "SAVE"
+          return
+      if command[1] == "STOPAFTER":
+        if command[2] == "SEQUENCE":
+          self.acquire_single = True
+          return
+        if command[2] == "RUNSTOP":
+          self.acquire_single = False
+          return
     if command[0] in ["CH1", "CH2", "CH3", "CH4"]:
       if command[1] == "SCALE":
         value = float(command[2])
@@ -210,6 +250,68 @@ class MockMDO3054(mock_pyvisa.Resource):
         if command[2] in ["0", "OFF"]:
           self.channels[command[1]]["active"] = False
           return
+    if command[0] == "DATA":
+      if command[1] == "SOURCE":
+        value = command[2]
+        choices = [
+            "CH1", "CH2", "CH3", "CH4", "MATH", "REF1", "REF2", "REF3", "REF4",
+            "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10",
+            "D11", "D12", "D13", "D14", "D15", "DIGITAL", "RF_AMPLITUDE",
+            "RF_FREQUENCY", "RF_PHASE", "RF_NORMAL", "RF_AVERAGE", "RF_MAXHOLD",
+            "RF_MINHOLD"
+        ]
+        if value in choices:
+          self.data_source = value
+          return
+      if command[1] == "START":
+        self.data_start = max(1, int(float(command[2])))
+        return
+      if command[1] == "STOP":
+        self.data_stop = max(1, int(float(command[2])))
+        return
+      if command[1] == "WIDTH":
+        if int(command[2]) != 1:
+          raise ValueError("Mock MDO3054 only knows DATA:WIDTH 1")
+        return
+      if command[1] == "ENCDG":
+        if command[2] != "FASTEST":
+          raise ValueError("Mock MDO3054 only knows DATA:ENCDG FASTEST")
+        return
+    if command[0] == "WAVFRM?":
+      points = int(min(self.record_length,
+                       self.data_stop - self.data_start + 1))
+      x_incr = 1 / self.sample_frequency
+      x_zero = -x_incr * points / 2 + self.horizontal_delay
+      x_unit = "s"
+      y_mult = 10 * self.channels[self.data_source]["scale"] / 250
+      y_off = self.channels[self.data_source]["position"] / 10 * 250
+      y_zero = self.channels[self.data_source]["offset"]
+      y_unit = "V"
+      wf_id = f"{self.data_source}, "
+      wf_id += f"{self.channels[self.data_source]['coupling']} coupling, "
+      wf_id += f"{self.channels[self.data_source]['scale']}V/div, "
+      wf_id += f"{self.horizontal_scale}s/div, "
+      wf_id += f"{self.record_length} points"
+
+      x = x_zero + x_incr * np.arange(points).astype(np.float32)
+      y_real = self.waveform_amp * np.sin(
+          x * 2 * np.pi * 1e3) + self.waveform_offset
+      y = np.clip(np.round((y_real - y_zero) / y_mult + y_off), -127, 127)
+      y = y.astype(int).tolist()
+
+      waveform = struct.pack(f">{points}b", *y)
+      n_bytes = f"{len(waveform)}"
+
+      real_data = f':WFMOUTPRE:WFID "{wf_id}";'
+      real_data += f"NR_PT {points};"
+      real_data += f'XUNIT "{x_unit}";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
+      real_data += f'YUNIT "{y_unit}";YMULT {y_mult:.4E};'
+      real_data += f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
+      real_data += f":CURVE #{len(n_bytes)}{n_bytes}"
+      real_data = real_data.encode(encoding="ascii") + waveform + b"\n"
+
+      self.queue_rx.append(real_data)
+      return
 
     raise KeyError(f"Unknown command {command}")
 
@@ -230,6 +332,8 @@ class MockMDO3054(mock_pyvisa.Resource):
         if command[2] == "TIME?":
           return f"{self.horizontal_delay:.6E}"
     if command[0] == "TRIGGER":
+      if command[1] == "STATE?":
+        return self.trigger_state
       if command[1] == "A":
         if command[2] == "MODE?":
           return f"{self.trigger_a_mode}"
@@ -244,6 +348,12 @@ class MockMDO3054(mock_pyvisa.Resource):
           if command[3][:-1] in ["CH1", "CH2", "CH3", "CH4"]:
             return f"{self.channels[command[3][:-1]]['trigger']}"
     if command[0] == "ACQUIRE":
+      if command[1] == "STATE?":
+        return "1" if self.acquire_state_running else "0"
+      if command[1] == "NUMACQ?":
+        if not self.acquire_single:
+          self.acquire_num += 1
+        return f"{self.acquire_num}"
       if command[1] == "MODE?":
         return f"{self.acquire_mode}"
     if command[0] in ["CH1", "CH2", "CH3", "CH4"]:
@@ -285,6 +395,7 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
     equipment.pyvisa = mock_pyvisa
+    utility.pyvisa = mock_pyvisa
 
   def tearDown(self) -> None:
     super().tearDown()
@@ -317,7 +428,6 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
     self.assertListEqual(instrument.queue_tx[-2:], ["HEADER OFF", "VERBOSE ON"])
 
   def test_configure(self):
-    # return # TODO remove
     e = None
     if self._TRY_REAL_SCOPE:
       utility.pyvisa = pyvisa
@@ -326,6 +436,7 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       for a in available:
         if a.startswith("USB::0x0699::0x0408::"):
           e = tektronix.MDO3000(a)
+          e.send("*RST")
           break
 
     if e is None:
@@ -383,6 +494,7 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       for a in available:
         if a.startswith("USB::0x0699::0x0408::"):
           e = tektronix.MDO3000(a)
+          e.send("*RST")
           break
 
     if e is None:
@@ -471,3 +583,207 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
     self.assertEqual(value, reply)
     reply = e.configure_channel("CH4", "TRIGGER_LEVEL", "TTL")
     self.assertEqual(value, reply)
+
+  def test_command(self):
+    e = None
+    if self._TRY_REAL_SCOPE:
+      utility.pyvisa = pyvisa
+      equipment.pyvisa = pyvisa
+      available = utility.get_available()
+      for a in available:
+        if a.startswith("USB::0x0699::0x0408::"):
+          e = tektronix.MDO3000(a)
+          e.send("*RST")
+          break
+
+    if e is None:
+      utility.pyvisa = mock_pyvisa
+      equipment.pyvisa = mock_pyvisa
+      address = "USB::0x0000::0x0000:C000000::INSTR"
+
+      mock_pyvisa.no_pop = True
+      _ = MockMDO3054(address)
+
+      e = tektronix.MDO3000(address)
+
+    self.assertRaises(KeyError, e.command, "Fake")
+
+    e.configure("TRIGGER_SOURCE", "LINE")
+    e.configure("TIME_POINTS", 10e6)
+
+    e.command("STOP")
+
+    e.command("RUN")
+
+    e.command("FORCE_TRIGGER")
+
+    e.command("SINGLE")
+
+    e.command("SINGLE_FORCE")
+
+    e.command("CLEAR_MENU")
+
+    channel = "CH4"
+    e.configure_channel(channel, "SCALE", 0.1)
+    e.configure_channel(channel, "POSITION", 0)
+    self.assertRaises(ValueError, e.command, "AUTOSCALE", channel=None)
+    self.assertRaises(ValueError, e.command, "AUTOSCALE", channel="CHFake")
+    e.command("AUTOSCALE", channel=channel, silent=True)
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+
+  def test_autoscale(self):
+    address = "USB::0x0000::0x0000:C000000::INSTR"
+    instrument = MockMDO3054(address)
+
+    e = tektronix.MDO3000(address)
+
+    channel = "CH4"
+    self.assertRaises(ValueError, e.command, "AUTOSCALE", channel=None)
+    self.assertRaises(ValueError, e.command, "AUTOSCALE", channel="CHFake")
+
+    e.configure_channel(channel, "SCALE", 0.1)
+    e.configure_channel(channel, "POSITION", 0)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      e.command("AUTOSCALE", channel=channel, silent=False)
+
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertTrue(
+        fake_stdout.getvalue().startswith(f"Autoscaling channel '{channel}'"))
+
+    instrument.waveform_amp = 0.125
+    instrument.waveform_offset = 0.125
+    e.configure_channel(channel, "SCALE", 0.1)
+    e.configure_channel(channel, "POSITION", 4.5)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      e.command("AUTOSCALE", channel=channel, silent=True)
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+
+    instrument.waveform_amp = 0.125
+    instrument.waveform_offset = 0.125
+    e.configure_channel(channel, "SCALE", 0.05)
+    e.configure_channel(channel, "POSITION", -5)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      e.command("AUTOSCALE", channel=channel, silent=True)
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+
+    instrument.waveform_amp = 0.125
+    instrument.waveform_offset = 0.125
+    e.configure_channel(channel, "SCALE", 0.03)
+    e.configure_channel(channel, "POSITION", -5)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      e.command("AUTOSCALE", channel=channel, silent=False)
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+
+    instrument.waveform_amp = 0.125
+    instrument.waveform_offset = 0.125
+    e.configure_channel(channel, "SCALE", 0.5)
+    e.configure_channel(channel, "POSITION", -5)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      e.command("AUTOSCALE", channel=channel, silent=False)
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+
+    instrument.waveform_amp = 0.125
+    instrument.waveform_offset = 0.125
+    e.configure_channel(channel, "SCALE", 0.5)
+    e.configure_channel(channel, "POSITION", 0)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      e.command("AUTOSCALE", channel=channel, silent=True)
+    position = float(e.ask(f"{channel}:POSITION?"))
+    scale = float(e.ask(f"{channel}:SCALE?"))
+    self.assertAlmostEqual(scale / 0.0290, 1, 1)
+    self.assertAlmostEqual(position / (-4.27), 1, 1)
+
+    instrument.waveform_amp = 0
+    instrument.waveform_offset = 0.125
+    e.configure_channel(channel, "SCALE", 0.1)
+    e.configure_channel(channel, "POSITION", 0)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      self.assertRaises(TimeoutError,
+                        e.command,
+                        "AUTOSCALE",
+                        channel=channel,
+                        silent=False)
+
+  def test_read_waveform(self):
+    e = None
+    if self._TRY_REAL_SCOPE:
+      utility.pyvisa = pyvisa
+      equipment.pyvisa = pyvisa
+      available = utility.get_available()
+      for a in available:
+        if a.startswith("USB::0x0699::0x0408::"):
+          e = tektronix.MDO3000(a)
+          e.send("*RST")
+          break
+
+    if e is None:
+      utility.pyvisa = mock_pyvisa
+      equipment.pyvisa = mock_pyvisa
+      address = "USB::0x0000::0x0000:C000000::INSTR"
+
+      mock_pyvisa.no_pop = True
+      _ = MockMDO3054(address)
+
+      e = tektronix.MDO3000(address)
+
+    self.assertRaises(KeyError, e.read_waveform, "CHFake")
+
+    num_points = 10e3
+    e.configure("TIME_POINTS", num_points)
+    e.configure("TIME_SCALE", 1e-3)
+    e.configure("TIME_OFFSET", -1e-3)
+    e.configure_channel("CH4", "SCALE", 0.05)
+    e.configure_channel("CH4", "OFFSET", -0.01)
+    e.configure_channel("CH4", "POSITION", 1)
+    e.command("SINGLE_FORCE")
+
+    samples, info = e.read_waveform("CH4")
+
+    self.assertEqual(samples.shape[0], 2)
+    self.assertEqual(samples.shape[1], num_points)
+
+    self.assertEqual(info["x_unit"], "s")
+
+    samples, info = e.read_waveform("CH4", raw=True, add_noise=False)
+
+    self.assertEqual(samples.shape[0], 2)
+    self.assertEqual(samples.shape[1], num_points)
+
+    self.assertEqual(info["x_unit"], "s")
+    self.assertEqual(info["y_incr"], 1)
+
+    for i in range(samples.shape[1]):
+      self.assertAlmostEqual(0, samples[1, i] % 1)
+
+    samples, info = e.read_waveform("CH4", raw=True, add_noise=True)
+
+    self.assertEqual(samples.shape[0], 2)
+    self.assertEqual(samples.shape[1], num_points)
+
+    self.assertEqual(info["x_unit"], "s")
+    self.assertEqual(info["y_incr"], 1)
+
+    # At least 1 instance of decimal precision
+    sub_detected = False
+    for i in range(samples.shape[1]):
+      if round(samples[1, i] % 1, 7) != 0:
+        sub_detected = True
+    self.assertTrue(sub_detected)

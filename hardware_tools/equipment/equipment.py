@@ -77,6 +77,9 @@ class Equipment(ABC):
 
     Returns:
       Last reply received
+
+    Raises:
+      TimeoutError if timeout was exceeded
     """
     interval = 0.05
     timeout = int(timeout / interval)
@@ -116,6 +119,11 @@ class Equipment(ABC):
 
     Returns:
       Setting change validation
+
+    Raises:
+      KeyError if setting is improper
+
+      ValueError if value is improper
     """
     pass  # pragma: no cover
 
@@ -129,6 +137,9 @@ class Equipment(ABC):
     Args:
       command: The command to perform (see self.commands)
       timeout: Time in seconds to wait until giving up
-      silent: True will not print anythin except errors
+      silent: True will not print anything except errors
+
+    Raises:
+      TimeoutError if timeout was exceeded
     """
     pass  # pragma: no cover

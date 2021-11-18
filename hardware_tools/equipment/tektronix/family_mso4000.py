@@ -23,6 +23,9 @@ class MSO4000(scope.Scope):
 
     Args:
       address: Address to the Equipment (VISA resource string)
+
+    Raises:
+      ValueError if ID does not match scope type
     """
     super().__init__(address, name="TEKTRONIX-MSO4000")
     if "check_identity" not in kwargs or kwargs["check_identity"]:
@@ -81,8 +84,10 @@ class MSO4000(scope.Scope):
       return self.ask("TRIGGER:A:MODE?")
     elif setting == "TRIGGER_SOURCE":
       value = value.upper()
-      if value not in self.channels:
-        raise ValueError(f"{self} cannot set trigger off of chanel '{value}'")
+      choices = ["AUX", "CH1", "CH2", "CH3", "CH4", "LINE", "RF"]
+      choices.extend([f"D{i}" for i in range(16)])
+      if value not in choices:
+        raise ValueError(f"{self} cannot set trigger off of channel '{value}'")
       self.send("TRIGGER:A:TYPE EDGE")
       self.send(f"TRIGGER:A:EDGE:SOURCE {value}")
       return self.ask("TRIGGER:A:EDGE:SOURCE?")
@@ -165,7 +170,7 @@ class MSO4000(scope.Scope):
         value = value.upper()
         if value not in ["AC", "DC", "DCREJ", "DCREJECT"]:
           raise ValueError(
-              f"{self} cannot set chanel '{channel}' coupling to '{value}'")
+              f"{self} cannot set channel '{channel}' coupling to '{value}'")
         self.send(f"{channel}:COUPLING {value}")
         return self.ask(f"{channel}:COUPLING?")
     elif setting == "ACTIVE":
@@ -188,165 +193,156 @@ class MSO4000(scope.Scope):
               silent: bool = True,
               channel: str = None) -> None:
     command = command.upper()
-    if command not in self.commands:
-      raise Exception(
-          f'{self.name}@{self.addr} cannot perform command \'{command}\'')
 
-    if command == 'STOP':
-      self.send('ACQUIRE:STATE STOP')
-      self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
+    if command == "STOP":
+      self.send("ACQUIRE:STATE STOP")
+      self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
       return
-    elif command == 'RUN':
-      self.send('ACQUIRE:STATE STOP')
-      self.send('ACQUIRE:STOPAFTER RUNSTOP')
-      self.send('ACQUIRE:STATE RUN')
-      self.waitForReply('TRIGGER:STATE?', ['ARMED', 'AUTO', 'TRIGGER', 'READY'],
+    elif command == "RUN":
+      self.send("ACQUIRE:STATE STOP")
+      self.send("ACQUIRE:STOPAFTER RUNSTOP")
+      self.send("ACQUIRE:STATE RUN")
+      self.ask_and_wait("TRIGGER:STATE?", ["ARMED", "AUTO", "TRIGGER", "READY"],
                         timeout=timeout)
       return
-    elif command == 'FORCE_TRIGGER':
-      self.waitForReply('TRIGGER:STATE?', ['READY', 'AUTO', 'SAVE', 'TRIGGER'],
+    elif command == "FORCE_TRIGGER":
+      self.ask_and_wait("TRIGGER:STATE?", ["READY", "AUTO", "SAVE", "TRIGGER"],
                         timeout=timeout)
-      self.send('TRIGGER FORCE')
+      self.send("TRIGGER FORCE")
       return
-    elif command == 'SINGLE':
-      self.send('ACQUIRE:STATE STOP')
-      self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
-      self.send('ACQUIRE:STOPAFTER SEQUENCE')
-      self.send('ACQUIRE:STATE RUN')
+    elif command == "SINGLE":
+      self.send("ACQUIRE:STATE STOP")
+      self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
+      self.send("ACQUIRE:STOPAFTER SEQUENCE")
+      self.send("ACQUIRE:STATE RUN")
       time.sleep(0.1)
-      self.waitForReply('ACQUIRE:STATE?', ['0'], timeout=timeout)
-      self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
-      self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
+      self.ask_and_wait("ACQUIRE:STATE?", ["0"], timeout=timeout)
+      self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
+      self.ask_and_wait("ACQUIRE:NUMACQ?", ["1"])
       return
-    elif command == 'SINGLE_FORCE':
-      self.send('ACQUIRE:STATE STOP')
-      self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
-      self.send('ACQUIRE:STOPAFTER SEQUENCE')
-      self.send('ACQUIRE:STATE RUN')
+    elif command == "SINGLE_FORCE":
+      self.send("ACQUIRE:STATE STOP")
+      self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
+      self.send("ACQUIRE:STOPAFTER SEQUENCE")
+      self.send("ACQUIRE:STATE RUN")
       time.sleep(0.1)
-      try:
-        self.waitForReply('ACQUIRE:STATE?', ['0'],
-                          timeout=timeout,
-                          repeatSend='TRIGGER FORCE')
-        self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
-        self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
-        return
-      except Exception:
-        pass
-
-      # Needs a more help
-      self.waitForReply('TRIGGER:STATE?', ['READY'], timeout=timeout)
-      self.waitForReply('TRIGGER:STATE?', ['TRIGGER', 'SAVE'],
+      self.ask_and_wait("ACQUIRE:STATE?", ["0"],
                         timeout=timeout,
-                        repeatSend='TRIGGER FORCE')
-      self.waitForReply('ACQUIRE:STATE?', ['0'], timeout=timeout)
-      self.waitForReply('TRIGGER:STATE?', ['SAVE'], timeout=timeout)
-      self.waitForReply('ACQUIRE:NUMACQ?', ['1'])
+                        additional_command="TRIGGER FORCE")
+      self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
+      self.ask_and_wait("ACQUIRE:NUMACQ?", ["1"])
       return
-    elif command == 'AUTOSCALE':
+    elif command == "AUTOSCALE":
       if channel is None:
-        raise Exception(
-            f'{self.name}@{self.addr} cannot autoscale chanel \'None\'')
+        raise ValueError(f"{self} cannot autoscale channel '{channel}'")
       channel = channel.upper()
       if channel not in self.channels:
-        raise Exception(
-            f'{self.name}@{self.addr} cannot autoscale chanel \'{channel}\'')
+        raise ValueError(f"{self} cannot autoscale channel '{channel}'")
 
       if not silent:
-        print(f'Autoscaling channel \'{channel}\'')
+        print(f"Autoscaling channel '{channel}'")
 
-      originalNumPoints = self.ask(f'HORIZONTAL:RECORDLENGTH?')
+      original_num_points = self.ask("HORIZONTAL:RECORDLENGTH?")
       self.configure("TIME_POINTS", 1e6)
 
       attempts = 10
       while attempts > 0:
         if attempts != 10 and not silent:
-          print(f' Remaining attempts: {attempts}')
-        self.command('SINGLE_FORCE')
-        data = self.readWaveform(channel=channel, raw=True)[0][1]
-        data = data / 254  # -127 to 127
+          print(f"  Remaining attempts: {attempts}")
+        self.command("SINGLE_FORCE")
+        data = self.read_waveform(channel=channel, raw=True)[0][1]
+        data = data / 254  # -127 to 127 => -0.5 to 0.5
         attempts -= 1
 
-        position = float(self.ask(f'{channel}:POSITION?'))
-        scale = float(self.ask(f'{channel}:SCALE?'))
-        newScale = scale
-        newPosition = position
+        position = float(self.ask(f"{channel}:POSITION?"))
+        scale = float(self.ask(f"{channel}:SCALE?"))
+        new_scale = scale
+        new_position = position
 
-        dataMin = np.min(data)
-        dataMax = np.max(data)
-        dataMid = (dataMin + dataMax) / 2
-        range = (dataMax - dataMin)
-        # print(f'{dataMin:.2f}, {dataMid:.2f}, {dataMax:.2f}, {range:.2f}, {position:.2f}, {scale}')
+        data_min = np.min(data)
+        data_max = np.max(data)
+        data_mid = (data_min + data_max) / 2
+        data_span = (data_max - data_min)
 
-        if dataMax > 0.45:
+        # print(f"{data_min:.2f}, {data_mid:.2f}, {data_max:.2f}, "
+        #       f"{data_span:.2f}, {position:.2f}, {scale}")
+
+        update = False
+        if data_max > 0.45:
           if not silent:
-            print('    Too high')
-          if range > 0.6:
-            newScale = scale * 4
-          if range < 0.1:
-            newScale = scale / 4
-          newPosition = (position - 10 * dataMid) * scale / newScale
-        elif dataMin < -0.45:
+            print("    Too high")
+          if data_span > 0.6:
+            new_scale = scale * 4
+          if data_span < 0.1:
+            new_scale = scale / 4
+          new_position = (position - 10 * data_mid) * scale / new_scale
+          update = True
+        elif data_min < -0.45:
           if not silent:
-            print('    Too low')
-          if range > 0.6:
-            newScale = scale * 4
-          if range < 0.1:
-            newScale = scale / 4
-          newPosition = (position - 10 * dataMid) * scale / newScale
-        elif range < 0.05:
+            print("    Too low")
+          if data_span > 0.6:
+            new_scale = scale * 4
+          if data_span < 0.1:
+            new_scale = scale / 4
+          new_position = (position - 10 * data_mid) * scale / new_scale
+          update = True
+        elif data_span < 0.05:
           if not silent:
-            print('    Too small')
-          newScale = scale / 2
-          newPosition = (position - 10 * dataMid) * scale / newScale
-        elif range > 0.9:
-          if not silent:
-            print('    Too large')
-          newScale = scale * 2
-          newPosition = (position - 10 * dataMid) * scale / newScale
+            print("    Too small")
+          new_scale = scale / 2
+          new_position = (position - 10 * data_mid) * scale / new_scale
+          update = True
+        # Covered by too high and too low
+        # elif data_span > 0.9:
+        #   if not silent:
+        #     print("    Too large")
+        #   new_scale = scale * 2
+        #   new_position = (position - 10 * data_mid) * scale / new_scale
         else:
-          if range < 0.75 or range > 0.85:
+          if data_span < 0.75 or data_span > 0.85:
             if not silent:
-              print('    Adjusting scale')
-            newScale = scale / (0.8 / range)
+              print("    Adjusting scale")
+            new_scale = scale / (0.8 / data_span)
+            update = True
 
-          if dataMid > 0.1 or dataMid < -0.1 or newScale != scale:
+          if data_mid > 0.1 or data_mid < -0.1 or new_scale != scale:
             if not silent:
-              print('    Adjusting position')
-            newPosition = (position - 10 * dataMid) * scale / newScale
+              print("    Adjusting position")
+            new_position = (position - 10 * data_mid) * scale / new_scale
+            update = True
 
-        if newPosition != position or newScale != scale:
+        if update:
           if not silent:
-            print(f'  Scale: {scale:.6g}=>{newScale:.6g}')
-            print(f'  Position: {position:.2f}=>{newPosition:.2f}')
-          self.configureChannel(channel, 'SCALE', newScale)
-          self.configureChannel(channel, 'POSITION', newPosition)
+            print(f"  Scale: {scale:.6g}=>{new_scale:.6g}")
+            print(f"  Position: {position:.2f}=>{new_position:.2f}")
+          self.configure_channel(channel, "SCALE", new_scale)
+          self.configure_channel(channel, "POSITION", new_position)
           continue
+        else:
+          if not silent:
+            print("  Complete")
+          break # pragma: no cover complains this isn't reached
 
-        break
-
-      self.configure("TIME_POINTS", originalNumPoints)
+      self.configure("TIME_POINTS", original_num_points)
 
       if attempts == 0:
-        raise Exception(
-            f'{self.name}@{self.addr} failed to autoscale channel \'{channel}\''
-        )
+        raise TimeoutError(f"{self} failed to autoscale channel '{channel}'")
 
       return
-    elif command == 'CLEARMENU':
-      self.send('CLEARMENU')
+    elif command == "CLEAR_MENU":
+      self.send("CLEARMENU")
       return
 
-    raise Exception(
-        f'{self.name}@{self.addr} cannot perform command \'{command}\'')
+    raise KeyError(f"{self} cannot perform command '{command}'")
 
   def read_waveform(self,
                     channel: str,
                     raw: bool = False,
-                    addNoise: bool = False) -> tuple[np.ndarray, dict]:
+                    add_noise: bool = False) -> tuple[np.ndarray, dict]:
     channel = channel.upper()
     if channel not in self.channels:
-      raise Exception(f"{self} cannot read chanel '{channel}'")
+      raise KeyError(f"{self} cannot read channel '{channel}'")
+    self.configure_channel(channel, "ACTIVE", True)
 
     self.send(f"DATA:SOURCE {channel}")
     self.send("DATA:START 1")
@@ -355,53 +351,61 @@ class MSO4000(scope.Scope):
     self.send("DATA:ENCDG FASTEST")  # BINARY, signed
 
     self.send("HEADER 1")
-    interpretInfo = [
-        i.split(" ", maxsplit=1) for i in self.ask("WFMOUTPRE?")[11:].split(";")
-    ]
-    interpretInfo = {i[0]: i[1] for i in interpretInfo}
+    self._instrument.write("WAVFRM?")
+    data = self._instrument.read_raw()
+    data = data.split(b";:CURVE ")
     self.send("HEADER 0")
 
-    points = int(interpretInfo["NR_PT"])
-    xIncr = float(interpretInfo["XINCR"])
-    xZero = float(interpretInfo["XZERO"])
-    xUnit = interpretInfo["XUNIT"].replace('"', "")
+    waveform_format = data[0].decode(encoding="ascii")
+    curve = data[1]
 
-    infoDict = {
-        "tUnit": xUnit,
-        "yUnit": "ADC Counts",
-        "tIncr": xIncr,
-        "yIncr": 1
+    interpret_info = [
+        i.split(" ", maxsplit=1) for i in waveform_format[11:].split(";")
+    ]
+    interpret_info = {i[0]: i[1] for i in interpret_info}
+    # for k, v in interpret_info.items():
+    #   print(f"{k}: {v}")
+
+    points = int(interpret_info["NR_PT"])
+    x_incr = float(interpret_info["XINCR"])
+    x_zero = float(interpret_info["XZERO"])
+    x_unit = interpret_info["XUNIT"].replace('"', "")
+
+    info_dict = {
+        "config_string": interpret_info["WFID"],
+        "x_unit": x_unit,
+        "y_unit": "ADC Counts",
+        "x_incr": x_incr,
+        "y_incr": 1
     }
 
-    self.instrument.write("CURVE?")
-    data = self.instrument.read_raw()
-    headerLen = 2 + int(chr(data[1]), 16)
-    wave = data[headerLen:-1]
-    wave = np.array(struct.unpack(">%sb" % points, wave)).astype(np.float32)
-    x = np.arange(xZero, xIncr * points + xZero, xIncr).astype(np.float32)
+    header_len = 2 + int(chr(curve[1]), 16)
+    wave = curve[header_len:header_len + points]
+    wave = np.array(struct.unpack(f">{points}b", wave)).astype(np.float32)
+    x = x_zero + x_incr * np.arange(points).astype(np.float32)
 
-    infoDict["clippingTop"] = np.amax(wave) >= 127
-    infoDict["clippingBottom"] = np.amin(wave) <= -127
+    info_dict["clippingTop"] = np.amax(wave) >= 127
+    info_dict["clippingBottom"] = np.amin(wave) <= -127
 
-    if addNoise:
+    if add_noise:
       wave += np.random.uniform(-0.5, 0.5, points)
       # Don"t add noise to clipping values
       wave[np.where(wave >= 126.5)] = 127
       wave[np.where(wave < -126.5)] = -127
 
     if raw:
-      return (np.stack([x, wave]), infoDict)
+      return (np.stack([x, wave]), info_dict)
 
-    yMult = float(interpretInfo["YMULT"])
-    yZero = float(interpretInfo["YZERO"])
-    yOff = float(interpretInfo["YOFF"])
-    yUnit = interpretInfo["YUNIT"].replace('"', "")
-    y = (wave - yOff) * yMult + yZero
+    y_mult = float(interpret_info["YMULT"])
+    y_zero = float(interpret_info["YZERO"])
+    y_off = float(interpret_info["YOFF"])
+    y_unit = interpret_info["YUNIT"].replace('"', "")
+    y = (wave - y_off) * y_mult + y_zero
 
-    infoDict["yUnit"] = yUnit
-    infoDict["yIncr"] = yMult
+    info_dict["y_unit"] = y_unit
+    info_dict["y_incr"] = y_mult
 
-    return (np.stack([x, y]), infoDict)
+    return (np.stack([x, y]), info_dict)
 
 
 class MDO4000(MSO4000):

@@ -27,6 +27,9 @@ def connect(address: str) -> Equipment:
 
   Returns:
     Derrived class of Equipment as appropriate
+
+  Raises:
+    LookupError if equipment ID is not recognized
   """
   rm = pyvisa.ResourceManager()
   with rm.open_resource(address) as instrument:
