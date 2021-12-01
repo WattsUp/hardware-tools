@@ -1,3 +1,6 @@
-__all__ = ['eyediagram']
+"""Collection of measurement programs
+"""
 
-from . import eyediagram
+__all__ = ["eyediagram"]
+
+# from hardware_tools.measurement import eyediagram

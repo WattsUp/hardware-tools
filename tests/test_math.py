@@ -1,4 +1,4 @@
-"""Test module hardware_tools.misc
+"""Test module hardware_tools.math
 """
 
 import base64

@@ -287,11 +287,11 @@ class MockMDO3054(mock_pyvisa.Resource):
       y_off = self.channels[self.data_source]["position"] / 10 * 250
       y_zero = self.channels[self.data_source]["offset"]
       y_unit = "V"
-      wf_id = f"{self.data_source}, "
-      wf_id += f"{self.channels[self.data_source]['coupling']} coupling, "
-      wf_id += f"{self.channels[self.data_source]['scale']}V/div, "
-      wf_id += f"{self.horizontal_scale}s/div, "
-      wf_id += f"{self.record_length} points"
+      wf_id = (f"{self.data_source}, "
+               f"{self.channels[self.data_source]['coupling']} coupling, "
+               f"{self.channels[self.data_source]['scale']}V/div, "
+               f"{self.horizontal_scale}s/div, "
+               f"{self.record_length} points")
 
       x = x_zero + x_incr * np.arange(points).astype(np.float32)
       y_real = self.waveform_amp * np.sin(
@@ -302,12 +302,12 @@ class MockMDO3054(mock_pyvisa.Resource):
       waveform = struct.pack(f">{points}b", *y)
       n_bytes = f"{len(waveform)}"
 
-      real_data = f':WFMOUTPRE:WFID "{wf_id}";'
-      real_data += f"NR_PT {points};"
-      real_data += f'XUNIT "{x_unit}";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
-      real_data += f'YUNIT "{y_unit}";YMULT {y_mult:.4E};'
-      real_data += f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
-      real_data += f":CURVE #{len(n_bytes)}{n_bytes}"
+      real_data = (f':WFMOUTPRE:WFID "{wf_id}";'
+                   f"NR_PT {points};"
+                   f'XUNIT "{x_unit}";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
+                   f'YUNIT "{y_unit}";YMULT {y_mult:.4E};'
+                   f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
+                   f":CURVE #{len(n_bytes)}{n_bytes}")
       real_data = real_data.encode(encoding="ascii") + waveform + b"\n"
 
       self.queue_rx.append(real_data)
