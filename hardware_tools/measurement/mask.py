@@ -40,6 +40,16 @@ class Mask(ABC):
     """
     pass  # pragma: no cover
 
+  def to_dict(self) -> dict:
+    """Convert Mask to dictionary
+
+    Compatible with default JSONEncoder
+
+    Returns:
+      dictionary of Mask definition
+    """
+    return {"paths": self.paths}
+
 
 class MaskDecagon(Mask):
   """A Mask with a center decagon (10-sides)

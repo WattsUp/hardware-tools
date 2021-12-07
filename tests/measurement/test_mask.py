@@ -3,15 +3,7 @@
 
 from __future__ import annotations
 
-# import base64
-# import io
-# import os
-# import pathlib
 import unittest
-
-# import numpy as np
-# import PIL
-# import PIL.Image
 
 from hardware_tools.measurement import mask
 from hardware_tools.extensions import intersections

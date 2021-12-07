@@ -24,7 +24,13 @@ class TestMath(unittest.TestCase):
     if self._TEST_ROOT.exists():
       for f in os.listdir(self._TEST_ROOT):
         os.remove(self._TEST_ROOT.joinpath(f))
-      os.rmdir(self._TEST_ROOT)
+
+  def setUp(self):
+    self.__clean_test_root()
+    self._TEST_ROOT.mkdir(parents=True, exist_ok=True)
+
+  def tearDown(self):
+    self.__clean_test_root()
 
   def test_interpolate_sinc(self):
     x_min = np.random.randint(-1000, 500)
@@ -474,19 +480,14 @@ class TestMath(unittest.TestCase):
                         formats=["PNG"])
 
   def test_image_file(self):
-    self.__clean_test_root()
-
     shape = np.random.randint(10, 100, 3)
     shape[2] = 4
 
     image = np.random.uniform(0.0, 1.0, size=shape)
 
     path = str(self._TEST_ROOT.joinpath("image.png"))
-    self._TEST_ROOT.mkdir(parents=True, exist_ok=True)
 
     math.Image.np_to_file(image, path)
 
     image_pil = PIL.Image.open(path, formats=["PNG"])
     image_pil.load()
-
-    self.__clean_test_root()
