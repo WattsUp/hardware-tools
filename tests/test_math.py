@@ -491,3 +491,83 @@ class TestMath(unittest.TestCase):
 
     image_pil = PIL.Image.open(path, formats=["PNG"])
     image_pil.load()
+
+  def test_uncertain_value(self):
+    samples_a = np.random.uniform(0.0, 1.0, int(1e6))
+    samples_b = np.random.normal(1.0, 2.0, int(1e6))
+    c = np.random.uniform(2.0, 100.0)
+
+    avg_a = np.average(samples_a)
+    avg_b = np.average(samples_b)
+
+    std_a = np.std(samples_a)
+    std_b = np.std(samples_b)
+
+    a = math.UncertainValue(avg_a, std_a)
+    b = math.UncertainValue(avg_b, std_b)
+
+    samples_r = samples_a + samples_b
+    r = a + b
+    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
+    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+
+    samples_r = samples_a + c
+    r = a + c
+    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
+    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+
+    samples_r = samples_a - samples_b
+    r = a - b
+    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
+    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+
+    samples_r = samples_a - c
+    r = a - c
+    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
+    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+
+    # This is an approximation, check approximation
+    r = a * b
+    self.assertAlmostEqual(r.value, avg_a * avg_b, 2)
+    self.assertAlmostEqual(r.stddev / (avg_a * avg_b),
+                           np.sqrt((std_a / avg_a)**2 + (std_b / avg_b)**2), 2)
+
+    samples_r = samples_a * c
+    r = a * c
+    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
+    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+
+    # This is an approximation, check approximation
+    r = a / b
+    self.assertAlmostEqual(r.value, avg_a / avg_b, 2)
+    self.assertAlmostEqual(r.stddev / (avg_a / avg_b),
+                           np.sqrt((std_a / avg_a)**2 + (std_b / avg_b)**2), 2)
+
+    samples_r = samples_a / c
+    r = a / c
+    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
+    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+
+    self.assertTrue((a < b) == (avg_a < avg_b))
+    self.assertTrue((a < c) == (avg_a < c))
+    self.assertFalse(a < avg_a)
+
+    self.assertTrue((a <= b) == (avg_a <= avg_b))
+    self.assertTrue((a <= c) == (avg_a <= c))
+    self.assertLessEqual(a, avg_a)
+
+    self.assertTrue((a == b) == (avg_a == avg_b))
+    self.assertTrue((a == c) == (avg_a == c))
+    self.assertEqual(a, avg_a)
+
+    self.assertTrue((a != b) == (avg_a != avg_b))
+    self.assertTrue((a != c) == (avg_a != c))
+    self.assertNotEqual(a, c)
+
+    self.assertTrue((a >= b) == (avg_a >= avg_b))
+    self.assertTrue((a >= c) == (avg_a >= c))
+    self.assertGreaterEqual(a, avg_a)
+
+    self.assertTrue((a > b) == (avg_a > avg_b))
+    self.assertTrue((a > c) == (avg_a > c))
+    self.assertFalse(a > avg_a)

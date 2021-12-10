@@ -8,7 +8,7 @@ import base64
 import datetime
 import io
 import multiprocessing
-from typing import Union
+from typing import Callable, Union
 
 import colorama
 from colorama import Fore
@@ -30,6 +30,8 @@ class Measures(ABC):
   Properties:
     n_sym: Number of symbols tested
     n_sym_bad: Number of symbols that failed, requires a mask
+    transition_dist: Distribution of transitions plotted eg:
+      000, 001, 010, 011, 100, 101, 110, 111
     mask_margin: largest mask adjust without mask hits, requires a mask
       range [-1, 1], see Mask.adjust
     image_clean: layered waveforms heatmap
@@ -57,6 +59,7 @@ class Measures(ABC):
 
     self.n_sym = None
     self.n_sym_bad = None
+    self.transition_dist = None
     self.mask_margin = None
 
     self._np_image_clean = np_clean
@@ -140,7 +143,6 @@ class EyeDiagram(ABC):
                mask: Mask = None,
                resolution: int = 2000,
                unipolar: bool = True,
-               fit_average: bool = True,
                resample: int = 50) -> None:
     """Create a new EyeDiagram. Lazy creation, does not compute anything
 
@@ -156,8 +158,6 @@ class EyeDiagram(ABC):
       mask: Mask object used for hit detection, None will not check for hits
       resolution: Resolution of square eye diagram image, 2UI x 2UA
       unipolar: True will plot amplitude [-0.5, 1.5]UA, False will plot [-1, 1]
-      fit_average: True will use simple average when computing measures,
-        False will find peak of histogram with a gaussian mix curve fit
       resample: n=0 will not resample, n>0 will use sinc interpolation to
         resample a single symbol to at least n segments (t_delta = t_symbol / n)
 
@@ -189,7 +189,6 @@ class EyeDiagram(ABC):
     self._y_unit = y_unit
     self._mask = mask
     self._unipolar = unipolar
-    self._fit_average = fit_average
     self._resample = resample
 
     self._resolution = resolution
@@ -366,47 +365,21 @@ class EyeDiagram(ABC):
     if print_progress:
       print(f"{'':>{indent}}Starting stacking")
 
-    if n_threads <= 1:
-      output = []
-      for i in range(self._waveforms.shape[0]):
-        # yapf: disable
-        o = _runner_stack(self._waveforms[i][1],
-                          self._centers_t[i],
-                          self._centers_i[i],
-                          self._t_delta,
-                          self._t_sym,
-                          min_y,
-                          max_y,
-                          self._resample,
-                          self._resolution)
-        # yapf: enable
-        output.append(o)
-        if print_progress:
-          print(f"{'':>{indent}}Stacked waveform #{i}")
-    else:
-      with multiprocessing.Pool(n_threads) as p:
-        results = []
-        for i in range(self._waveforms.shape[0]):
-          # yapf: disable
-          r = p.apply_async(_runner_stack,
-                            args=[
-                              self._waveforms[i][1],
-                              self._centers_t[i],
-                              self._centers_i[i],
-                              self._t_delta,
-                              self._t_sym,
-                              min_y,
-                              max_y,
-                              self._resample,
-                              self._resolution
-                            ])
-          # yapf: enable
-          results.append((i, r))
-        output = []
-        for i, r in results:
-          output.append(r.get())
-          if print_progress:
-            print(f"{'':>{indent}}Stacked waveform #{i}")
+    # yapf: disable
+    args_list = [[
+        self._waveforms[i][1],
+        self._centers_t[i],
+        self._centers_i[i],
+        self._t_delta,
+        self._t_sym,
+        min_y,
+        max_y,
+        self._resample,
+        self._resolution
+    ] for i in range(self._waveforms.shape[0])]
+    # yapf: enable
+    output = self._collect_runners(_runner_stack, args_list, n_threads,
+                                   print_progress, indent)
 
     self._raw_heatmap = np.zeros((self._resolution, self._resolution),
                                  dtype=np.int32)
@@ -432,8 +405,7 @@ class EyeDiagram(ABC):
 
       image = pyplot.cm.jet(image)
       math.Image.np_to_file(image, debug_plots)
-      if print_progress:
-        print(f"{'':>{indent}}Saved image to {debug_plots}")
+      print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   @abstractmethod
   def _step5_measure(self,
@@ -452,7 +424,33 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
+    # self._measures = Measures
     pass  # pragma: no cover
+
+  @staticmethod
+  def _collect_runners(method: Callable,
+                       args_list: list,
+                       n_threads: int = 1,
+                       print_progress: bool = True,
+                       indent: int = 0) -> list:
+    if n_threads <= 1:
+      output = []
+      for i in range(len(args_list)):
+        output.append(method(*args_list[i]))
+        if print_progress:
+          print(f"{'':>{indent}}Ran waveform #{i}")
+    else:
+      with multiprocessing.Pool(n_threads) as p:
+        results = []
+        for i in range(len(args_list)):
+          r = p.apply_async(method, args=args_list[i])
+          results.append((i, r))
+        output = []
+        for i, r in results:
+          output.append(r.get())
+          if print_progress:
+            print(f"{'':>{indent}}Ran waveform #{i}")
+    return output
 
   def get_raw_heatmap(self,
                       as_string: bool = False) -> Union[np.ndarray, bytes]:
@@ -507,22 +505,22 @@ def _runner_stack(waveform_y: np.ndarray,
                   resolution: int = 500) -> np.ndarray:
   """Stack waveforms and counting overlaps in a heat map
 
-      Args:
-        waveform_y: Waveform data array [y0, y1,..., yn]
-        centers_t: List of symbol centers in time for sub t_delta alignment.
-          Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-        centers_i: List of symbol centers indices
-        t_delta: Time between samples
-        min_y: Lower vertical value for bottom of grid
-        max_y: Upper vertical value for top of grid.
-          Grid units = (y - min_y) / (max_y - min_y)
-        resample: n=0 will not resample, n>0 will use sinc interpolation to
-          resample a single symbol to at least n segments
-        resolution: Resolution of square eye diagram image, 2UI x 2UA
+  Args:
+    waveform_y: Waveform data array [y0, y1,..., yn]
+    centers_t: List of symbol centers in time for sub t_delta alignment.
+      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
+    centers_i: List of symbol centers indices
+    t_delta: Time between samples
+    min_y: Lower vertical value for bottom of grid
+    max_y: Upper vertical value for top of grid.
+      Grid units = (y - min_y) / (max_y - min_y)
+    resample: n=0 will not resample, n>0 will use sinc interpolation to
+      resample a single symbol to at least n segments
+    resolution: Resolution of square eye diagram image, 2UI x 2UA
 
-      Returns:
-        2D grid of heat map counts
-      """
+  Returns:
+    2D grid of heat map counts
+  """
   i_width = int((t_sym / t_delta) + 0.5)
   t_width_ui = (i_width * t_delta / t_sym)
 

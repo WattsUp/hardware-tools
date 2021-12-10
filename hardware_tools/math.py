@@ -635,3 +635,90 @@ class Image:
     """
     image = PIL.Image.fromarray((255 * image).astype("uint8"))
     image.save(path)
+
+
+class UncertainValue:
+  """Value with uncertainty
+
+  Properities:
+    value: Value of statistic
+    stddev: Standard deviation of statistic
+  """
+
+  def __init__(self, value: float, stddev: float) -> None:
+    self.value = value
+    self.stddev = stddev
+
+  def __add__(self, b) -> UncertainValue:
+    if isinstance(b, UncertainValue):
+      v = self.value + b.value
+      s = np.sqrt(self.stddev**2 + b.stddev**2)
+    else:
+      v = self.value + b
+      s = self.stddev
+    return UncertainValue(v, s)
+
+  def __sub__(self, b) -> UncertainValue:
+    if isinstance(b, UncertainValue):
+      v = self.value - b.value
+      s = np.sqrt(self.stddev**2 + b.stddev**2)
+    else:
+      v = self.value - b
+      s = self.stddev
+    return UncertainValue(v, s)
+
+  def __mul__(self, b) -> UncertainValue:
+    if isinstance(b, UncertainValue):
+      v = self.value * b.value
+      s = abs(v) * np.sqrt((self.stddev / self.value)**2 +
+                           (b.stddev / b.value)**2)
+    else:
+      v = self.value * b
+      s = self.stddev * abs(b)
+    return UncertainValue(v, s)
+
+  def __truediv__(self, b) -> UncertainValue:
+    if isinstance(b, UncertainValue):
+      v = self.value / b.value
+      s = abs(v) * np.sqrt((self.stddev / self.value)**2 +
+                           (b.stddev / b.value)**2)
+    else:
+      v = self.value / b
+      s = self.stddev / abs(b)
+    return UncertainValue(v, s)
+
+  def __lt__(self, b):
+    if isinstance(b, UncertainValue):
+      return self.value < b.value
+    else:
+      return self.value < b
+
+  def __le__(self, b):
+    if isinstance(b, UncertainValue):
+      return self.value <= b.value
+    else:
+      return self.value <= b
+
+  def __eq__(self, b):
+    if isinstance(b, UncertainValue):
+      return self.value == b.value
+    else:
+      return self.value == b
+
+  def __ne__(self, b):
+    if isinstance(b, UncertainValue):
+      return self.value != b.value
+    else:
+      return self.value != b
+
+  def __ge__(self, b):
+    if isinstance(b, UncertainValue):
+      return self.value >= b.value
+    else:
+      return self.value >= b
+
+  def __gt__(self, b):
+    if isinstance(b, UncertainValue):
+      return self.value > b.value
+    else:
+      return self.value > b

@@ -30,6 +30,8 @@ y = (np.repeat(bits, n_scope / n_bits) +
 
 
 class Derrived(eyediagram.EyeDiagram):
+  """Derrived EyeDiagram to test abstract class without errors
+  """
 
   def _step1_levels(self,
                     n_threads: int = 1,
@@ -157,7 +159,7 @@ class TestEyeDiagram(unittest.TestCase):
     path = str(self._TEST_ROOT.joinpath("eyediagram_sinc"))
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye.calculate(print_progress=True, n_threads=1, debug_plots=path)
-    self.assertIn("Stacked", fake_stdout.getvalue())
+    self.assertIn("Ran waveform #0", fake_stdout.getvalue())
 
 
 class TestEyeDiagramMeasures(unittest.TestCase):
@@ -182,6 +184,16 @@ class TestEyeDiagramMeasures(unittest.TestCase):
     n_sym = np.random.randint(1000, 10000)
     n_sym_bad = np.random.randint(0, n_sym)
     mask_margin = np.random.uniform(-1, 1)
+    transition_dist = {
+        "000": np.random.randint(0, n_sym),
+        "001": np.random.randint(0, n_sym),
+        "010": np.random.randint(0, n_sym),
+        "011": np.random.randint(0, n_sym),
+        "100": np.random.randint(0, n_sym),
+        "101": np.random.randint(0, n_sym),
+        "110": np.random.randint(0, n_sym),
+        "111": np.random.randint(0, n_sym),
+    }
 
     resolution = 200
     shape = (resolution, resolution, 4)
@@ -195,12 +207,14 @@ class TestEyeDiagramMeasures(unittest.TestCase):
     m = eyediagram.Measures(np_clean, np_grid, np_mask, np_hits, np_margin)
     m.n_sym = n_sym
     m.n_sym_bad = n_sym_bad
+    m.transition_dist = transition_dist
     m.mask_margin = mask_margin
 
     d = {
         "n_sym": n_sym,
         "n_sym_bad": n_sym_bad,
         "mask_margin": mask_margin,
+        "transition_dist": transition_dist,
         "image_clean": math.Image.np_to_base64(np_clean),
         "image_grid": math.Image.np_to_base64(np_grid),
         "image_mask": math.Image.np_to_base64(np_mask),

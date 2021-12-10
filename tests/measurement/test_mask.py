@@ -28,6 +28,8 @@ class TestMask(unittest.TestCase):
     m = Derrived(paths=paths)
     self.assertListEqual(paths, m.paths)
 
+    self.assertDictEqual({"paths": paths}, m.to_dict())
+
 
 class TestMaskDecagon(unittest.TestCase):
   """Test MaskDecagon
