@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import datetime
 import io
 import multiprocessing
@@ -15,7 +16,8 @@ import numpy as np
 import matplotlib.pyplot as pyplot
 
 from hardware_tools import math, strformat
-from hardware_tools.measurement.eyediagram import eyediagram
+from hardware_tools.extensions import edges
+from hardware_tools.measurement.eyediagram import eyediagram, pll
 
 
 class MeasuresPAM2(eyediagram.Measures):
@@ -166,6 +168,8 @@ class PAM2(eyediagram.EyeDiagram):
         "hist_n_max": 50e5,  # Maximum number of points in a histogram
 
         # Step 2
+        "clock_polarity": eyediagram.ClockPolarity.RISING,  # If given clocks
+        "pll": pll.PLLSingleLowPass(1e-9, 100e3),  # PLL used for clock recovery
 
         # Step 3
 
@@ -275,6 +279,7 @@ class PAM2(eyediagram.EyeDiagram):
       pyplot.ylabel("Density")
       pyplot.title("Vertical levels")
 
+      pyplot.tight_layout()
       pyplot.savefig(debug_plots, bbox_inches="tight")
       pyplot.close()
       print(f"{'':>{indent}}Saved image to {debug_plots}")
@@ -284,8 +289,104 @@ class PAM2(eyediagram.EyeDiagram):
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
-    # self._t_sym = float
-    pass
+    self._clock_edges = []
+    periods = []
+    ties = None
+    if self._clocks is not None:
+      # Get edges from _clocks given clock_polarity
+      # yapf: disable
+      args_list = [[
+          self._clocks[i][0],
+          self._clocks[i][1],
+          self._y_rising,
+          self._y_half,
+          self._y_falling
+      ] for i in range(self._waveforms.shape[0])]
+      # yapf: enable
+      output = self._collect_runners(edges.get_np, args_list, n_threads,
+                                     print_progress, indent)
+      for o in output:
+        if self._config["clock_polarity"] is eyediagram.ClockPolarity.RISING:
+          e = o[0]
+        elif self._config["clock_polarity"] is eyediagram.ClockPolarity.FALLING:
+          e = o[1]
+        else:
+          e = np.sort(np.concatenate(o))
+        periods.append(np.diff(e))
+        self._clock_edges.append(e.tolist())
+    elif self._low_snr:
+      # Generate clock pulses at the fallback_period fixed rate
+      self._t_sym = math.UncertainValue(self._config["pll"].t_sym_initial, 0)
+
+      for i in range(self._waveforms.shape[0]):
+        t = self._waveforms[i][0][0] + self._t_sym.value
+        e = np.arange(t, self._waveforms[i][0][-1], self._t_sym.value)
+        self._clock_edges.append(e.tolist())
+      return
+    else:
+      if print_progress:
+        print(f"{'':>{indent}}Running clock recovery PLL")
+      # Run PLL to generate edges
+      # yapf: disable
+      args_list = [[
+          self._waveforms[i][0],
+          self._waveforms[i][1],
+          self._y_rising,
+          self._y_half,
+          self._y_falling,
+          copy.deepcopy(self._config["pll"])
+      ] for i in range(self._waveforms.shape[0])]
+      # yapf: enable
+      output = self._collect_runners(_runner_pll, args_list, n_threads,
+                                     print_progress, indent)
+      ties = []
+      for o in output:
+        self._clock_edges.append(o["edges"])
+        periods.append(o["periods"])
+        ties.append(o["ties"])
+
+    if print_progress:
+      print(f"{'':>{indent}}Calculating symbol period")
+    # Two pass average to remove outliers arising from idle time
+    periods = np.concatenate(periods)
+    periods = periods[periods < 10 * np.average(periods)]
+    self._t_sym = math.UncertainValue(np.average(periods), np.std(periods))
+
+    if debug_plots is not None:
+      debug_plots += ".step2.png"
+
+      def tick_formatter_t(t, _):
+        return strformat.metric_prefix(t, self._t_unit)
+
+      formatter_t = pyplot.FuncFormatter(tick_formatter_t)
+
+      _, subplots = pyplot.subplots(2, 1)
+      subplots[0].set_title(
+          "Symbol Period Deviation from " +
+          strformat.metric_prefix(self._t_sym.value, self._t_unit))
+      subplots[0].hist((periods - self._t_sym.value),
+                       50,
+                       density=True,
+                       color="b",
+                       alpha=0.5)
+      subplots[0].axvline(x=0, color="g")
+      subplots[0].axvline(x=(self._t_sym.stddev), color="y")
+      subplots[0].axvline(x=(-self._t_sym.stddev), color="y")
+      subplots[0].xaxis.set_major_formatter(formatter_t)
+      subplots[0].set_ylabel("Density")
+
+      subplots[1].set_title("Time Interval Errors")
+      if ties is not None:
+        ties = np.concatenate(ties)
+        subplots[1].hist(ties, 50, density=True, color="b", alpha=0.5)
+      subplots[1].xaxis.set_major_formatter(formatter_t)
+      subplots[1].set_ylabel("Density")
+      subplots[1].set_xlabel("Time")
+
+      pyplot.tight_layout()
+      pyplot.savefig(debug_plots, bbox_inches="tight")
+      pyplot.close()
+      print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   def _step3_sample(self,
                     n_threads: int = 1,
@@ -305,7 +406,7 @@ class PAM2(eyediagram.EyeDiagram):
     pass
 
 
-def _runner_levels(waveform_y: np.ndarray, n_max: int = 50e3) -> dict:
+def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   """Calculate the high and low levels of the waveform
 
   Args:
@@ -350,3 +451,29 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int = 50e3) -> dict:
       "fit_0": fit_0,
       "fit_1": fit_1
   }
+
+
+def _runner_pll(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
+                y_half: float, y_fall: float, pll_obj: pll.PLL) -> dict:
+  """Calculate the high and low levels of the waveform
+
+  Args:
+    waveform_t: Waveform data array [t0, t1,..., tn]
+    waveform_y: Waveform data array [y0, y1,..., yn]
+    y_rise: Rising threshold
+    y_half: Interpolated edge value
+    y_fall: Falling threshold
+    pll_obj: PLL object to execute on waveform
+
+  Returns:
+    Dictionary of values:
+      edges: List of clock edges in time
+      periods: List of clock periods
+      ties: List of Time Interval Errors (TIEs)
+  """
+  data_edges = edges.get(waveform_t.tolist(), waveform_y.tolist(), y_rise,
+                         y_half, y_fall)
+  data_edges[0].extend(data_edges[1])
+  data_edges = sorted(data_edges[0])
+  results = pll_obj.run(data_edges)
+  return {"edges": results[0], "periods": results[1], "ties": results[2]}

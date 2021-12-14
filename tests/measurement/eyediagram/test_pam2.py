@@ -13,7 +13,7 @@ import numpy as np
 from scipy import signal
 
 from hardware_tools import math
-from hardware_tools.measurement.eyediagram import pam2
+from hardware_tools.measurement.eyediagram import pam2, pll, eyediagram
 
 f_scope = 5e9
 n_scope = int(1e5)
@@ -81,24 +81,6 @@ class TestPAM2(unittest.TestCase):
     self.assertLessEqual(eye._y_falling, v_falling + v_error)  # pylint: disable=protected-access
     self.assertFalse(eye._low_snr)  # pylint: disable=protected-access
 
-    # eye = pam2.PAM2(waveforms)
-    # with mock.patch("sys.stdout", new=io.StringIO()) as _:
-    #   eye._step1_levels(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
-    # self.assertGreaterEqual(eye._y_zero, 0 - v_error)  # pylint: disable=protected-access
-    # self.assertLessEqual(eye._y_zero, 0 + v_error)  # pylint: disable=protected-access
-    # self.assertGreaterEqual(eye._y_ua, v_signal - v_error)  # pylint: disable=protected-access
-    # self.assertLessEqual(eye._y_ua, v_signal + v_error)  # pylint: disable=protected-access
-    # v_half = v_signal * 0.5
-    # v_rising = v_signal * 0.55
-    # v_falling = v_signal * 0.45
-    # self.assertGreaterEqual(eye._y_half, v_half - v_error)  # pylint: disable=protected-access
-    # self.assertLessEqual(eye._y_half, v_half + v_error)  # pylint: disable=protected-access
-    # self.assertGreaterEqual(eye._y_rising, v_rising - v_error)  # pylint: disable=protected-access
-    # self.assertLessEqual(eye._y_rising, v_rising + v_error)  # pylint: disable=protected-access
-    # self.assertGreaterEqual(eye._y_falling, v_falling - v_error)  # pylint: disable=protected-access
-    # self.assertLessEqual(eye._y_falling, v_falling + v_error)  # pylint: disable=protected-access
-    # self.assertFalse(eye._low_snr)  # pylint: disable=protected-access
-
     eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -127,6 +109,67 @@ class TestPAM2(unittest.TestCase):
     self.assertGreaterEqual(eye._y_falling, v_falling - v_error)  # pylint: disable=protected-access
     self.assertLessEqual(eye._y_falling, v_falling + v_error)  # pylint: disable=protected-access
     self.assertFalse(eye._low_snr)  # pylint: disable=protected-access
+
+  def test_step2(self):
+    path = str(self._TEST_ROOT.joinpath("eyediagram_pam2"))
+    waveforms = np.array([t, y])
+    clocks = np.array([t, clock])
+    pll_obj = pll.PLLSingleLowPass(t_bit, 100e3)
+
+    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal, pll=pll_obj)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+
+    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal, pll=pll_obj)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+    self.assertIn("Calculating symbol period", fake_stdout.getvalue())
+
+    eye = pam2.PAM2(waveforms,
+                    clocks=clocks,
+                    y_0=0,
+                    y_1=v_signal,
+                    pll=pll_obj,
+                    clock_polarity=eyediagram.ClockPolarity.RISING)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+    self.assertGreaterEqual(len(eye._clock_edges[0]), n_bits - 1)  # pylint: disable=protected-access
+    self.assertLessEqual(len(eye._clock_edges[0]), n_bits + 1)  # pylint: disable=protected-access
+
+    eye = pam2.PAM2(waveforms,
+                    clocks=clocks,
+                    y_0=0,
+                    y_1=v_signal,
+                    pll=pll_obj,
+                    clock_polarity=eyediagram.ClockPolarity.FALLING)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+    self.assertGreaterEqual(len(eye._clock_edges[0]), n_bits - 1)  # pylint: disable=protected-access
+    self.assertLessEqual(len(eye._clock_edges[0]), n_bits + 1)  # pylint: disable=protected-access
+
+    eye = pam2.PAM2(waveforms,
+                    clocks=clocks,
+                    y_0=0,
+                    y_1=v_signal,
+                    pll=pll_obj,
+                    clock_polarity=eyediagram.ClockPolarity.BOTH)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+    self.assertGreaterEqual(len(eye._clock_edges[0]), n_bits * 2 - 1)  # pylint: disable=protected-access
+    self.assertLessEqual(len(eye._clock_edges[0]), n_bits * 2 + 1)  # pylint: disable=protected-access
+
+    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal, pll=pll_obj)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._low_snr = True  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+    self.assertGreaterEqual(len(eye._clock_edges[0]), n_bits - 1)  # pylint: disable=protected-access
+    self.assertLessEqual(len(eye._clock_edges[0]), n_bits + 1)  # pylint: disable=protected-access
 
 
 class TestEyeDiagramMeasuresPAM2(unittest.TestCase):

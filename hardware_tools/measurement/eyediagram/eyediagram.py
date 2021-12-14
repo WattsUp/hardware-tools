@@ -6,6 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import base64
 import datetime
+from enum import Enum
 import io
 import multiprocessing
 from typing import Callable, Union
@@ -19,6 +20,10 @@ from hardware_tools import math, strformat
 from hardware_tools.extensions import bresenham
 from hardware_tools.measurement.mask import Mask
 
+class ClockPolarity(Enum):
+  RISING = 1 # Sample on clock's rising edge
+  FALLING = 2 # Sample on clock's falling edge
+  BOTH = 3 # Sample on both edges
 
 class Measures(ABC):
   """Eye Diagram Measures collecting metrics from an eye diagram
@@ -201,6 +206,7 @@ class EyeDiagram(ABC):
     self._centers_i = None
     self._t_delta = self._waveforms[0, 0, 1] - self._waveforms[0, 0, 0]
     self._t_sym = None
+    self._clock_edges = None
 
     self._calculated = False
 
@@ -317,7 +323,8 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # self._t_sym = float
+    # self._clock_edges = list[float]
+    # self._t_sym = math.UncertainValue
     pass  # pragma: no cover
 
   @abstractmethod
@@ -371,7 +378,7 @@ class EyeDiagram(ABC):
         self._centers_t[i],
         self._centers_i[i],
         self._t_delta,
-        self._t_sym,
+        self._t_sym.value,
         min_y,
         max_y,
         self._resample,

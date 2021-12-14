@@ -46,7 +46,12 @@ class Derrived(eyediagram.EyeDiagram):
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
-    self._t_sym = t_bit
+    self._t_sym = math.UncertainValue(t_bit, 0)
+    self._clock_edges = []
+    for i in range(self._waveforms.shape[0]):
+      t_start = self._waveforms[i][0][0] + t_bit
+      e = np.arange(t_start, self._waveforms[i][0][-1], t_bit)
+      self._clock_edges.append(e.tolist())
 
   def _step3_sample(self,
                     n_threads: int = 1,
