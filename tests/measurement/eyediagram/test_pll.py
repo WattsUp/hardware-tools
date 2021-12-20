@@ -22,8 +22,8 @@ class TestPLLSingleLowPass(unittest.TestCase):
     p = pll.PLLSingleLowPass(t_sym, bandwidth)
     # import matplotlib.pyplot as pyplot
     # _, subplots = pyplot.subplots(3, 1)
-    # subplots[0].plot(out, periods)
-    # subplots[1].plot(edges, ties)
+    # subplots[0].plot(periods)
+    # subplots[1].plot(ties)
     # subplots[2].hist(ties, 50)
     # pyplot.show()
 
@@ -103,7 +103,7 @@ class TestPLLSingleLowPass(unittest.TestCase):
     self.assertGreaterEqual(average_tie, -0.01 * t_sym)
 
     # Slow clock
-    stretch = 1.02
+    stretch = 1.01
     edges = np.linspace(0, t_sym * stretch * (n_sym - 1), n_sym)
     edges = edges[::4]
     out, periods, ties = p.run(edges)

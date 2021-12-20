@@ -25,7 +25,7 @@ bits = signal.max_len_seq(5, length=n_bits)[0]
 t = np.linspace(0, t_scope, n_scope)
 v_signal = 3.3
 v_error = v_signal * 0.05
-clock = (signal.square(2 * np.pi * f_bit * t) + 1) / 2 * v_signal
+clock = (signal.square(2 * np.pi * (f_bit * t + 0.5)) + 1) / 2 * v_signal
 y = (np.repeat(bits, n_scope / n_bits) +
      np.random.normal(0, 0.05, size=n_scope)) * v_signal
 

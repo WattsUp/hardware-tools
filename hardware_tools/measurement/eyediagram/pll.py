@@ -65,6 +65,8 @@ class PLLSingleLowPass(PLL):
     t = data_edges[0]
     delay = self.t_sym_initial
     phase = 0
+    period = delay + phase
+    target_delay = delay
     t_min = self.t_sym_initial / 2
 
     # Error variables
@@ -94,14 +96,19 @@ class PLLSingleLowPass(PLL):
         error_delay = 0
         if error_edge > -self.t_sym_initial / 2:
           tie = (edge - t_ideal)
-          ties.append(tie)
+          ties.append((edge, tie))
           error_phase = error_edge
           error_delay = (error_phase - error_phase_last) / n
-        w = 2 * np.pi * delay * self._bandwidth
+          target_delay = (delay - error_delay)
+        w = 2 * np.pi * period * self._bandwidth
         alpha = w / (w + 1)
         # alpha = 1
-        delay = (1 - alpha) * delay + alpha * (delay - error_delay)
+        delay = (1 - alpha) * delay + alpha * target_delay
         phase = (1 - alpha) * phase + alpha * (-error_phase)
+
+        if error_edge > -self.t_sym_initial / 2:
+          # Don't include phase offset in previous phase error
+          error_phase_last = error_phase + phase
 
         period = delay + phase
         if period < t_min:
@@ -122,11 +129,10 @@ class PLLSingleLowPass(PLL):
 
     # Compensate TIE for wrong tBit
     # Removes linear drift
-    ties = np.array(ties)
-    data_edges = np.array(data_edges)
-    trend = stats.linregress(data_edges, ties)
-    ties = (ties - (data_edges * trend.slope + trend.intercept)).tolist()
+    ties = np.array(ties).T
+    trend = stats.linregress(ties[0], ties[1])
+    ties = (ties[1] - (ties[0] * trend.slope + trend.intercept)).tolist()
 
     self._errors_phase = errors_phase
     self._errors_delay = errors_delay
-    return clock, periods, ties
+    return clock, delays, ties

@@ -24,7 +24,7 @@ f_bit = 1 / t_bit
 bits = signal.max_len_seq(5, length=n_bits)[0]
 t = np.linspace(0, t_scope, n_scope)
 v_signal = 3.3
-clock = (signal.square(2 * np.pi * f_bit * t) + 1) / 2 * v_signal
+clock = (signal.square(2 * np.pi * (f_bit * t + 0.5)) + 1) / 2 * v_signal
 y = (np.repeat(bits, n_scope / n_bits) +
      np.random.normal(0, 0.05, size=n_scope)) * v_signal
 
@@ -49,24 +49,10 @@ class Derrived(eyediagram.EyeDiagram):
     self._t_sym = math.UncertainValue(t_bit, 0)
     self._clock_edges = []
     for i in range(self._waveforms.shape[0]):
-      t_start = self._waveforms[i][0][0] + t_bit
+      t_start = self._waveforms[i][0][0] - 1 / f_scope / 2
       e = np.arange(t_start, self._waveforms[i][0][-1], t_bit)
       self._clock_edges.append(e.tolist())
-
-  def _step3_sample(self,
-                    n_threads: int = 1,
-                    print_progress: bool = True,
-                    indent: int = 0,
-                    debug_plots: str = None) -> None:
-    i_sym_width = int(n_scope / n_bits)
-    center_i = list(range(i_sym_width // 2, n_scope, i_sym_width))
-    t_off = ((i_sym_width + 1) % 2) * (1 / f_scope) / 2
-    self._centers_i = []
-    self._centers_t = []
-    for _ in range(self._waveforms.shape[0]):
-      self._centers_i.append(center_i)
-      self._centers_t.append(
-          np.random.normal(t_off, 1 / f_scope / 10, n_bits).tolist())
+    self._clock_edges[-1] = self._clock_edges[-1][-5:]
 
   def _step5_measure(self,
                      n_threads: int = 1,
@@ -146,12 +132,29 @@ class TestEyeDiagram(unittest.TestCase):
     m = eye.get_measures()
     self.assertIsInstance(m, eyediagram.Measures)
 
-  def test_stack(self):
+  def test_step3(self):
+    path = str(self._TEST_ROOT.joinpath("eyediagram_step3"))
     waveforms = np.array([[t, y], [t, y]])
     clocks = np.array([[t, clock], [t, clock]])
 
     eye = Derrived(waveforms, clocks=clocks, resolution=1000, resample=0)
-    path = str(self._TEST_ROOT.joinpath("eyediagram"))
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+    self.assertIn("Completed sampling", fake_stdout.getvalue())
+
+  def test_step5(self):
+    waveforms = np.array([[t, y], [t, y]])
+    clocks = np.array([[t, clock], [t, clock]])
+
+    eye = Derrived(waveforms, clocks=clocks, resolution=1000, resample=0)
+    path = str(self._TEST_ROOT.joinpath("eyediagram_step5"))
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye.calculate(print_progress=False, n_threads=0, debug_plots=path)
 

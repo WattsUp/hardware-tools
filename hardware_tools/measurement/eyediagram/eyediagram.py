@@ -20,10 +20,12 @@ from hardware_tools import math, strformat
 from hardware_tools.extensions import bresenham
 from hardware_tools.measurement.mask import Mask
 
+
 class ClockPolarity(Enum):
-  RISING = 1 # Sample on clock's rising edge
-  FALLING = 2 # Sample on clock's falling edge
-  BOTH = 3 # Sample on both edges
+  RISING = 1  # Sample on clock's rising edge
+  FALLING = 2  # Sample on clock's falling edge
+  BOTH = 3  # Sample on both edges
+
 
 class Measures(ABC):
   """Eye Diagram Measures collecting metrics from an eye diagram
@@ -323,19 +325,16 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # self._clock_edges = list[float]
+    # self._clock_edges = list[list[float]]
     # self._t_sym = math.UncertainValue
     pass  # pragma: no cover
 
-  @abstractmethod
   def _step3_sample(self,
                     n_threads: int = 1,
                     print_progress: bool = True,
                     indent: int = 0,
                     debug_plots: str = None) -> None:
     """Calculation step 3: symbol sample point
-
-    Dependent on line encoding
 
     Args:
       n_threads: number of thread to execute across
@@ -344,9 +343,76 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # self._centers_i = list[list[int]]
-    # self._centers_t = list[list[float]]
-    pass  # pragma: no cover
+    _ = n_threads
+    self._centers_i = []
+    self._centers_t = []
+
+    if print_progress:
+      print(f"{'':>{indent}}Starting sampling")
+    for i in range(self._waveforms.shape[0]):
+      centers_i = []
+      centers_t = []
+      t_zero = self._waveforms[i, 0, 0]
+      for b in self._clock_edges[i]:
+        center_t = b % self._t_delta
+        centers_t.append(-center_t)
+
+        center_i = int(((b - t_zero - center_t) / self._t_delta) + 0.5)
+        centers_i.append(center_i)
+
+      self._centers_i.append(centers_i)
+      self._centers_t.append(centers_t)
+      if print_progress:
+        print(f"{'':>{indent}}Ran waveform #{i}")
+
+    if print_progress:
+      print(f"{'':>{indent}}Completed sampling")
+
+    if debug_plots is not None:
+      debug_plots += ".step3.png"
+
+      def tick_formatter_t(t, _):
+        return strformat.metric_prefix(t, self._t_unit)
+
+      def tick_formatter_y(y, _):
+        return strformat.metric_prefix(y, self._y_unit)
+
+      formatter_t = pyplot.FuncFormatter(tick_formatter_t)
+      formatter_y = pyplot.FuncFormatter(tick_formatter_y)
+
+      hw = int((self._t_sym.value / self._t_delta) + 0.5)
+      n = hw * 2 + 1
+
+      for i in range(self._waveforms.shape[0]):
+        n_plot = min(len(self._centers_i[i]),
+                     max(1, int(20 / self._waveforms.shape[0])))
+        for edge in range(n_plot):
+          c_i = self._centers_i[i][edge]
+          c_t = self._centers_t[i][edge]
+          if (c_i - hw) < 0 or (c_i + hw + 1) >= self._waveforms.shape[2]:
+            continue
+          x = np.linspace(-hw * self._t_delta, hw * self._t_delta, n) + c_t
+          y = self._waveforms[i, 1, c_i - hw:c_i + hw + 1]
+          pyplot.plot(x, y, color="b")
+
+      pyplot.axvline(x=(-self._t_sym.value / 2), color="g")
+      pyplot.axvline(x=0, color="r")
+      pyplot.axvline(x=(self._t_sym.value / 2), color="g")
+      pyplot.axhline(y=self._y_zero, color="g")
+      pyplot.axhline(y=(self._y_ua + self._y_zero), color="g")
+
+      ax = pyplot.gca()
+      ax.xaxis.set_major_formatter(formatter_t)
+      ax.yaxis.set_major_formatter(formatter_y)
+
+      pyplot.xlabel("Time")
+      pyplot.ylabel("Vertical")
+      pyplot.title("Select Bit Sequence")
+
+      pyplot.tight_layout()
+      pyplot.savefig(debug_plots, bbox_inches="tight")
+      pyplot.close()
+      print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   def _step4_stack(self,
                    n_threads: int = 1,

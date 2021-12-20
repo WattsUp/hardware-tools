@@ -388,15 +388,6 @@ class PAM2(eyediagram.EyeDiagram):
       pyplot.close()
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
-  def _step3_sample(self,
-                    n_threads: int = 1,
-                    print_progress: bool = True,
-                    indent: int = 0,
-                    debug_plots: str = None) -> None:
-    # self._centers_i = list[list[int]]
-    # self._centers_t = list[list[float]]
-    pass
-
   def _step5_measure(self,
                      n_threads: int = 1,
                      print_progress: bool = True,
