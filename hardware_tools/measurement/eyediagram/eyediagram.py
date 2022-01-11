@@ -206,7 +206,8 @@ class EyeDiagram(ABC):
     self._y_ua = None
     self._centers_t = None
     self._centers_i = None
-    self._t_delta = self._waveforms[0, 0, 1] - self._waveforms[0, 0, 0]
+    self._t_delta = (self._waveforms[0, 0, -1] -
+                     self._waveforms[0, 0, 0]) / (self._waveforms.shape[2] - 1)
     self._t_sym = None
     self._clock_edges = None
 

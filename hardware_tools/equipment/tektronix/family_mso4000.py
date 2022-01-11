@@ -381,8 +381,9 @@ class MSO4000(scope.Scope):
 
     header_len = 2 + int(chr(curve[1]), 16)
     wave = curve[header_len:header_len + points]
-    wave = np.array(struct.unpack(f">{points}b", wave)).astype(np.float32)
-    x = x_zero + x_incr * np.arange(points).astype(np.float32)
+    wave = np.array(struct.unpack(f">{points}b", wave)).astype(np.float64)
+    x = x_zero + x_incr * np.arange(points).astype(np.float64)
+    # float32 is not accurate enough for 1e6 points (only ~7digits of precision)
 
     info_dict["clippingTop"] = np.amax(wave) >= 127
     info_dict["clippingBottom"] = np.amin(wave) <= -127
