@@ -1,6 +1,6 @@
 # coverage.py setup
 [run]
-command_line = -m unittest discover tests --locals
+command_line = -m unittest discover -s tests -t . --locals
 branch = True
 source = hardware_tools
 

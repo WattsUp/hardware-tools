@@ -193,6 +193,14 @@ class TestMath(unittest.TestCase):
     self.assertAlmostEqual(y0, y[0])
     self.assertAlmostEqual(y1, y[1])
 
+    g = math.Gaussian(amplitude, mean, 0)
+    self.assertEqual(0, g.compute(mean + 1))
+    self.assertTrue(np.isposinf(g.compute(mean)))
+    y = g.compute(x)
+    self.assertTrue(np.isposinf(np.max(y)))
+    y = np.nan_to_num(y, posinf=1)
+    self.assertEqual(1, y.sum())
+
   def test_gaussian_fit(self):
     amplitude = np.random.uniform(-1000, 1000)
     mean = np.random.uniform(-1000, 1000)
@@ -257,7 +265,10 @@ class TestMath(unittest.TestCase):
 
     y = np.array([amplitude[0]] * n)
     g_fit = math.GaussianMix.fit_samples(y, n_max=n_components)
-    self.assertEqual(g_fit, [[1, amplitude[0], 0]])
+    self.assertEqual(len(g_fit.components), 1)
+    self.assertAlmostEqual(g_fit.components[0].amplitude, 1)
+    self.assertAlmostEqual(g_fit.components[0].mean, amplitude[0])
+    self.assertAlmostEqual(g_fit.components[0].stddev, 0)
 
     g = math.GaussianMix(components)
     y = []

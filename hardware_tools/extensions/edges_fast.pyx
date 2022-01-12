@@ -97,15 +97,6 @@ cdef tuple get_c(
   Returns:
     (rising edges, falling edges) timestamps
   """
-  '''!@brief Collect rising and falling edges
-
-  @param t Waveform time array [t0, t1,..., tn]
-  @param y Waveform data array [y0, y1,..., yn]
-  @param yRise Rising threshold
-  @param yHalf Interpolated edge value
-  @param yFall Falling threshold
-  @return tuple(list, list) tuple of rising edges, falling edges
-  '''
   cdef list edges_rise = []
   cdef list edges_fall = []
 

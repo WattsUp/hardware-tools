@@ -278,6 +278,8 @@ class Gaussian:
         stddev: float) -> Union[float, np.ndarray]:
     """Compute gaussian function at values of x
 
+    If stddev if zero, the return value is positive infinity (np.PINF)
+
     Args:
       x: Single or multiple values of x
       amplitude: A
@@ -287,6 +289,13 @@ class Gaussian:
     Returns:
       Single or multiple values of y
     """
+    if stddev == 0:
+      if isinstance(x, float):
+        return np.PINF if x == mean else 0.0
+      # Return an impulse at the location closest to mean
+      y = np.zeros(x.shape)
+      y[np.argmin(np.abs(x - mean))] = np.PINF
+      return y
     return amplitude * np.exp(-(
         (x - mean) / stddev)**2 / 2) / (np.sqrt(2 * np.pi * stddev**2))
 
@@ -401,7 +410,7 @@ class GaussianMix:
     """
     y_span = np.amax(y) - np.amin(y)
     if y_span == 0:
-      return [[1, y[0], 0]]
+      return GaussianMix([Gaussian(1, y[0], 0)])
     y_avg = np.average(y)
     y_norm = y.copy().reshape(-1, 1)
     y_norm = (y_norm - y_avg) / y_span

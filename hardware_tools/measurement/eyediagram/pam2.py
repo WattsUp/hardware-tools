@@ -171,9 +171,9 @@ class PAM2(eyediagram.EyeDiagram):
         "clock_polarity": eyediagram.ClockPolarity.RISING,  # If given clocks
         "pll": pll.PLLSingleLowPass(1e-9, 100e3),  # PLL used for clock recovery
 
-        # Step 3
+        # Step 3: No configuration
 
-        # Step 4
+        # Step 4: No configuration
 
         # Step 5
         "level_width": 0.2,  # Width of histogram for y_0, y_1

@@ -233,7 +233,7 @@ class EyeDiagram(ABC):
     colorama.init(autoreset=True)
     start = datetime.datetime.now()
     if n_threads < 1:
-      n_threads = multiprocessing.cpu_count()
+      n_threads = min(multiprocessing.cpu_count(), self._waveforms.shape[0])
     else:
       n_threads = min(n_threads, multiprocessing.cpu_count(),
                       self._waveforms.shape[0])
