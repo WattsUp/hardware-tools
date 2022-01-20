@@ -330,8 +330,7 @@ class Gaussian:
     opt = optimize.curve_fit(Gaussian.y,
                              x,
                              frequency,
-                             p0=[frequency.max(), guess_mean,
-                                 guess_stddev])[0]
+                             p0=[frequency.max(), guess_mean, guess_stddev])[0]
 
     # Undo normalization
     opt[0] = opt[0] * total

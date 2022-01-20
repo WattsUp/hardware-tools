@@ -82,7 +82,7 @@ class TestEquipment(base.TestBase):
     address = "USB::0x0000::0x0000:C000000::INSTR"
     e = Derrived(address, name=name)
 
-    count = self._RNG.integers(1, 10)
+    count = self._RNG.integers(1, 4)
 
     instrument = mock_pyvisa.resources[address]
     command = "*IDN?"
@@ -93,6 +93,8 @@ class TestEquipment(base.TestBase):
 
     self.assertEqual(reply, e.ask_and_wait(command, [reply]))
     self.assertListEqual([command] * (count + 1), instrument.queue_tx)
+
+    count = self._RNG.integers(1, 4)
 
     instrument.queue_tx = []
     instrument.queue_rx = []

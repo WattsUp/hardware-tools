@@ -177,7 +177,7 @@ class TestMath(base.TestBase):
     y = np.nan_to_num(y, posinf=1)
     self.assertEqual(1, y.sum())
 
-  def test_gaussian_comparision(self):
+  def test_gaussian_comparison(self):
     mean = self._RNG.uniform(-1000, 1000)
     stddev = self._RNG.uniform(1, 1000)
 

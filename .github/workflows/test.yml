@@ -21,21 +21,21 @@ jobs:
         python-version: [3.7, 3.8, 3.9]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install -e .
-    - name: Test
-      continue-on-error: true
-      run: |
-        python -m unittest discover tests
-    - name: Upload test configuration
-      uses: actions/upload-artifact@v2
-      with:
-        name: testing.${{ matrix.python-version }}
-        path: testing.json
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[test]
+      - name: Test
+        continue-on-error: true
+        run: |
+          python -m coverage run &> testing.log
+      - name: Upload test configuration
+        uses: actions/upload-artifact@v2
+        with:
+          name: testing.${{ matrix.python-version }}
+          path: testing.log

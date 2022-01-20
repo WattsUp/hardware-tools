@@ -5,7 +5,6 @@ MSO4000
 MDO3000
 """
 
-import struct
 import time
 from typing import Any
 
@@ -29,12 +28,16 @@ class MSO4000(scope.Scope):
     Raises:
       ValueError if ID does not match scope type
     """
-    super().__init__(address, name="TEKTRONIX-MSO4000")
+    super().__init__(address)
+    query = self.ask("*IDN?")
+    if query.startswith("TEKTRONIX,"):
+      self._name = "-".join(query.split(",")[:2])
+    else:
+      e = f"{address} did not connect to a Tektronix scope\n"
+      e += f"  '*IDN?' returned '{query}'"
+      raise ValueError(e)
     if "check_identity" not in kwargs or kwargs["check_identity"]:
-      query = self.ask("*IDN?")
-      if query.startswith("TEKTRONIX,MSO4"):
-        self._name = "-".join(query.split(",")[:2])
-      else:
+      if not self._name.startswith("TEKTRONIX-MSO4"):
         e = f"{address} did not connect to a Tektronix MSO4000 scope\n"
         e += f"  '*IDN?' returned '{query}'"
         raise ValueError(e)
@@ -43,16 +46,36 @@ class MSO4000(scope.Scope):
     self.send("VERBOSE ON")
 
     # Add specific settings and commands
-    if self._name[-1] == "2":
+    if self._name[16] == "2":
       self.channels = ["CH1", "CH2"]
-    else:
+    elif self._name[16] == "4":
       self.channels = ["CH1", "CH2", "CH3", "CH4"]
+    else:
+      e = f"{address} is Tektronix but unknown channel count\n"
+      e += f"  '*IDN?' returned '{query}'"
+      raise ValueError(e)
 
     self.settings.extend([])
     # TODO add other trigger options
     # TODO add acquire modes settings
     self.channel_settings.extend([])
     self.commands.extend(["AUTOSCALE", "CLEARMENU"])
+
+    name_freq = self._name[14:16]
+    if name_freq == "01":
+      self.max_bandwidth = 100e6
+    elif name_freq == "02":
+      self.max_bandwidth = 200e6
+    elif name_freq == "03":
+      self.max_bandwidth = 350e6
+    elif name_freq == "05":
+      self.max_bandwidth = 500e6
+    elif name_freq == "10":
+      self.max_bandwidth = 1000e6
+    else:
+      e = f"{address} is Tektronix but unknown bandwidth\n"
+      e += f"  '*IDN?' returned '{query}'"
+      raise ValueError(e)
 
   def configure(self, setting: str, value: Any) -> Any:
     setting = setting.upper()
@@ -383,7 +406,7 @@ class MSO4000(scope.Scope):
 
     header_len = 2 + int(chr(curve[1]), 16)
     wave = curve[header_len:header_len + points]
-    wave = np.array(struct.unpack(f">{points}b", wave)).astype(np.float64)
+    wave = np.frombuffer(wave, dtype=">b").astype(np.float64)
     x = x_zero + x_incr * np.arange(points).astype(np.float64)
     # float32 is not accurate enough for 1e6 points (only ~7digits of precision)
 
@@ -418,17 +441,11 @@ class MDO4000(MSO4000):
   def __init__(self, address: str, **kwargs) -> None:
     super().__init__(address, check_identity=False)
     if "check_identity" not in kwargs or kwargs["check_identity"]:
-      query = self.ask("*IDN?")
-      if query.startswith("TEKTRONIX,MDO4"):
-        self._name = "-".join(query.split(",")[:2])
-      else:
+      if not self._name.startswith("TEKTRONIX-MDO4"):
+        query = self.ask("*IDN?")
         e = f"{address} did not connect to a Tektronix MDO4000 scope\n"
         e += f"  '*IDN?' returned '{query}'"
         raise ValueError(e)
-
-    # No 2 channel options
-    # if self._name[-1] == "2":
-    #   self.channels = ["CH1", "CH2"]
 
     # TODO add other channel operations: RF
 
@@ -440,15 +457,10 @@ class MDO3000(MSO4000):
   def __init__(self, address: str, **kwargs) -> None:
     super().__init__(address, check_identity=False)
     if "check_identity" not in kwargs or kwargs["check_identity"]:
-      query = self.ask("*IDN?")
-      if query.startswith("TEKTRONIX,MDO3"):
-        self._name = "-".join(query.split(",")[:2])
-      else:
+      if not self._name.startswith("TEKTRONIX-MDO3"):
+        query = self.ask("*IDN?")
         e = f"{address} did not connect to a Tektronix MDO3000 scope\n"
         e += f"  '*IDN?' returned '{query}'"
         raise ValueError(e)
-
-    if self._name[-1] == "2":
-      self.channels = ["CH1", "CH2"]
 
     # TODO add other channel operations: RF

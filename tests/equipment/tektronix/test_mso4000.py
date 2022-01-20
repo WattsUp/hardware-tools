@@ -3,7 +3,7 @@
 
 import io
 import re
-import struct
+import time
 from unittest import mock
 
 import numpy as np
@@ -40,8 +40,8 @@ class MockMDO3054(mock_pyvisa.Resource):
     self.data_start = 1
     self.data_stop = self.record_length
 
-    self.waveform_amp = 0.125
-    self.waveform_offset = 0.125
+    self.waveform_amp = 1.25
+    self.waveform_offset = 1.25
 
     self.channels = {
         c: {
@@ -296,10 +296,9 @@ class MockMDO3054(mock_pyvisa.Resource):
       x = x_zero + x_incr * np.arange(points).astype(np.float32)
       y_real = self.waveform_amp * np.sin(
           x * 2 * np.pi * 1e3) + self.waveform_offset
-      y = np.clip(np.round((y_real - y_zero) / y_mult + y_off), -127, 127)
-      y = y.astype(int).tolist()
+      y = np.clip(np.floor((y_real - y_zero) / y_mult + y_off + 0.5), -127, 127)
 
-      waveform = struct.pack(f">{points}b", *y)
+      waveform = y.astype(">b").tobytes()
       n_bytes = f"{len(waveform)}"
 
       real_data = (f':WFMOUTPRE:WFID "{wf_id}";'
@@ -387,6 +386,7 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
   """Test Equipment Tektronix MSO4000
   """
 
+  # When true, connect CH1 to probe compensation, and all others open
   _TRY_REAL_SCOPE = False
 
   def setUp(self) -> None:
@@ -399,6 +399,7 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
 
   def tearDown(self) -> None:
     super().tearDown()
+
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
     mock_pyvisa.no_pop = False
@@ -411,6 +412,12 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
 
     instrument.query_map["*IDN?"] = "FAKE"
     self.assertRaises(ValueError, tektronix.MSO4000, address)
+    instrument.query_map["*IDN?"] = "TEKTRONIX,MSO4010"
+    self.assertRaises(ValueError, tektronix.MSO4000, address)
+    instrument.query_map["*IDN?"] = "TEKTRONIX,MSO4002"
+    self.assertRaises(ValueError, tektronix.MSO4000, address)
+    instrument.query_map["*IDN?"] = "TEKTRONIX,FAKE012"
+    self.assertRaises(ValueError, tektronix.MSO4000, address)
     self.assertRaises(ValueError, tektronix.MDO4000, address)
     self.assertRaises(ValueError, tektronix.MDO3000, address)
     e = tektronix.MSO4000(address, check_identity=False)
@@ -419,11 +426,19 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
 
     instrument.query_map["*IDN?"] = "TEKTRONIX,MSO4104"
     e = tektronix.MSO4000(address)
+    self.assertEqual(e.max_bandwidth, 1000e6)
     self.assertListEqual(e.channels, ["CH1", "CH2", "CH3", "CH4"])
     self.assertListEqual(instrument.queue_tx[-2:], ["HEADER OFF", "VERBOSE ON"])
 
     instrument.query_map["*IDN?"] = "TEKTRONIX,MSO4032"
     e = tektronix.MSO4000(address)
+    self.assertEqual(e.max_bandwidth, 350e6)
+    self.assertListEqual(e.channels, ["CH1", "CH2"])
+    self.assertListEqual(instrument.queue_tx[-2:], ["HEADER OFF", "VERBOSE ON"])
+
+    instrument.query_map["*IDN?"] = "TEKTRONIX,MDO4022"
+    e = tektronix.MDO4000(address)
+    self.assertEqual(e.max_bandwidth, 200e6)
     self.assertListEqual(e.channels, ["CH1", "CH2"])
     self.assertListEqual(instrument.queue_tx[-2:], ["HEADER OFF", "VERBOSE ON"])
 
@@ -434,10 +449,17 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       equipment.pyvisa = pyvisa
       available = utility.get_available()
       for a in available:
-        if a.startswith("USB::0x0699::0x0408::"):
-          e = tektronix.MDO3000(a)
-          e.send("*RST")
-          break
+        if a.startswith("USB::0x0699::"):
+          model = a[15:19]
+          if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
+            e = tektronix.MSO4000(a)
+            break
+          elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
+            e = tektronix.MDO4000(a)
+            break
+          elif model in ["0408"]:
+            e = tektronix.MDO3000(a)
+            break
 
     if e is None:
       utility.pyvisa = mock_pyvisa
@@ -448,6 +470,9 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       _ = MockMDO3054(address)
 
       e = tektronix.MDO3000(address)
+    else:
+      time.sleep = self._original_sleep
+      e.send("*RST")
 
     self.assertRaises(KeyError, e.configure, "FAKE", None)
 
@@ -492,10 +517,17 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       equipment.pyvisa = pyvisa
       available = utility.get_available()
       for a in available:
-        if a.startswith("USB::0x0699::0x0408::"):
-          e = tektronix.MDO3000(a)
-          e.send("*RST")
-          break
+        if a.startswith("USB::0x0699::"):
+          model = a[15:19]
+          if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
+            e = tektronix.MSO4000(a)
+            break
+          elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
+            e = tektronix.MDO4000(a)
+            break
+          elif model in ["0408"]:
+            e = tektronix.MDO3000(a)
+            break
 
     if e is None:
       utility.pyvisa = mock_pyvisa
@@ -506,82 +538,85 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       _ = MockMDO3054(address)
 
       e = tektronix.MDO3000(address)
+    else:
+      time.sleep = self._original_sleep
+      e.send("*RST")
 
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "FAKE", None)
 
     value = 2
-    reply = e.configure_channel("CH4", "SCALE", value)
+    reply = e.configure_channel("CH2", "SCALE", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "SCALE", value)
 
     value = 2
-    reply = e.configure_channel("CH4", "POSITION", value)
+    reply = e.configure_channel("CH2", "POSITION", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "POSITION",
                       value)
 
     value = 0.1
-    reply = e.configure_channel("CH4", "OFFSET", value)
+    reply = e.configure_channel("CH2", "OFFSET", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "OFFSET", value)
 
     value = "I2C CLOCK"
-    reply = e.configure_channel("CH4", "LABEL", value)
+    reply = e.configure_channel("CH2", "LABEL", value)
     self.assertEqual(f'"{value}"', reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "LABEL", value)
 
-    value = 500e6
-    reply = e.configure_channel("CH4", "BANDWIDTH", value)
+    value = e.max_bandwidth
+    reply = e.configure_channel("CH2", "BANDWIDTH", value)
     self.assertEqual(value, reply)
-    reply = e.configure_channel("CH4", "BANDWIDTH", "FULL")
+    reply = e.configure_channel("CH2", "BANDWIDTH", "FULL")
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "BANDWIDTH",
                       value)
 
     value = 50
-    reply = e.configure_channel("CH4", "TERMINATION", value)
+    reply = e.configure_channel("CH2", "TERMINATION", value)
     self.assertEqual(value, reply)
-    reply = e.configure_channel("CH4", "TERMINATION", "FIFTY")
+    reply = e.configure_channel("CH2", "TERMINATION", "FIFTY")
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "TERMINATION",
                       value)
     value = 1e6
-    reply = e.configure_channel("CH4", "TERMINATION", value)
+    reply = e.configure_channel("CH2", "TERMINATION", value)
     self.assertEqual(value, reply)
 
     value = True
-    reply = e.configure_channel("CH4", "INVERT", value)
+    reply = e.configure_channel("CH2", "INVERT", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "INVERT", value)
 
     value = 10
-    reply = e.configure_channel("CH4", "PROBE_GAIN", value)
+    reply = e.configure_channel("CH2", "PROBE_GAIN", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "PROBE_GAIN",
                       value)
 
     value = 10
-    reply = e.configure_channel("CH4", "PROBE_ATTENUATION", value)
+    reply = e.configure_channel("CH2", "PROBE_ATTENUATION", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake",
                       "PROBE_ATTENUATION", value)
 
     value = "AC"
-    reply = e.configure_channel("CH4", "COUPLING", value)
+    reply = e.configure_channel("CH2", "COUPLING", value)
     self.assertEqual(value, reply)
     self.assertRaises(KeyError, e.configure_channel, "CHFake", "COUPLING",
                       value)
-    self.assertRaises(ValueError, e.configure_channel, "CH4", "COUPLING",
+    self.assertRaises(ValueError, e.configure_channel, "CH2", "COUPLING",
                       "FAKE")
 
     value = True
-    reply = e.configure_channel("CH4", "ACTIVE", value)
+    reply = e.configure_channel("CH2", "ACTIVE", value)
     self.assertEqual(value, reply)
 
     value = 1.4
-    reply = e.configure_channel("CH4", "TRIGGER_LEVEL", value)
+    reply = e.configure_channel("CH2", "TRIGGER_LEVEL", value)
     self.assertEqual(value, reply)
-    reply = e.configure_channel("CH4", "TRIGGER_LEVEL", "TTL")
+    reply = e.configure_channel("CH2", "TRIGGER_LEVEL", "TTL")
     self.assertEqual(value, reply)
 
   def test_command(self):
@@ -591,10 +626,17 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       equipment.pyvisa = pyvisa
       available = utility.get_available()
       for a in available:
-        if a.startswith("USB::0x0699::0x0408::"):
-          e = tektronix.MDO3000(a)
-          e.send("*RST")
-          break
+        if a.startswith("USB::0x0699::"):
+          model = a[15:19]
+          if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
+            e = tektronix.MSO4000(a)
+            break
+          elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
+            e = tektronix.MDO4000(a)
+            break
+          elif model in ["0408"]:
+            e = tektronix.MDO3000(a)
+            break
 
     if e is None:
       utility.pyvisa = mock_pyvisa
@@ -605,9 +647,13 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       _ = MockMDO3054(address)
 
       e = tektronix.MDO3000(address)
+    else:
+      time.sleep = self._original_sleep
+      e.send("*RST")
 
     self.assertRaises(KeyError, e.command, "Fake")
 
+    e.configure("TIME_SCALE", 1e-3)
     e.configure("TRIGGER_SOURCE", "LINE")
     e.configure("TIME_POINTS", 10e6)
 
@@ -623,7 +669,7 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
 
     e.command("CLEAR_MENU")
 
-    channel = "CH4"
+    channel = "CH1"
     e.configure_channel(channel, "SCALE", 0.1)
     e.configure_channel(channel, "POSITION", 0)
     self.assertRaises(ValueError, e.command, "AUTOSCALE", channel=None)
@@ -631,8 +677,8 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
     e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
+    self.assertEqualWithinError(2.5 / 8, scale, 0.1)
+    self.assertEqualWithinError(-4, position, 0.1)
 
   def test_autoscale(self):
     address = "USB::0x0000::0x0000:C000000::INSTR"
@@ -640,10 +686,11 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
 
     e = tektronix.MDO3000(address)
 
-    channel = "CH4"
+    channel = "CH1"
     self.assertRaises(ValueError, e.command, "AUTOSCALE", channel=None)
     self.assertRaises(ValueError, e.command, "AUTOSCALE", channel="CHFake")
 
+    e.configure("TIME_SCALE", 1e-3)
     e.configure_channel(channel, "SCALE", 0.1)
     e.configure_channel(channel, "POSITION", 0)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
@@ -651,68 +698,43 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
 
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
+    self.assertEqualWithinError(2.5 / 8, scale, 0.1)
+    self.assertEqualWithinError(-4, position, 0.1)
     self.assertTrue(
         fake_stdout.getvalue().startswith(f"Autoscaling channel '{channel}'"))
 
-    instrument.waveform_amp = 0.125
-    instrument.waveform_offset = 0.125
-    e.configure_channel(channel, "SCALE", 0.1)
-    e.configure_channel(channel, "POSITION", 4.5)
-    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+    # Too low, too small
+    e.configure_channel(channel, "SCALE", 5)
+    e.configure_channel(channel, "POSITION", -4.9)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
       e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
+    self.assertEqualWithinError(2.5 / 8, scale, 0.1)
+    self.assertEqualWithinError(-4, position, 0.1)
 
-    instrument.waveform_amp = 0.125
-    instrument.waveform_offset = 0.125
-    e.configure_channel(channel, "SCALE", 0.05)
-    e.configure_channel(channel, "POSITION", -5)
-    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-      e.command("AUTOSCALE", channel=channel, silent=True)
-    position = float(e.ask(f"{channel}:POSITION?"))
-    scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
-
-    instrument.waveform_amp = 0.125
-    instrument.waveform_offset = 0.125
-    e.configure_channel(channel, "SCALE", 0.03)
-    e.configure_channel(channel, "POSITION", -5)
-    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+    # Too low, too large
+    e.configure_channel(channel, "SCALE", 0.3)
+    e.configure_channel(channel, "POSITION", -4.9)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
       e.command("AUTOSCALE", channel=channel, silent=False)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
+    self.assertEqualWithinError(2.5 / 8, scale, 0.1)
+    self.assertEqualWithinError(-4, position, 0.1)
 
-    instrument.waveform_amp = 0.125
-    instrument.waveform_offset = 0.125
-    e.configure_channel(channel, "SCALE", 0.5)
-    e.configure_channel(channel, "POSITION", -5)
-    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-      e.command("AUTOSCALE", channel=channel, silent=False)
-    position = float(e.ask(f"{channel}:POSITION?"))
-    scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
-
-    instrument.waveform_amp = 0.125
-    instrument.waveform_offset = 0.125
-    e.configure_channel(channel, "SCALE", 0.5)
-    e.configure_channel(channel, "POSITION", 0)
-    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+    # Too high, too small
+    e.configure_channel(channel, "SCALE", 50)
+    e.configure_channel(channel, "POSITION", 5)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
       e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertEqualWithinError(0.0290, scale, 0.1)
-    self.assertEqualWithinError(-4.27, position, 0.1)
+    self.assertEqualWithinError(2.5 / 8, scale, 0.1)
+    self.assertEqualWithinError(-4, position, 0.1)
 
     instrument.waveform_amp = 0
-    instrument.waveform_offset = 0.125
+    instrument.waveform_offset = 0
     e.configure_channel(channel, "SCALE", 0.1)
     e.configure_channel(channel, "POSITION", 0)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
@@ -729,10 +751,17 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       equipment.pyvisa = pyvisa
       available = utility.get_available()
       for a in available:
-        if a.startswith("USB::0x0699::0x0408::"):
-          e = tektronix.MDO3000(a)
-          e.send("*RST")
-          break
+        if a.startswith("USB::0x0699::"):
+          model = a[15:19]
+          if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
+            e = tektronix.MSO4000(a)
+            break
+          elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
+            e = tektronix.MDO4000(a)
+            break
+          elif model in ["0408"]:
+            e = tektronix.MDO3000(a)
+            break
 
     if e is None:
       utility.pyvisa = mock_pyvisa
@@ -743,6 +772,9 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
       _ = MockMDO3054(address)
 
       e = tektronix.MDO3000(address)
+    else:
+      time.sleep = self._original_sleep
+      e.send("*RST")
 
     self.assertRaises(KeyError, e.read_waveform, "CHFake")
 
@@ -750,19 +782,19 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
     e.configure("TIME_POINTS", num_points)
     e.configure("TIME_SCALE", 1e-3)
     e.configure("TIME_OFFSET", -1e-3)
-    e.configure_channel("CH4", "SCALE", 0.05)
-    e.configure_channel("CH4", "OFFSET", -0.01)
-    e.configure_channel("CH4", "POSITION", 1)
+    e.configure_channel("CH2", "SCALE", 0.05)
+    e.configure_channel("CH2", "OFFSET", -0.01)
+    e.configure_channel("CH2", "POSITION", 1)
     e.command("SINGLE_FORCE")
 
-    samples, info = e.read_waveform("CH4")
+    samples, info = e.read_waveform("CH2")
 
     self.assertEqual(samples.shape[0], 2)
     self.assertEqual(samples.shape[1], num_points)
 
     self.assertEqual(info["x_unit"], "s")
 
-    samples, info = e.read_waveform("CH4", raw=True, add_noise=False)
+    samples, info = e.read_waveform("CH2", raw=True, add_noise=False)
 
     self.assertEqual(samples.shape[0], 2)
     self.assertEqual(samples.shape[1], num_points)
@@ -773,7 +805,7 @@ class TestEquipmentTektronixMSO4000(base.TestBase):
     for i in range(samples.shape[1]):
       self.assertAlmostEqual(0, samples[1, i] % 1)
 
-    samples, info = e.read_waveform("CH4", raw=True, add_noise=True)
+    samples, info = e.read_waveform("CH2", raw=True, add_noise=True)
 
     self.assertEqual(samples.shape[0], 2)
     self.assertEqual(samples.shape[1], num_points)

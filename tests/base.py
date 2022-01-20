@@ -47,11 +47,18 @@ class TestBase(unittest.TestCase):
     self._TEST_ROOT.mkdir(parents=True, exist_ok=True)
     self._test_start = time.perf_counter()
 
+    # Remove sleeping by default, mainly in read hardware interaction
+    self._original_sleep = time.sleep
+    time.sleep = lambda *args: None
+
   def tearDown(self):
     duration = time.perf_counter() - self._test_start
     with autodict.JSONAutoDict(TEST_LOG) as d:
       d["methods"][self.id()] = duration
     self.__clean_test_root()
+
+    # Restore sleeping
+    time.sleep = self._original_sleep
 
   @classmethod
   def setUpClass(cls):

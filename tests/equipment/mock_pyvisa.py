@@ -10,6 +10,7 @@ available = []
 
 no_pop = False
 
+
 class Resource:
   """Mock pyvisa.Resource
   """

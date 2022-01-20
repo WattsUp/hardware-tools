@@ -130,8 +130,8 @@ class TestEyeDiagram(base.TestBase):
       eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
 
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
-      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step3_sample(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
     self.assertIn("Completed sampling", fake_stdout.getvalue())
 
@@ -140,17 +140,26 @@ class TestEyeDiagram(base.TestBase):
     waveforms = np.array([[t, y], [t, y]])
     clocks = np.array([[t, clock], [t, clock]])
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=1000, resample=0)
+    eye = Derrived(waveforms, clocks=clocks, resolution=200, resample=0)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
-      eye.calculate(print_progress=False, n_threads=0, debug_plots=path)
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step4_stack(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=1000, resample=0)
+    eye = Derrived(waveforms, clocks=clocks, resolution=200, resample=0)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
-      eye.calculate(print_progress=False, n_threads=1, debug_plots=path)
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step4_stack(print_progress=False, n_threads=2, debug_plots=None)  # pylint: disable=protected-access
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=1000, resample=50)
+    eye = Derrived(waveforms, clocks=clocks, resolution=200, resample=0)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-      eye.calculate(print_progress=True, n_threads=0, debug_plots=path)
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step4_stack(print_progress=True, n_threads=2, debug_plots=None)  # pylint: disable=protected-access
     self.assertIn("Ran waveform #0", fake_stdout.getvalue())
 
 

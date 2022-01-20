@@ -17,4 +17,5 @@ version.py
 .coverage
 coverage.json
 testing.log
+profile.log
 test_log.json

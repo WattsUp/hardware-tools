@@ -66,8 +66,7 @@ class TestSignalClock(base.TestBase):
                         n=n)
     ties = edges - ideal_edges
     self.assertEqualWithinError(0, ties.mean() / t_sym, 0.01)
-    self.assertEqualWithinError(ui, np.sqrt((ties.std() / t_sym)**2 * 12),
-                                0.01)
+    self.assertEqualWithinError(ui, np.sqrt((ties.std() / t_sym)**2 * 12), 0.01)
 
     ui = 0.1
     mod_freq = 1 / 10000

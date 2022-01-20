@@ -48,8 +48,9 @@ class TestPAM2(base.TestBase):
                       this_keyword_does_not_exist=None)
 
   def test_step1(self):
+    n = n_scope // 10  # Don't need that many samples to test step 1
     path = str(self._TEST_ROOT.joinpath("eyediagram_pam2"))
-    waveforms = np.array([t, y])
+    waveforms = np.array([t[:n], y[:n]])
 
     eye = pam2.PAM2(waveforms, hist_n_max=None)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
@@ -75,11 +76,12 @@ class TestPAM2(base.TestBase):
     self.assertEqualWithinError(v_half, eye._y_half, 0.01)  # pylint: disable=protected-access
     self.assertEqualWithinError(v_rising, eye._y_rising, 0.01)  # pylint: disable=protected-access
     self.assertEqualWithinError(v_falling, eye._y_falling, 0.01)  # pylint: disable=protected-access
+    self.assertFalse(eye._low_snr)  # pylint: disable=protected-access
 
     hysteresis = 0.5
     y_new = y.copy()
     y_new[:-1] += y_new[1:] * 0.1
-    waveforms = np.array([[t, y], [t, y_new]])
+    waveforms = np.array([[t[:n], y[:n]], [t[:n], y_new[:n]]])
     eye = pam2.PAM2(waveforms, hysteresis=hysteresis)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
@@ -99,20 +101,26 @@ class TestPAM2(base.TestBase):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
 
-    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal,
+    eye = pam2.PAM2(waveforms,
+                    y_0=0,
+                    y_1=v_signal,
                     clock_polarity=eyediagram.ClockPolarity.RISING)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
 
-    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal,
+    eye = pam2.PAM2(waveforms,
+                    y_0=0,
+                    y_1=v_signal,
                     clock_polarity=eyediagram.ClockPolarity.FALLING)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
     self.assertIn("Calculating symbol period", fake_stdout.getvalue())
 
-    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal,
+    eye = pam2.PAM2(waveforms,
+                    y_0=0,
+                    y_1=v_signal,
                     clock_polarity=eyediagram.ClockPolarity.BOTH)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access

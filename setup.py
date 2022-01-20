@@ -78,7 +78,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     package_data={module_folder: []},
     install_requires=required,
-    extras_require={"test": ["time-machine", "AutoDict"]},
+    extras_require={"test": ["time-machine", "AutoDict", "coverage", "pylint"]},
     test_suite="tests",
     scripts=[],
     author="Bradley Davis",
