@@ -4,7 +4,6 @@
 import io
 import re
 import struct
-import unittest
 from unittest import mock
 
 import numpy as np
@@ -13,7 +12,8 @@ import pyvisa
 from hardware_tools.equipment import equipment, utility
 from hardware_tools.equipment import tektronix
 
-from .. import mock_pyvisa
+from tests import base
+from tests.equipment import mock_pyvisa
 
 
 class MockMDO3054(mock_pyvisa.Resource):
@@ -383,7 +383,7 @@ class MockMDO3054(mock_pyvisa.Resource):
     raise KeyError(f"Unknown query {command}")
 
 
-class TestEquipmentTektronixMSO4000(unittest.TestCase):
+class TestEquipmentTektronixMSO4000(base.TestBase):
   """Test Equipment Tektronix MSO4000
   """
 
@@ -631,8 +631,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
     e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
 
   def test_autoscale(self):
     address = "USB::0x0000::0x0000:C000000::INSTR"
@@ -651,8 +651,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
 
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
     self.assertTrue(
         fake_stdout.getvalue().startswith(f"Autoscaling channel '{channel}'"))
 
@@ -664,8 +664,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
 
     instrument.waveform_amp = 0.125
     instrument.waveform_offset = 0.125
@@ -675,8 +675,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
 
     instrument.waveform_amp = 0.125
     instrument.waveform_offset = 0.125
@@ -686,8 +686,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       e.command("AUTOSCALE", channel=channel, silent=False)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
 
     instrument.waveform_amp = 0.125
     instrument.waveform_offset = 0.125
@@ -697,8 +697,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       e.command("AUTOSCALE", channel=channel, silent=False)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
 
     instrument.waveform_amp = 0.125
     instrument.waveform_offset = 0.125
@@ -708,8 +708,8 @@ class TestEquipmentTektronixMSO4000(unittest.TestCase):
       e.command("AUTOSCALE", channel=channel, silent=True)
     position = float(e.ask(f"{channel}:POSITION?"))
     scale = float(e.ask(f"{channel}:SCALE?"))
-    self.assertAlmostEqual(scale / 0.0290, 1, 1)
-    self.assertAlmostEqual(position / (-4.27), 1, 1)
+    self.assertEqualWithinError(0.0290, scale, 0.1)
+    self.assertEqualWithinError(-4.27, position, 0.1)
 
     instrument.waveform_amp = 0
     instrument.waveform_offset = 0.125

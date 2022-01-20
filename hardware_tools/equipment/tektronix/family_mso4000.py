@@ -13,6 +13,8 @@ import numpy as np
 
 from hardware_tools.equipment import scope
 
+_rng = np.random.default_rng()
+
 
 class MSO4000(scope.Scope):
   """Tektronix Digital Oscilloscope model MSO4000
@@ -259,8 +261,8 @@ class MSO4000(scope.Scope):
         new_scale = scale
         new_position = position
 
-        data_min = np.min(data)
-        data_max = np.max(data)
+        data_min = data.min()
+        data_max = data.max()
         data_mid = (data_min + data_max) / 2
         data_span = (data_max - data_min)
 
@@ -321,7 +323,7 @@ class MSO4000(scope.Scope):
         else:
           if not silent:
             print("  Complete")
-          break # pragma: no cover complains this isn't reached
+          break  # pragma: no cover complains this isn't reached
 
       self.configure("TIME_POINTS", original_num_points)
 
@@ -385,11 +387,11 @@ class MSO4000(scope.Scope):
     x = x_zero + x_incr * np.arange(points).astype(np.float64)
     # float32 is not accurate enough for 1e6 points (only ~7digits of precision)
 
-    info_dict["clippingTop"] = np.amax(wave) >= 127
-    info_dict["clippingBottom"] = np.amin(wave) <= -127
+    info_dict["clippingTop"] = wave.max() >= 127
+    info_dict["clippingBottom"] = wave.min() <= -127
 
     if add_noise:
-      wave += np.random.uniform(-0.5, 0.5, points)
+      wave += _rng.uniform(-0.5, 0.5, points)
       # Don"t add noise to clipping values
       wave[np.where(wave >= 126.5)] = 127
       wave[np.where(wave < -126.5)] = -127

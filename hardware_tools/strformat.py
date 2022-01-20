@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import datetime
+import time
+from typing import Union
 
 
 def metric_prefix(value: float,
@@ -72,14 +74,14 @@ def time_str(duration: float, sub: bool = True, hours: bool = True) -> str:
   return buf
 
 
-def elapsed_str(start: datetime.datetime,
+def elapsed_str(start: Union[float, datetime.datetime],
                 end: datetime.datetime = None,
                 sub: bool = True,
                 hours: bool = True) -> str:
   """Calculate elapsed time since start and format using time_str
 
   Params:
-    start: Start timestamp
+    start: Start timestamp, either from datetime.now() or time.perf_counter()
     end: End timestamp, None will fetch now()
     sub: True will include time less than a second ".ss"
     hours: True will include hours "HH:"
@@ -87,6 +89,14 @@ def elapsed_str(start: datetime.datetime,
   Returns:
     Duration between start and end as string using time_str
   """
-  if end is None:
-    end = datetime.datetime.now(start.tzinfo)
-  return time_str((end - start).total_seconds(), sub=sub, hours=hours)
+  if isinstance(start, datetime.datetime):
+    if end is None:
+      end = datetime.datetime.now(start.tzinfo)
+    duration = (end - start).total_seconds()
+  elif isinstance(start, float):
+    if end is None:
+      end = time.perf_counter()
+    duration = end - start
+  else:
+    raise TypeError(f"Unknown start type: {type(start)}")
+  return time_str(duration, sub=sub, hours=hours)

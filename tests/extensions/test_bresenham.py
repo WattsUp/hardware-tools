@@ -1,19 +1,19 @@
 """Test module hardware_tools.extension.bresenham
 """
 
-import unittest
-
 import numpy as np
 
 from hardware_tools.extensions import bresenham_slow, bresenham_fast
 
+from tests import base
 
-class TestBresenham(unittest.TestCase):
+
+class TestBresenham(base.TestBase):
   """Test bresenham methods
   """
 
   def test_slow(self):
-    shape = np.random.randint(10, 100, 2)
+    shape = self._RNG.integers(10, 100, 2)
     grid = np.zeros(shape=shape, dtype=np.int32)
 
     x = np.array([shape[0] - 1, 0, 0, shape[0] - 1])
@@ -43,11 +43,11 @@ class TestBresenham(unittest.TestCase):
     # print(f"bresenham_slow = {elapsed}")
 
   def test_fast(self):
-    shape = np.random.randint(10, 100, 2)
+    shape = self._RNG.integers(10, 100, 2)
     grid = np.zeros(shape=shape, dtype=np.int32)
 
-    x = np.array([shape[0] - 1, 0, 0, shape[0] - 1])
-    y = np.array([0, 0, shape[1] - 1, 0])
+    x = np.array([shape[0] - 1, 0, 0, shape[0] - 1], dtype=np.int32)
+    y = np.array([0, 0, shape[1] - 1, 0], dtype=np.int32)
 
     bresenham_fast.draw(x, y, grid)
     self.assertEqual(1, grid[0, 0])

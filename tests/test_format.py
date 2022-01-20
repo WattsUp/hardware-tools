@@ -1,24 +1,24 @@
 """Test module hardware_tools.format
 """
 
-import unittest
-
 import datetime
 import random
 import string
+import time
 
-import numpy as np
 import time_machine
 
 from hardware_tools import strformat
 
+from tests import base
 
-class TestStringFormat(unittest.TestCase):
+
+class TestStringFormat(base.TestBase):
   """Test math methods
   """
 
   def test_metric_prefix(self):
-    x = np.random.uniform(2, 1000)
+    x = self._RNG.uniform(2, 1000)
     unit = random.choice(string.ascii_letters)
 
     specifier = "6.1f"
@@ -62,9 +62,9 @@ class TestStringFormat(unittest.TestCase):
     self.assertEqual(s, f"{x:{specifier}}  {unit}")
 
   def test_time_str(self):
-    hours = np.random.randint(0, 100)
-    minutes = np.random.randint(0, 60)
-    seconds = np.random.uniform(0, 60)
+    hours = self._RNG.integers(0, 100)
+    minutes = self._RNG.integers(0, 60)
+    seconds = self._RNG.uniform(0, 60)
     duration = hours * 3600 + minutes * 60 + seconds
 
     s = strformat.time_str(duration, sub=True, hours=True)
@@ -77,9 +77,9 @@ class TestStringFormat(unittest.TestCase):
     self.assertEqual(s, f"{hours * 60 + minutes:02}:{int(seconds):02}")
 
   def test_elapsed_str(self):
-    hours = np.random.randint(0, 100)
-    minutes = np.random.randint(0, 60)
-    seconds = np.random.uniform(0, 60)
+    hours = self._RNG.integers(0, 100)
+    minutes = self._RNG.integers(0, 60)
+    seconds = self._RNG.uniform(0, 60)
     duration = hours * 3600 + minutes * 60 + seconds
     start = datetime.datetime.now(datetime.timezone.utc)
     end = start + datetime.timedelta(seconds=duration)
@@ -90,3 +90,15 @@ class TestStringFormat(unittest.TestCase):
     with time_machine.travel(end, tick=False):
       s = strformat.elapsed_str(start, sub=True, hours=True)
     self.assertEqual(s, f"{hours:02}:{minutes:02}:{seconds:05.2f}")
+
+    end_perf = time.perf_counter()
+    start_perf = end_perf - duration
+
+    # time.perf_counter() is not adjustable so need to run this test within 0.5s
+    s = strformat.elapsed_str(start_perf, sub=False, hours=True)
+    self.assertEqual(s, f"{hours:02}:{minutes:02}:{int(seconds):02}")
+
+    s = strformat.elapsed_str(start_perf, end=end_perf, sub=True, hours=True)
+    self.assertEqual(s, f"{hours:02}:{minutes:02}:{seconds:05.2f}")
+
+    self.assertRaises(TypeError, strformat.elapsed_str, None)

@@ -34,8 +34,7 @@ def get_crossing(axis_return: list,
   """
   # Back up
   n = len(axis_search)
-  while i > 0 and i < n and (axis_search[i] > value) == (axis_search[i - 1] >
-                                                         value):
+  while 0 < i < n and (axis_search[i] > value) == (axis_search[i - 1] > value):
     i += 1 if step_forward else -1
 
   if i < 1 or i >= n:

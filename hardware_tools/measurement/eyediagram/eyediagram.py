@@ -14,7 +14,7 @@ from typing import Callable, Union
 import colorama
 from colorama import Fore
 import numpy as np
-import matplotlib.pyplot as pyplot
+from matplotlib import pyplot
 
 from hardware_tools import math, strformat
 from hardware_tools.extensions import bresenham

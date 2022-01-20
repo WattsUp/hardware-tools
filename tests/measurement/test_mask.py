@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-import unittest
-
 from hardware_tools.measurement import mask
 from hardware_tools.extensions import intersections
+
+from tests import base
 
 
 class Derrived(mask.Mask):
@@ -15,7 +15,7 @@ class Derrived(mask.Mask):
     return self
 
 
-class TestMask(unittest.TestCase):
+class TestMask(base.TestBase):
   """Test Mask
   """
 
@@ -31,7 +31,7 @@ class TestMask(unittest.TestCase):
     self.assertDictEqual({"paths": paths}, m.to_dict())
 
 
-class TestMaskDecagon(unittest.TestCase):
+class TestMaskDecagon(base.TestBase):
   """Test MaskDecagon
   """
 
@@ -65,8 +65,8 @@ class TestMaskDecagon(unittest.TestCase):
     hits = intersections.get_hits(t, y, m.paths)
     targets = [(0, yp), (1, yp)]
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 2)
-      self.assertAlmostEqual(hit[1], target[1], 2)
+      self.assertEqualWithinError(target[0], hit[0], 0.01)
+      self.assertEqualWithinError(target[1], hit[1], 0.01)
 
     t = [0, 1]
     yp = 1 + y4 + 0.1
@@ -74,8 +74,8 @@ class TestMaskDecagon(unittest.TestCase):
     hits = intersections.get_hits(t, y, m.paths)
     targets = [(0, yp), (1, yp)]
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 2)
-      self.assertAlmostEqual(hit[1], target[1], 2)
+      self.assertEqualWithinError(target[0], hit[0], 0.01)
+      self.assertEqualWithinError(target[1], hit[1], 0.01)
 
     t = [0, 1]
     yp = 0.5
@@ -83,8 +83,8 @@ class TestMaskDecagon(unittest.TestCase):
     hits = intersections.get_hits(t, y, m.paths)
     targets = [(x1, yp), (1 - x1, yp)]
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 2)
-      self.assertAlmostEqual(hit[1], target[1], 2)
+      self.assertEqualWithinError(target[0], hit[0], 0.01)
+      self.assertEqualWithinError(target[1], hit[1], 0.01)
 
   def test_adjust(self):
     x1 = 0.25

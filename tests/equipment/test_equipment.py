@@ -1,14 +1,12 @@
 """Test module hardware_tools.equipment.equipment
 """
 
-import unittest
-
 from typing import Any
-import random
 
 from hardware_tools.equipment import equipment
 
-from . import mock_pyvisa
+from tests import base
+from tests.equipment import mock_pyvisa
 
 
 class Derrived(equipment.Equipment):
@@ -23,7 +21,7 @@ class Derrived(equipment.Equipment):
     pass
 
 
-class TestEquipment(unittest.TestCase):
+class TestEquipment(base.TestBase):
   """Test Equipment
   """
 
@@ -33,7 +31,7 @@ class TestEquipment(unittest.TestCase):
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
     equipment.pyvisa = mock_pyvisa
-  
+
   def tearDown(self) -> None:
     super().tearDown()
     mock_pyvisa.resources = {}
@@ -84,7 +82,7 @@ class TestEquipment(unittest.TestCase):
     address = "USB::0x0000::0x0000:C000000::INSTR"
     e = Derrived(address, name=name)
 
-    count = random.randint(2, 10)
+    count = self._RNG.integers(1, 10)
 
     instrument = mock_pyvisa.resources[address]
     command = "*IDN?"
@@ -107,12 +105,13 @@ class TestEquipment(unittest.TestCase):
 
     instrument.queue_tx = []
     instrument.queue_rx = []
-    instrument.queue_rx.extend([loading] * 10000)
+    instrument.queue_rx.extend([loading] * 100)
 
     self.assertRaises(TimeoutError,
                       e.ask_and_wait,
                       command, [reply],
-                      additional_command="RESET")
+                      additional_command="RESET",
+                      timeout=0.2)
 
   def test_receive(self):
     name = "Mock Equipment"

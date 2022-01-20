@@ -78,7 +78,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     package_data={module_folder: []},
     install_requires=required,
-    extras_require={"test": ["time-machine"]},
+    extras_require={"test": ["time-machine", "AutoDict"]},
     test_suite="tests",
     scripts=[],
     author="Bradley Davis",

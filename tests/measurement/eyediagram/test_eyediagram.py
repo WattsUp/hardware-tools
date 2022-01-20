@@ -4,9 +4,6 @@
 from __future__ import annotations
 
 import io
-import os
-import pathlib
-import unittest
 from unittest import mock
 
 import numpy as np
@@ -15,6 +12,9 @@ from scipy import signal
 from hardware_tools import math
 from hardware_tools.measurement.eyediagram import eyediagram
 
+from tests import base
+
+_rng = np.random.default_rng()
 f_scope = 5e9
 n_scope = int(1e5)
 t_scope = n_scope / f_scope
@@ -26,7 +26,7 @@ t = np.linspace(0, t_scope, n_scope)
 v_signal = 3.3
 clock = (signal.square(2 * np.pi * (f_bit * t + 0.5)) + 1) / 2 * v_signal
 y = (np.repeat(bits, n_scope / n_bits) +
-     np.random.normal(0, 0.05, size=n_scope)) * v_signal
+     _rng.normal(0, 0.05, size=n_scope)) * v_signal
 
 
 class Derrived(eyediagram.EyeDiagram):
@@ -62,23 +62,9 @@ class Derrived(eyediagram.EyeDiagram):
     self._measures = eyediagram.Measures(None, None, None, None, None)
 
 
-class TestEyeDiagram(unittest.TestCase):
+class TestEyeDiagram(base.TestBase):
   """Test EyeDiagram
   """
-
-  _TEST_ROOT = pathlib.Path(".test")
-
-  def __clean_test_root(self):
-    if self._TEST_ROOT.exists():
-      for f in os.listdir(self._TEST_ROOT):
-        os.remove(self._TEST_ROOT.joinpath(f))
-
-  def setUp(self):
-    self.__clean_test_root()
-    self._TEST_ROOT.mkdir(parents=True, exist_ok=True)
-
-  def tearDown(self):
-    self.__clean_test_root()
 
   def test_init(self):
     waveforms = np.array([t, y])
@@ -168,47 +154,33 @@ class TestEyeDiagram(unittest.TestCase):
     self.assertIn("Ran waveform #0", fake_stdout.getvalue())
 
 
-class TestEyeDiagramMeasures(unittest.TestCase):
+class TestEyeDiagramMeasures(base.TestBase):
   """Test Measures
   """
 
-  _TEST_ROOT = pathlib.Path(".test")
-
-  def __clean_test_root(self):
-    if self._TEST_ROOT.exists():
-      for f in os.listdir(self._TEST_ROOT):
-        os.remove(self._TEST_ROOT.joinpath(f))
-
-  def setUp(self):
-    self.__clean_test_root()
-    self._TEST_ROOT.mkdir(parents=True, exist_ok=True)
-
-  def tearDown(self):
-    self.__clean_test_root()
-
   def test_to_dict(self):
-    n_sym = np.random.randint(1000, 10000)
-    n_sym_bad = np.random.randint(0, n_sym)
-    mask_margin = np.random.uniform(-1, 1)
+    n_sym = self._RNG.integers(1000, 10000)
+    n_sym_bad = self._RNG.integers(0, n_sym)
+    mask_margin = self._RNG.uniform(-1, 1)
     transition_dist = {
-        "000": np.random.randint(0, n_sym),
-        "001": np.random.randint(0, n_sym),
-        "010": np.random.randint(0, n_sym),
-        "011": np.random.randint(0, n_sym),
-        "100": np.random.randint(0, n_sym),
-        "101": np.random.randint(0, n_sym),
-        "110": np.random.randint(0, n_sym),
-        "111": np.random.randint(0, n_sym),
+        "000": self._RNG.integers(0, n_sym),
+        "001": self._RNG.integers(0, n_sym),
+        "010": self._RNG.integers(0, n_sym),
+        "011": self._RNG.integers(0, n_sym),
+        "100": self._RNG.integers(0, n_sym),
+        "101": self._RNG.integers(0, n_sym),
+        "110": self._RNG.integers(0, n_sym),
+        "111": self._RNG.integers(0, n_sym),
     }
 
     resolution = 200
     shape = (resolution, resolution, 4)
 
-    np_clean = np.random.uniform(0.0, 1.0, size=shape)
-    np_grid = np.random.uniform(0.0, 1.0, size=shape)
-    np_mask = np.random.uniform(0.0, 1.0, size=shape)
-    np_hits = np.random.uniform(0.0, 1.0, size=shape)
-    np_margin = np.random.uniform(0.0, 1.0, size=shape)
+    np_clean = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_grid = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_mask = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_hits = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_margin = self._RNG.uniform(0.0, 1.0, size=shape)
 
     m = eyediagram.Measures(np_clean, np_grid, np_mask, np_hits, np_margin)
     m.n_sym = n_sym
@@ -230,18 +202,18 @@ class TestEyeDiagramMeasures(unittest.TestCase):
     self.assertDictEqual(d, m.to_dict())
 
   def test_save_images(self):
-    n_sym = np.random.randint(1000, 10000)
-    n_sym_bad = np.random.randint(0, n_sym)
-    mask_margin = np.random.uniform(-1, 1)
+    n_sym = self._RNG.integers(1000, 10000)
+    n_sym_bad = self._RNG.integers(0, n_sym)
+    mask_margin = self._RNG.uniform(-1, 1)
 
     resolution = 200
     shape = (resolution, resolution, 4)
 
-    np_clean = np.random.uniform(0.0, 1.0, size=shape)
-    np_grid = np.random.uniform(0.0, 1.0, size=shape)
-    np_mask = np.random.uniform(0.0, 1.0, size=shape)
-    np_hits = np.random.uniform(0.0, 1.0, size=shape)
-    np_margin = np.random.uniform(0.0, 1.0, size=shape)
+    np_clean = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_grid = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_mask = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_hits = self._RNG.uniform(0.0, 1.0, size=shape)
+    np_margin = self._RNG.uniform(0.0, 1.0, size=shape)
 
     m = eyediagram.Measures(np_clean, np_grid, np_mask, np_hits, np_margin)
     m.n_sym = n_sym

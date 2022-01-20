@@ -1,35 +1,35 @@
 """Test module hardware_tools.extension.intersections
 """
 
-import unittest
-
 import numpy as np
 
 from hardware_tools.extensions import intersections_slow, intersections_fast
 
+from tests import base
 
-class TestIntersections(unittest.TestCase):
+
+class TestIntersections(base.TestBase):
   """Test intersections methods
   """
 
   def test_get_slow(self):
-    x0 = np.random.uniform(-1000, 1000)
-    y0 = np.random.uniform(-1000, 1000)
-    x1 = np.random.uniform(-1000, 1000)
-    y1 = np.random.uniform(-1000, 1000)
+    x0 = self._RNG.uniform(-1000, 1000)
+    y0 = self._RNG.uniform(-1000, 1000)
+    x1 = self._RNG.uniform(-1000, 1000)
+    y1 = self._RNG.uniform(-1000, 1000)
 
     if x0 == x1 and y0 == y1:
       x0 = x1 + 1
 
     p_intersect = intersections_slow.get(x0, y0, x1, y1, x0, y1, x1, y0)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
+    self.assertEqualWithinError((x0 + x1) / 2, p_intersect[0], 0.01)
+    self.assertEqualWithinError((y0 + y1) / 2, p_intersect[1], 0.01)
 
     p_intersect = intersections_slow.get(x1, y1, x0, y0, x1, y0, x0, y1)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
+    self.assertEqualWithinError((x0 + x1) / 2, p_intersect[0], 0.01)
+    self.assertEqualWithinError((y0 + y1) / 2, p_intersect[1], 0.01)
 
     p_intersect = intersections_slow.get(x0, y0, x1, y1, x0, y0, x1, y1)
     self.assertIsNone(p_intersect)
@@ -78,23 +78,23 @@ class TestIntersections(unittest.TestCase):
     # print(f"intersections_slow = {elapsed}")
 
   def test_get_fast(self):
-    x0 = np.random.uniform(-1000, 1000)
-    y0 = np.random.uniform(-1000, 1000)
-    x1 = np.random.uniform(-1000, 1000)
-    y1 = np.random.uniform(-1000, 1000)
+    x0 = self._RNG.uniform(-1000, 1000)
+    y0 = self._RNG.uniform(-1000, 1000)
+    x1 = self._RNG.uniform(-1000, 1000)
+    y1 = self._RNG.uniform(-1000, 1000)
 
     if x0 == x1 and y0 == y1:
       x0 = x1 + 1
 
     p_intersect = intersections_fast.get(x0, y0, x1, y1, x0, y1, x1, y0)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
+    self.assertEqualWithinError((x0 + x1) / 2, p_intersect[0], 0.01)
+    self.assertEqualWithinError((y0 + y1) / 2, p_intersect[1], 0.01)
 
     p_intersect = intersections_fast.get(x1, y1, x0, y0, x1, y0, x0, y1)
     self.assertIsNotNone(p_intersect)
-    self.assertAlmostEqual(p_intersect[0], (x0 + x1) / 2, 2)
-    self.assertAlmostEqual(p_intersect[1], (y0 + y1) / 2, 2)
+    self.assertEqualWithinError((x0 + x1) / 2, p_intersect[0], 0.01)
+    self.assertEqualWithinError((y0 + y1) / 2, p_intersect[1], 0.01)
 
     p_intersect = intersections_fast.get(x0, y0, x1, y1, x0, y0, x1, y1)
     self.assertIsNone(p_intersect)
@@ -160,8 +160,8 @@ class TestIntersections(unittest.TestCase):
     hits = sorted(hits, key=lambda h: h[0])
     self.assertEqual(len(hits), len(targets))
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 2)
-      self.assertAlmostEqual(hit[1], target[1], 2)
+      self.assertEqualWithinError(target[0], hit[0], 0.01)
+      self.assertEqualWithinError(target[1], hit[1], 0.01)
 
     mask = [[(1, 2), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
             [(0.75, -0.9), (1, 0.9), (1.25, -0.9)]]
@@ -199,8 +199,8 @@ class TestIntersections(unittest.TestCase):
     hits = sorted(hits, key=lambda h: h[0])
     self.assertEqual(len(hits), len(targets))
     for hit, target in zip(hits, targets):
-      self.assertAlmostEqual(hit[0], target[0], 2)
-      self.assertAlmostEqual(hit[1], target[1], 2)
+      self.assertEqualWithinError(target[0], hit[0], 0.01)
+      self.assertEqualWithinError(target[1], hit[1], 0.01)
 
     mask = [[(1, 2), (5, 1.1)], [(0.25, 0.9), (0.5, -0.9), (0.75, 0.9)],
             [(0.75, -0.9), (1, 0.9), (1.25, -0.9)]]

@@ -3,9 +3,6 @@
 
 import base64
 import io
-import os
-import pathlib
-import unittest
 
 import numpy as np
 import PIL
@@ -13,34 +10,22 @@ import PIL.Image
 
 from hardware_tools import math
 
+from tests import base
 
-class TestMath(unittest.TestCase):
+
+class TestMath(base.TestBase):
   """Test math methods
   """
 
-  _TEST_ROOT = pathlib.Path(".test")
-
-  def __clean_test_root(self):
-    if self._TEST_ROOT.exists():
-      for f in os.listdir(self._TEST_ROOT):
-        os.remove(self._TEST_ROOT.joinpath(f))
-
-  def setUp(self):
-    self.__clean_test_root()
-    self._TEST_ROOT.mkdir(parents=True, exist_ok=True)
-
-  def tearDown(self):
-    self.__clean_test_root()
-
   def test_interpolate_sinc(self):
-    x_min = np.random.randint(-1000, 500)
-    x_max = x_min + np.random.randint(1, 500)
-    n_in = np.random.randint(500, 1000)
-    n_down = np.random.randint(10, n_in - 10)
-    n_up = np.random.randint(1000, 5000)
+    x_min = self._RNG.integers(-1000, 500)
+    x_max = x_min + self._RNG.integers(1, 500)
+    n_in = self._RNG.integers(500, 1000)
+    n_down = self._RNG.integers(10, n_in - 10)
+    n_up = self._RNG.integers(1000, 5000)
 
     x_in = np.linspace(x_min, x_max, n_in)
-    y_in = np.random.uniform(-1, 1, n_in)
+    y_in = self._RNG.uniform(-1, 1, n_in)
     self.assertEqual(x_in.shape, y_in.shape)
 
     x_down = np.linspace(x_min, x_max, n_down)
@@ -62,19 +47,10 @@ class TestMath(unittest.TestCase):
 
     input_band_power = fft[:f_in].sum()
 
-    try:
-      self.assertGreaterEqual(input_band_power, 0.99)
-    except AssertionError as e:
-      # TODO remove
-      import matplotlib.pyplot as pyplot
-      pyplot.plot(fft)
-      pyplot.axvline(x=n_in // 2)
-      pyplot.axhline(y=0)
-      pyplot.show()
-      raise e
+    self.assertGreaterEqual(input_band_power, 0.99)
 
     # 2D input
-    x_in = np.random.uniform(x_min, x_max, (n_in, n_in))
+    x_in = self._RNG.uniform(x_min, x_max, (n_in, n_in))
     self.assertRaises(ValueError, math.interpolate_sinc, x_up, x_in, y_in)
 
     # Mismatched input
@@ -83,14 +59,14 @@ class TestMath(unittest.TestCase):
 
     # Single point input
     x_in = np.linspace(x_min, x_max, 1)
-    y_in = np.random.uniform(-1, 1, 1)
+    y_in = self._RNG.uniform(-1, 1, 1)
     self.assertRaises(ValueError, math.interpolate_sinc, x_up, x_in, y_in)
 
   def test_point2d(self):
-    x0 = np.random.uniform(-1000, 1000)
-    y0 = np.random.uniform(-1000, 1000)
-    x1 = np.random.uniform(-1000, 1000)
-    y1 = np.random.uniform(-1000, 1000)
+    x0 = self._RNG.uniform(-1000, 1000)
+    y0 = self._RNG.uniform(-1000, 1000)
+    x1 = self._RNG.uniform(-1000, 1000)
+    y1 = self._RNG.uniform(-1000, 1000)
 
     if x0 == x1 and y0 == y1:
       x0 = x1 + 1
@@ -132,10 +108,10 @@ class TestMath(unittest.TestCase):
         self.assertEqual(-1, math.Point2D.orientation(p1, p_knee, p0))
 
   def test_line2d(self):
-    x0 = np.random.uniform(-1000, 1000)
-    y0 = np.random.uniform(-1000, 1000)
-    x1 = np.random.uniform(-1000, 1000)
-    y1 = np.random.uniform(-1000, 1000)
+    x0 = self._RNG.uniform(-1000, 1000)
+    y0 = self._RNG.uniform(-1000, 1000)
+    x1 = self._RNG.uniform(-1000, 1000)
+    y1 = self._RNG.uniform(-1000, 1000)
 
     if x0 == x1 and y0 == y1:
       x0 = x1 + 1
@@ -173,11 +149,11 @@ class TestMath(unittest.TestCase):
     self.assertIsNone(l0.intersection(l1))
 
   def test_gaussian(self):
-    x0 = np.random.uniform(-1000, 1000)
-    x1 = np.random.uniform(-1000, 1000)
-    amplitude = np.random.uniform(-1000, 1000)
-    mean = np.random.uniform(-1000, 1000)
-    stddev = np.random.uniform(-1000, 1000)
+    x0 = self._RNG.uniform(-1000, 1000)
+    x1 = self._RNG.uniform(-1000, 1000)
+    amplitude = self._RNG.uniform(-1000, 1000)
+    mean = self._RNG.uniform(-1000, 1000)
+    stddev = self._RNG.uniform(1, 1000)
 
     g = math.Gaussian(amplitude, mean, stddev)
     self.assertEqual(str(g), f"{{A={amplitude}, mu={mean}, stddev={stddev}}}")
@@ -197,17 +173,51 @@ class TestMath(unittest.TestCase):
     self.assertEqual(0, g.compute(mean + 1))
     self.assertTrue(np.isposinf(g.compute(mean)))
     y = g.compute(x)
-    self.assertTrue(np.isposinf(np.max(y)))
+    self.assertTrue(np.isposinf(y.max()))
     y = np.nan_to_num(y, posinf=1)
     self.assertEqual(1, y.sum())
 
-  def test_gaussian_fit(self):
-    amplitude = np.random.uniform(-1000, 1000)
-    mean = np.random.uniform(-1000, 1000)
-    stddev = np.random.uniform(-1000, 1000)
-    n = np.random.randint(500, 1000)
+  def test_gaussian_comparision(self):
+    mean = self._RNG.uniform(-1000, 1000)
+    stddev = self._RNG.uniform(1, 1000)
 
-    x = np.random.uniform(mean - stddev * 5, mean + stddev * 5, n)
+    n = 100
+    n_samples = 10000
+    errors = []
+    for _ in range(n_samples):
+      x = self._RNG.normal(mean, stddev, n)
+      error = np.abs(x.std() / stddev - 1)
+      errors.append(error)
+    errors = np.array(errors)
+
+    p_fail = 0.1
+    threshold = math.Gaussian.sample_error_inv(n, p_fail)
+    self.assertAlmostEqual(p_fail, math.Gaussian.sample_error(n, threshold))
+    p_fail_real = np.mean(errors > threshold)
+    self.assertEqualWithinError(p_fail, p_fail_real, 0.1)
+
+    n = 1000
+    n_samples = 10000
+    errors = []
+    for _ in range(n_samples):
+      x = self._RNG.normal(mean, stddev, n)
+      error = np.abs(x.std() / stddev - 1)
+      errors.append(error)
+    errors = np.array(errors)
+
+    p_fail = 0.1
+    threshold = math.Gaussian.sample_error_inv(n, p_fail)
+    self.assertAlmostEqual(p_fail, math.Gaussian.sample_error(n, threshold))
+    p_fail_real = np.mean(errors > threshold)
+    self.assertEqualWithinError(p_fail, p_fail_real, 0.1)
+
+  def test_gaussian_fit(self):
+    amplitude = self._RNG.uniform(-1000, 1000)
+    mean = self._RNG.uniform(-1000, 1000)
+    stddev = self._RNG.uniform(1, 1000)
+    n = self._RNG.integers(500, 1000)
+
+    x = self._RNG.uniform(mean - stddev * 5, mean + stddev * 5, n)
     g = math.Gaussian(amplitude, mean, stddev)
     y = g.compute(x)
 
@@ -217,11 +227,11 @@ class TestMath(unittest.TestCase):
     self.assertAlmostEqual(abs(stddev), abs(g_fit.stddev))
 
   def test_gaussian_mix(self):
-    n_components = np.random.randint(2, 5)
-    amplitude = np.random.uniform(1, 1000, n_components)
-    mean = np.random.uniform(-1000, 1000, n_components)
-    stddev = np.random.uniform(1, 1000, n_components)
-    n = np.random.randint(500, 1000)
+    n_components = self._RNG.integers(2, 5)
+    amplitude = self._RNG.uniform(1, 1000, n_components)
+    mean = self._RNG.uniform(-1000, 1000, n_components)
+    stddev = self._RNG.uniform(1, 1000, n_components)
+    n = self._RNG.integers(500, 1000)
 
     components = [
         math.Gaussian(a, m, s) for a, m, s in zip(amplitude, mean, stddev)
@@ -231,7 +241,7 @@ class TestMath(unittest.TestCase):
 
     g = math.GaussianMix(components)
     self.assertEqual(str(g), str(components))
-    x = np.random.uniform(
+    x = self._RNG.uniform(
         min(mean) - max(abs(stddev)) * 5,
         max(mean) + max(abs(stddev)) * 5, n)
     y = np.zeros(n)
@@ -245,16 +255,14 @@ class TestMath(unittest.TestCase):
     components = components[:1]
     components.append(math.Gaussian(0, 0, 1))
     g = math.GaussianMix(components)
-    center_compute = g.center()
-    error = center_compute / components[0].mean - 1
-    self.assertAlmostEqual(0, error, places=3)
+    self.assertEqualWithinError(components[0].mean, g.center(), 0.01)
 
   def test_gaussian_mix_fit(self):
-    n_components = np.random.randint(2, 5)
-    amplitude = np.random.uniform(1, 5, n_components)
-    mean = np.random.uniform(-1000, 1000, n_components)
-    stddev = np.random.uniform(1, 100, n_components)
-    n = np.random.randint(5000, 10000)
+    n_components = self._RNG.integers(2, 5)
+    amplitude = self._RNG.uniform(1, 5, n_components)
+    mean = self._RNG.uniform(-1000, 1000, n_components)
+    stddev = self._RNG.uniform(1, 100, n_components)
+    n = self._RNG.integers(5000, 10000)
 
     amplitude = amplitude / amplitude.sum()
 
@@ -266,15 +274,15 @@ class TestMath(unittest.TestCase):
     y = np.array([amplitude[0]] * n)
     g_fit = math.GaussianMix.fit_samples(y, n_max=n_components)
     self.assertEqual(len(g_fit.components), 1)
-    self.assertAlmostEqual(g_fit.components[0].amplitude, 1)
-    self.assertAlmostEqual(g_fit.components[0].mean, amplitude[0])
-    self.assertAlmostEqual(g_fit.components[0].stddev, 0)
+    self.assertEqualWithinError(1, g_fit.components[0].amplitude, 0.01)
+    self.assertEqualWithinError(amplitude[0], g_fit.components[0].mean, 0.01)
+    self.assertEqualWithinError(0, g_fit.components[0].stddev, 0.01)
 
     g = math.GaussianMix(components)
     y = []
     for c in components:
       y.extend(
-          np.random.normal(c.mean, c.stddev, int(n * c.amplitude)).tolist())
+          self._RNG.normal(c.mean, c.stddev, int(n * c.amplitude)).tolist())
     y = np.array(y)
     x = np.linspace(min(y), max(y), 1000)
     g_fit = math.GaussianMix.fit_samples(y, n_max=n_components)
@@ -288,15 +296,15 @@ class TestMath(unittest.TestCase):
     self.assertLess(error, 0.15)
 
   def test_bin_linear(self):
-    bin_count = np.random.randint(5, 100)
-    y_min = np.random.uniform(-10, 0)
-    y_max = np.random.uniform(1, 10)
+    bin_count = self._RNG.integers(5, 100)
+    y_min = self._RNG.uniform(-10, 0)
+    y_max = self._RNG.uniform(1, 10)
     edges = np.linspace(y_min, y_max, bin_count + 1)
-    counts = np.random.randint(100, 1000, bin_count)
+    counts = self._RNG.integers(100, 1000, bin_count)
     y = []
     for i in range(bin_count):
       y.extend(
-          np.random.uniform(edges[i], edges[i + 1], counts[i] - 2).tolist())
+          self._RNG.uniform(edges[i], edges[i + 1], counts[i] - 2).tolist())
       y.append(edges[i])
       y.append(edges[i + 1])
     y = np.array(y)
@@ -311,7 +319,7 @@ class TestMath(unittest.TestCase):
     counts_norm = counts / np.diff(edges) / counts.sum()
 
     for c, c_fit in zip(counts_norm, counts_fit):
-      self.assertAlmostEqual(c, c_fit, 2)
+      self.assertEqualWithinError(c, c_fit, 0.01)
 
     y = np.repeat(y[0], counts.sum())
     counts_fit, edges_fit = math.Bin.linear(y,
@@ -326,9 +334,9 @@ class TestMath(unittest.TestCase):
     self.assertEqual(counts_fit.sum(), counts.sum())
 
   def test_bin_exact(self):
-    n = np.random.randint(100, 1000)
+    n = self._RNG.integers(100, 1000)
     bins = list(range(-10, 10))
-    y = np.random.randint(-10, 10, n)
+    y = self._RNG.integers(-10, 10, n)
     for i in range(len(bins)):
       y[i] = bins[i]
 
@@ -343,9 +351,9 @@ class TestMath(unittest.TestCase):
   def test_bin_exponential(self):
     bins = list(range(-10, 10))
     y = []
-    counts = np.random.randint(100, 1000, len(bins))
+    counts = self._RNG.integers(100, 1000, len(bins))
     for i in range(len(bins)):
-      y.extend(10**(bins[i] + np.random.uniform(0, 1, counts[i] - 1)))
+      y.extend(10**(bins[i] + self._RNG.uniform(0, 1, counts[i] - 1)))
       y.append(10**bins[i])
     y[-1] = 10**(bins[-1] + 1)
     y = np.array(y)
@@ -385,15 +393,15 @@ class TestMath(unittest.TestCase):
     self.assertEqual(0, edges_fit[-1])
 
   def test_bin_downsample(self):
-    bin_count = np.random.randint(5, 100)
-    y_min = np.random.uniform(-10, 0)
-    y_max = np.random.uniform(1, 10)
+    bin_count = self._RNG.integers(5, 100)
+    y_min = self._RNG.uniform(-10, 0)
+    y_max = self._RNG.uniform(1, 10)
     edges = np.linspace(y_min, y_max, bin_count + 1)
-    counts = np.random.randint(100, 1000, bin_count)
+    counts = self._RNG.integers(100, 1000, bin_count)
     y = []
     for i in range(bin_count):
       y.extend(
-          np.random.uniform(edges[i], edges[i + 1], counts[i] - 2).tolist())
+          self._RNG.uniform(edges[i], edges[i + 1], counts[i] - 2).tolist())
       y.append(edges[i])
       y.append(edges[i + 1])
     y = np.array(y)
@@ -409,7 +417,7 @@ class TestMath(unittest.TestCase):
     counts_norm = counts / np.diff(edges) / n
 
     for c, c_fit in zip(counts_norm, counts_fit):
-      self.assertAlmostEqual(c, c_fit, 2)
+      self.assertEqualWithinError(c, c_fit, 0.01)
 
     y_down = math.Bin.downsample(y, n_max=n * 10)
     self.assertListEqual(y.tolist(), y_down.tolist())
@@ -424,7 +432,7 @@ class TestMath(unittest.TestCase):
     counts_fit, _ = np.histogram(y_down, bins=edges_fit, density=True)
 
     for c, c_fit in zip(counts_norm, counts_fit):
-      self.assertAlmostEqual(c, c_fit, 2)
+      self.assertEqualWithinError(c, c_fit, 0.01)
 
     y_up = np.round(y_up, 2)
 
@@ -432,7 +440,7 @@ class TestMath(unittest.TestCase):
     self.assertLessEqual(len(y_down), n)
 
   def test_image_layer(self):
-    shape = np.random.randint(10, 100, 3)
+    shape = self._RNG.integers(10, 100, 3)
 
     above = np.zeros(shape=shape, dtype=np.float32)
     below = np.zeros(shape=shape[:2], dtype=np.float32)
@@ -450,9 +458,9 @@ class TestMath(unittest.TestCase):
     above = np.zeros(shape=shape, dtype=np.float32)
     below = np.zeros(shape=shape, dtype=np.float32)
 
-    above_rgba = np.random.uniform(0, 1, 4)
+    above_rgba = self._RNG.uniform(0, 1, 4)
     above[:, :] = above_rgba
-    below_rgba = np.random.uniform(0, 1, 4)
+    below_rgba = self._RNG.uniform(0, 1, 4)
     below[:, :] = below_rgba
 
     out = math.Image.layer_rgba(below, above)
@@ -473,10 +481,10 @@ class TestMath(unittest.TestCase):
     self.assertAlmostEqual(out_b, out_rgba[2], 3)
 
   def test_image_base64(self):
-    shape = np.random.randint(10, 100, 3)
+    shape = self._RNG.integers(10, 100, 3)
     shape[2] = 4
 
-    image = np.random.uniform(0.0, 1.0, size=shape)
+    image = self._RNG.uniform(0.0, 1.0, size=shape)
 
     out = math.Image.np_to_base64(image)
     with io.BytesIO(base64.b64decode(out)) as buf:
@@ -491,10 +499,10 @@ class TestMath(unittest.TestCase):
                         formats=["PNG"])
 
   def test_image_file(self):
-    shape = np.random.randint(10, 100, 3)
+    shape = self._RNG.integers(10, 100, 3)
     shape[2] = 4
 
-    image = np.random.uniform(0.0, 1.0, size=shape)
+    image = self._RNG.uniform(0.0, 1.0, size=shape)
 
     path = str(self._TEST_ROOT.joinpath("image.png"))
 
@@ -504,60 +512,63 @@ class TestMath(unittest.TestCase):
     image_pil.load()
 
   def test_uncertain_value(self):
-    samples_a = np.random.uniform(0.0, 1.0, int(1e6))
-    samples_b = np.random.normal(1.0, 2.0, int(1e6))
-    c = np.random.uniform(2.0, 100.0)
+    n = int(1e6)
+    samples_a = self._RNG.uniform(0.0, 1.0, n)
+    samples_b = self._RNG.normal(1.0, 2.0, n)
+    c = self._RNG.uniform(2.0, 100.0)
 
-    avg_a = np.average(samples_a)
-    avg_b = np.average(samples_b)
+    avg_a = samples_a.mean()
+    avg_b = samples_b.mean()
 
-    std_a = np.std(samples_a)
-    std_b = np.std(samples_b)
+    std_a = samples_a.std()
+    std_b = samples_b.std()
 
     a = math.UncertainValue(avg_a, std_a)
     b = math.UncertainValue(avg_b, std_b)
 
     samples_r = samples_a + samples_b
     r = a + b
-    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
-    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+    self.assertEqualWithinSampleError(samples_r.mean(), r.value, n)
+    self.assertEqualWithinSampleError(samples_r.std(), r.stddev, n)
 
     samples_r = samples_a + c
     r = a + c
-    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
-    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+    self.assertEqualWithinSampleError(samples_r.mean(), r.value, n)
+    self.assertEqualWithinSampleError(samples_r.std(), r.stddev, n)
 
     samples_r = samples_a - samples_b
     r = a - b
-    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
-    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+    self.assertEqualWithinSampleError(samples_r.mean(), r.value, n)
+    self.assertEqualWithinSampleError(samples_r.std(), r.stddev, n)
 
     samples_r = samples_a - c
     r = a - c
-    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
-    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+    self.assertEqualWithinSampleError(samples_r.mean(), r.value, n)
+    self.assertEqualWithinSampleError(samples_r.std(), r.stddev, n)
 
     # This is an approximation, check approximation
     r = a * b
-    self.assertAlmostEqual(r.value, avg_a * avg_b, 2)
-    self.assertAlmostEqual(r.stddev / (avg_a * avg_b),
-                           np.sqrt((std_a / avg_a)**2 + (std_b / avg_b)**2), 2)
+    r_stddev = (np.sqrt((std_a / avg_a)**2 +
+                        (std_b / avg_b)**2)) * (avg_a * avg_b)
+    self.assertEqualWithinSampleError(avg_a * avg_b, r.value, n)
+    self.assertEqualWithinSampleError(r_stddev, r.stddev, n)
 
     samples_r = samples_a * c
     r = a * c
-    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
-    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+    self.assertEqualWithinSampleError(samples_r.mean(), r.value, n)
+    self.assertEqualWithinSampleError(samples_r.std(), r.stddev, n)
 
     # This is an approximation, check approximation
     r = a / b
-    self.assertAlmostEqual(r.value, avg_a / avg_b, 2)
-    self.assertAlmostEqual(r.stddev / (avg_a / avg_b),
-                           np.sqrt((std_a / avg_a)**2 + (std_b / avg_b)**2), 2)
+    r_stddev = (np.sqrt((std_a / avg_a)**2 +
+                        (std_b / avg_b)**2)) * (avg_a / avg_b)
+    self.assertEqualWithinSampleError(avg_a / avg_b, r.value, n)
+    self.assertEqualWithinSampleError(r_stddev, r.stddev, n)
 
     samples_r = samples_a / c
     r = a / c
-    self.assertAlmostEqual(r.value, np.average(samples_r), 2)
-    self.assertAlmostEqual(r.stddev, np.std(samples_r), 2)
+    self.assertEqualWithinSampleError(samples_r.mean(), r.value, n)
+    self.assertEqualWithinSampleError(samples_r.std(), r.stddev, n)
 
     self.assertTrue((a < b) == (avg_a < avg_b))
     self.assertTrue((a < c) == (avg_a < c))

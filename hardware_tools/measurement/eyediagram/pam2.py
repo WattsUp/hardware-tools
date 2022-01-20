@@ -3,21 +3,14 @@
 
 from __future__ import annotations
 
-import base64
 import copy
-import datetime
-import io
-import multiprocessing
-from typing import Union
 
-import colorama
-from colorama import Fore
 import numpy as np
-import matplotlib.pyplot as pyplot
+from matplotlib import pyplot
 
 from hardware_tools import math, strformat
 from hardware_tools.extensions import edges
-from hardware_tools.measurement.eyediagram import eyediagram, pll
+from hardware_tools.measurement.eyediagram import cdr, eyediagram
 
 
 class MeasuresPAM2(eyediagram.Measures):
@@ -169,7 +162,8 @@ class PAM2(eyediagram.EyeDiagram):
 
         # Step 2
         "clock_polarity": eyediagram.ClockPolarity.RISING,  # If given clocks
-        "pll": pll.PLLSingleLowPass(1e-9, 100e3),  # PLL used for clock recovery
+        "cdr": cdr.CDR(),  # Clock recovery algorithm
+        "fallback_period": 100e-9,  # If CDR cannot run (low SNR)
 
         # Step 3: No configuration
 
@@ -316,7 +310,7 @@ class PAM2(eyediagram.EyeDiagram):
         self._clock_edges.append(e.tolist())
     elif self._low_snr:
       # Generate clock pulses at the fallback_period fixed rate
-      self._t_sym = math.UncertainValue(self._config["pll"].t_sym_initial, 0)
+      self._t_sym = math.UncertainValue(self._config["fallback_period"], 0)
 
       for i in range(self._waveforms.shape[0]):
         t = self._waveforms[i][0][0] + self._t_sym.value
@@ -325,8 +319,8 @@ class PAM2(eyediagram.EyeDiagram):
       return
     else:
       if print_progress:
-        print(f"{'':>{indent}}Running clock recovery PLL")
-      # Run PLL to generate edges
+        print(f"{'':>{indent}}Running clock data recovery")
+      # Run CDR to generate edges
       # yapf: disable
       args_list = [[
           self._waveforms[i][0],
@@ -334,23 +328,24 @@ class PAM2(eyediagram.EyeDiagram):
           self._y_rising,
           self._y_half,
           self._y_falling,
-          copy.deepcopy(self._config["pll"])
+          copy.deepcopy(self._config["cdr"]),
+          self._config["clock_polarity"]
       ] for i in range(self._waveforms.shape[0])]
       # yapf: enable
-      output = self._collect_runners(_runner_pll, args_list, n_threads,
+      output = self._collect_runners(_runner_cdr, args_list, n_threads,
                                      print_progress, indent)
       ties = []
       for o in output:
         self._clock_edges.append(o["edges"])
-        periods.append(o["periods"])
+        periods.append(np.diff(o["edges"]))
         ties.append(o["ties"])
 
     if print_progress:
       print(f"{'':>{indent}}Calculating symbol period")
     # Two pass average to remove outliers arising from idle time
     periods = np.concatenate(periods)
-    periods = periods[periods < 10 * np.average(periods)]
-    self._t_sym = math.UncertainValue(np.average(periods), np.std(periods))
+    periods = periods[periods < 10 * periods.mean()]
+    self._t_sym = math.UncertainValue(periods.mean(), periods.std())
 
     if debug_plots is not None:
       debug_plots += ".step2.png"
@@ -416,17 +411,17 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   if n_max is not None:
     waveform_y = math.Bin.downsample(waveform_y, n_max)
 
-  y_min = np.amin(waveform_y)
-  y_max = np.amax(waveform_y)
+  y_min = waveform_y.min()
+  y_max = waveform_y.max()
   y_mid = (y_min + y_max) / 2
   y_0 = math.UncertainValue(0, 0)
   y_1 = math.UncertainValue(0, 0)
 
   values_0 = waveform_y[np.where(waveform_y < y_mid)]
-  y_0.stddev = np.std(values_0)
+  y_0.stddev = values_0.std()
 
   values_1 = waveform_y[np.where(waveform_y > y_mid)]
-  y_1.stddev = np.std(values_1)
+  y_1.stddev = values_1.std()
 
   fit_0 = math.GaussianMix.fit_samples(values_0, n_max=3)
   fit_1 = math.GaussianMix.fit_samples(values_1, n_max=3)
@@ -444,9 +439,10 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   }
 
 
-def _runner_pll(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
-                y_half: float, y_fall: float, pll_obj: pll.PLL) -> dict:
-  """Calculate the high and low levels of the waveform
+def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
+                y_half: float, y_fall: float, cdr_obj: cdr.CDR,
+                polarity: eyediagram.ClockPolarity) -> dict:
+  """Recover a clock from the data signal
 
   Args:
     waveform_t: Waveform data array [t0, t1,..., tn]
@@ -454,17 +450,19 @@ def _runner_pll(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
     y_rise: Rising threshold
     y_half: Interpolated edge value
     y_fall: Falling threshold
-    pll_obj: PLL object to execute on waveform
+    cdr_obj: CDR object to execute on waveform
 
   Returns:
     Dictionary of values:
       edges: List of clock edges in time
-      periods: List of clock periods
       ties: List of Time Interval Errors (TIEs)
   """
-  data_edges = edges.get(waveform_t.tolist(), waveform_y.tolist(), y_rise,
-                         y_half, y_fall)
-  data_edges[0].extend(data_edges[1])
-  data_edges = sorted(data_edges[0])
-  results = pll_obj.run(data_edges)
-  return {"edges": results[0], "periods": results[1], "ties": results[2]}
+  data_edges = edges.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
+  if polarity is eyediagram.ClockPolarity.RISING:
+    data_edges = data_edges[0]
+  elif polarity is eyediagram.ClockPolarity.FALLING:
+    data_edges = data_edges[1]
+  else:
+    data_edges = np.sort(np.concatenate(data_edges))
+  results = cdr_obj.run(data_edges)
+  return {"edges": results[0], "ties": results[1]}

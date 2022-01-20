@@ -1,15 +1,14 @@
 """Test module hardware_tools.equipment.utility
 """
 
-import unittest
-
 from hardware_tools.equipment import equipment, utility
 from hardware_tools.equipment import tektronix
 
-from . import mock_pyvisa
+from tests import base
+from tests.equipment import mock_pyvisa
 
 
-class TestEquipmentUtility(unittest.TestCase):
+class TestEquipmentUtility(base.TestBase):
   """Test Equipment Utility
   """
 
@@ -20,7 +19,7 @@ class TestEquipmentUtility(unittest.TestCase):
     mock_pyvisa.available = []
     equipment.pyvisa = mock_pyvisa
     utility.pyvisa = mock_pyvisa
-  
+
   def tearDown(self) -> None:
     super().tearDown()
     mock_pyvisa.resources = {}

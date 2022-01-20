@@ -1,14 +1,14 @@
 """Test module hardware_tools.signal.clock
 """
 
-import unittest
-
 import numpy as np
 
 from hardware_tools.signal import clock
 
+from tests import base
 
-class TestSignalClock(unittest.TestCase):
+
+class TestSignalClock(base.TestBase):
   """Test signal clock methods
   """
 
@@ -31,8 +31,8 @@ class TestSignalClock(unittest.TestCase):
                         n=n)
     self.assertEqual(len(edges), n)
     ties = edges - ideal_edges
-    self.assertAlmostEqual(np.mean(ties) / t_sym, 0, 2)
-    self.assertAlmostEqual(np.std(ties) / t_sym, 0, 2)
+    self.assertEqualWithinError(0, ties.mean() / t_sym, 0.01)
+    self.assertEqualWithinError(0, ties.std() / t_sym, 0.01)
 
     ui = 0.1
     t_rj = t_sym * ui
@@ -48,8 +48,8 @@ class TestSignalClock(unittest.TestCase):
                         dcd=dcd,
                         n=n)
     ties = edges - ideal_edges
-    self.assertAlmostEqual(np.mean(ties) / t_sym, 0, 2)
-    self.assertAlmostEqual(np.std(ties) / t_sym, ui, 2)
+    self.assertEqualWithinError(0, ties.mean() / t_sym, 0.01)
+    self.assertEqualWithinError(ui, ties.std() / t_sym, 0.01)
 
     ui = 0.1
     t_rj = 0
@@ -65,8 +65,9 @@ class TestSignalClock(unittest.TestCase):
                         dcd=dcd,
                         n=n)
     ties = edges - ideal_edges
-    self.assertAlmostEqual(np.mean(ties) / t_sym, 0, 2)
-    self.assertAlmostEqual(np.sqrt((np.std(ties) / t_sym)**2 * 12), ui, 2)
+    self.assertEqualWithinError(0, ties.mean() / t_sym, 0.01)
+    self.assertEqualWithinError(ui, np.sqrt((ties.std() / t_sym)**2 * 12),
+                                0.01)
 
     ui = 0.1
     mod_freq = 1 / 10000
@@ -83,11 +84,11 @@ class TestSignalClock(unittest.TestCase):
                         dcd=dcd,
                         n=n)
     ties = edges - ideal_edges
-    self.assertAlmostEqual(np.mean(ties) / t_sym, 0, 2)
-    self.assertAlmostEqual(np.max(ties) / t_sym, ui, 2)
+    self.assertEqualWithinError(0, ties.mean() / t_sym, 0.01)
+    self.assertEqualWithinError(ui, ties.max() / t_sym, 0.01)
     fft = np.abs(np.power(np.fft.rfft(ties), 2))
-    freq = np.argmax(fft) / len(fft) / 2
-    self.assertAlmostEqual(freq / mod_freq, 1, 2)
+    freq = fft.argmax() / len(fft) / 2
+    self.assertEqualWithinError(mod_freq, freq, 0.01)
 
     ui = 0.1
     t_rj = 0
@@ -103,7 +104,7 @@ class TestSignalClock(unittest.TestCase):
                         dcd=dcd,
                         n=n)
     ties = edges - ideal_edges
-    self.assertAlmostEqual(np.mean(ties) / t_sym, ui / 2, 2)
-    self.assertAlmostEqual(np.min(ties) / t_sym, 0, 2)
-    self.assertAlmostEqual(np.max(ties) / t_sym, ui, 2)
-    self.assertAlmostEqual(np.std(ties) / t_sym, ui / 2, 2)
+    self.assertEqualWithinError(ui / 2, ties.mean() / t_sym, 0.01)
+    self.assertEqualWithinError(0, ties.min() / t_sym, 0.01)
+    self.assertEqualWithinError(ui, ties.max() / t_sym, 0.01)
+    self.assertEqualWithinError(ui / 2, ties.std() / t_sym, 0.01)

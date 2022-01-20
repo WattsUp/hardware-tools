@@ -1,14 +1,14 @@
 """Test module hardware_tools.extension.edges
 """
 
-import unittest
-
 import numpy as np
 
 from hardware_tools.extensions import edges_slow, edges_fast
 
+from tests import base
 
-class TestEdges(unittest.TestCase):
+
+class TestEdges(base.TestBase):
   """Test edges methods
   """
 
@@ -36,9 +36,9 @@ class TestEdges(unittest.TestCase):
     y = np.cos(t * 2 * np.pi)
     edges_rise, edges_fall = edges_slow.get_np(t, y, 0.1, 0.0, -0.1)
     for i in range(len(edges_rise)):
-      self.assertAlmostEqual(i + 0.75, edges_rise[i], 2)
+      self.assertEqualWithinError(i + 0.75, edges_rise[i], 0.01)
     for i in range(len(edges_fall)):
-      self.assertAlmostEqual(i + 0.25, edges_fall[i], 2)
+      self.assertEqualWithinError(i + 0.25, edges_fall[i], 0.01)
 
     # t = np.linspace(0, 10000, 1000000)
     # y = np.cos(t * 2 * np.pi)
@@ -76,9 +76,9 @@ class TestEdges(unittest.TestCase):
     y = np.cos(t * 2 * np.pi)
     edges_rise, edges_fall = edges_fast.get_np(t, y, 0.1, 0.0, -0.1)
     for i in range(len(edges_rise)):
-      self.assertAlmostEqual(i + 0.75, edges_rise[i], 2)
+      self.assertEqualWithinError(i + 0.75, edges_rise[i], 0.01)
     for i in range(len(edges_fall)):
-      self.assertAlmostEqual(i + 0.25, edges_fall[i], 2)
+      self.assertEqualWithinError(i + 0.25, edges_fall[i], 0.01)
 
     # t = np.linspace(0, 10000, 1000000)
     # y = np.cos(t * 2 * np.pi)

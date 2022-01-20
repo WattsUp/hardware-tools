@@ -43,7 +43,7 @@ def draw_segment(x1: int, y1: int, x2: int, y2: int, grid: np.ndarray) -> None:
     if x1 == x2 and y1 == y2:
       break
 
-    if (x1 < n_x) and (y1 < n_y) and (x1 >= 0) and (y1 >= 0):
+    if (0 <= x1 < n_x) and (0 <= y1 < n_y):
       grid[x1, y1] += 1
 
     e2 = 2 * err
@@ -69,5 +69,5 @@ def draw(x: np.ndarray, y: np.ndarray, grid: np.ndarray) -> None:
     x2 = x[i + 1]
     y2 = y[i + 1]
     draw_segment(x1, y1, x2, y2, grid)
-  if (x2 < grid.shape[0]) and (y2 < grid.shape[1]) and (x2 >= 0) and (y2 >= 0):
+  if (0 <= x2 < grid.shape[0]) and (0 <= y2 < grid.shape[1]):
     grid[x2, y2] += 1
