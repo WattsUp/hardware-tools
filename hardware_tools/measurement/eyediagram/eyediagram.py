@@ -239,7 +239,6 @@ class EyeDiagram(ABC):
                       self._waveforms.shape[0])
 
     if print_progress:
-      print(indent)
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.CYAN}"
             f"Starting eye diagram calculation with {n_threads} threads")
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"

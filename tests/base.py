@@ -19,6 +19,7 @@ class TestBase(unittest.TestCase):
   """
 
   _TEST_ROOT = pathlib.Path(".test")
+  _DATA_ROOT = pathlib.Path(__file__).parent.joinpath("data")
   _P_FAIL = 1e-4
   _RNG = np.random.default_rng()
 
@@ -59,6 +60,14 @@ class TestBase(unittest.TestCase):
 
     # Restore sleeping
     time.sleep = self._original_sleep
+
+  def log_speed(self, slow_duration, fast_duration):
+    with autodict.JSONAutoDict(TEST_LOG) as d:
+      d["speed"][self.id()] = {
+          "slow": slow_duration,
+          "fast": fast_duration,
+          "increase": slow_duration / fast_duration
+      }
 
   @classmethod
   def setUpClass(cls):

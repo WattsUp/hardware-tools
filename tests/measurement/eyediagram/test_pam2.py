@@ -12,7 +12,7 @@ import numpy as np
 from scipy import signal
 
 from hardware_tools import math
-from hardware_tools.measurement.eyediagram import pam2, eyediagram
+from hardware_tools.measurement.eyediagram import cdr, pam2, eyediagram
 
 from tests import base
 
@@ -104,6 +104,7 @@ class TestPAM2(base.TestBase):
     eye = pam2.PAM2(waveforms,
                     y_0=0,
                     y_1=v_signal,
+                    cdr=cdr.CDR(t_bit),
                     clock_polarity=eyediagram.ClockPolarity.RISING)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -112,6 +113,7 @@ class TestPAM2(base.TestBase):
     eye = pam2.PAM2(waveforms,
                     y_0=0,
                     y_1=v_signal,
+                    fallback_period=t_bit,
                     clock_polarity=eyediagram.ClockPolarity.FALLING)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -121,6 +123,7 @@ class TestPAM2(base.TestBase):
     eye = pam2.PAM2(waveforms,
                     y_0=0,
                     y_1=v_signal,
+                    fallback_period=t_bit,
                     clock_polarity=eyediagram.ClockPolarity.BOTH)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -130,6 +133,7 @@ class TestPAM2(base.TestBase):
                     clocks=clocks,
                     y_0=0,
                     y_1=v_signal,
+                    fallback_period=t_bit,
                     clock_polarity=eyediagram.ClockPolarity.RISING)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -140,6 +144,7 @@ class TestPAM2(base.TestBase):
                     clocks=clocks,
                     y_0=0,
                     y_1=v_signal,
+                    fallback_period=t_bit,
                     clock_polarity=eyediagram.ClockPolarity.FALLING)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -150,6 +155,7 @@ class TestPAM2(base.TestBase):
                     clocks=clocks,
                     y_0=0,
                     y_1=v_signal,
+                    fallback_period=t_bit,
                     clock_polarity=eyediagram.ClockPolarity.BOTH)
     with mock.patch("sys.stdout", new=io.StringIO()) as _:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access

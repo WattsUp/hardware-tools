@@ -162,7 +162,7 @@ class PAM2(eyediagram.EyeDiagram):
 
         # Step 2
         "clock_polarity": eyediagram.ClockPolarity.RISING,  # If given clocks
-        "cdr": cdr.CDR(),  # Clock recovery algorithm
+        "cdr": None,  # Clock recovery algorithm, None will use cdr.CDR
         "fallback_period": 100e-9,  # If CDR cannot run (low SNR)
 
         # Step 3: No configuration
@@ -321,6 +321,8 @@ class PAM2(eyediagram.EyeDiagram):
       if print_progress:
         print(f"{'':>{indent}}Running clock data recovery")
       # Run CDR to generate edges
+      if self._config["cdr"] is None:
+        self._config["cdr"] = cdr.CDR(self._config["fallback_period"])
       # yapf: disable
       args_list = [[
           self._waveforms[i][0],

@@ -6,11 +6,18 @@ See http://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm
 cimport numpy as np
 cimport cython
 
+np.import_array()
+
 
 @cython.boundscheck(False)
-cdef void draw_segment(int x1, int y1,
-                      int x2, int y2,
-                      np.ndarray[np.int32_t, ndim=2] grid):
+@cython.wraparound(False)
+cdef void draw_segment_c(np.int32_t x1,
+                        np.int32_t y1,
+                        np.int32_t x2,
+                        np.int32_t y2,
+                        np.ndarray[np.int32_t, ndim=2] grid,
+                        Py_ssize_t n_x,
+                        Py_ssize_t n_y):
   """Interpolate a line segment onto a grid
 
   The value of grid[x,y] is incremented for each x,y in the line from (x0,y0) up
@@ -23,13 +30,9 @@ cdef void draw_segment(int x1, int y1,
     y2: Y-coordinate of second point
     grid: Grid to interpolate onto
   """
+  cdef np.int32_t e2, sx, sy, err
+  cdef np.int32_t dx, dy
 
-  cdef unsigned n_x, n_y
-  cdef int e2, sx, sy, err
-  cdef int dx, dy
-
-  n_x = grid.shape[0]
-  n_y = grid.shape[1]
 
   if x2 > x1:
     dx = x2 - x1
@@ -59,7 +62,7 @@ cdef void draw_segment(int x1, int y1,
     if x1 == x2 and y1 == y2:
       break
 
-    if (x1 < n_x) and (y1 < n_y) and (x1 >= 0) and (y1 >= 0):
+    if (0 <= x1 < n_x) and (0 <= y1 < n_y):
       grid[x1, y1] += 1
 
     e2 = 2 * err
@@ -71,17 +74,41 @@ cdef void draw_segment(int x1, int y1,
       y1 += sy
 
 
-def draw(np.ndarray[np.int32_t, ndim=1] x,
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void draw_c(np.ndarray[np.int32_t, ndim=1] x,
          np.ndarray[np.int32_t, ndim=1] y,
          np.ndarray[np.int32_t, ndim=2] grid):
-  cdef unsigned i
-  cdef int x1, y1, x2, y2
+  """Linearly interpolate a series of points onto a grid
 
-  for i in range(len(x)-1):
+  Args:
+    x: Series of x values
+    y: Series of y values
+    grid: Grid to interpolate onto
+  """
+  cdef Py_ssize_t n = x.shape[0]
+  cdef Py_ssize_t n_x = grid.shape[0]
+  cdef Py_ssize_t n_y = grid.shape[1]
+  cdef Py_ssize_t i
+  cdef np.int32_t x1, y1, x2, y2
+
+  for i in range(n - 1):
     x1 = x[i]
     y1 = y[i]
     x2 = x[i + 1]
     y2 = y[i + 1]
-    draw_segment(x1, y1, x2, y2, grid)
-  if (x2 < grid.shape[0]) and (y2 < grid.shape[1]) and (x2 >= 0) and (y2 >= 0):
+    draw_segment_c(x1, y1, x2, y2, grid, n_x, n_y)
+  if (0 <= x2 < n_x) and (0 <= y2 < n_y):
     grid[x2, y2] += 1
+
+def draw(np.ndarray x,
+         np.ndarray y,
+         np.ndarray grid) -> None:
+  """Linearly interpolate a series of points onto a grid
+
+  Args:
+    x: Series of x values
+    y: Series of y values
+    grid: Grid to interpolate onto
+  """
+  draw_c(x, y, grid)

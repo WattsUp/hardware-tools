@@ -8,7 +8,8 @@ def get_crossing(axis_return: list,
                  axis_search: list,
                  i: int,
                  value: float,
-                 step_forward: bool = False) -> tuple[float, int]:
+                 step_forward: bool = False,
+                 n: int = 0) -> tuple[float, int]:
   """Get crossing value in the axis_return by searching and interpolating
   axis_search
 
@@ -28,20 +29,24 @@ def get_crossing(axis_return: list,
     value: Value to find and interpolate in axis_search
     step_forward: True will iterate forward until crossing, False will iterate
       backwards
+    n: length of data axis, 0 will read len()
 
   Returns:
     (interpolated value, index)
   """
   # Back up
-  n = len(axis_search)
+  n = len(axis_search) if n == 0 else n
   while 0 < i < n and (axis_search[i] > value) == (axis_search[i - 1] > value):
     i += 1 if step_forward else -1
 
   if i < 1 or i >= n:
-    return (np.nan, 0)
+    return (np.nan, i)
 
-  v = (axis_return[i] - axis_return[i - 1]) / (axis_search[i] - axis_search[
-      i - 1]) * (value - axis_search[i - 1]) + axis_return[i - 1]
+  x1 = axis_return[i - 1]
+  x2 = axis_return[i]
+  y1 = axis_search[i - 1]
+  y2 = axis_search[i]
+  v = (x2 - x1) / (y2 - y1) * (value - y1) + x1
   return (v, i)
 
 
@@ -96,5 +101,29 @@ def get_np(t: np.ndarray, y: np.ndarray, y_rise: float, y_half: float,
   Returns:
     (rising edges, falling edges) timestamp
   """
-  edges_rise, edges_fall = get(t.tolist(), y.tolist(), y_rise, y_half, y_fall)
-  return (np.array(edges_rise), np.array(edges_fall))
+  n = len(t)
+  edges_rise = np.zeros(n)
+  edges_fall = np.zeros(n)
+  i_rise = 0
+  i_fall = 0
+
+  t = t.tolist()
+  y = y.tolist()
+
+  state_low = y[0] < y_fall
+
+  for i in range(1, n):
+    if state_low:
+      if y[i] > y_rise:
+        state_low = False
+        # interpolate y_half crossing
+        edges_rise[i_rise] = get_crossing(t, y, i, y_half, False, n)[0]
+        i_rise += 1
+    else:
+      if y[i] < y_fall:
+        state_low = True
+        # interpolate y_half crossing
+        edges_fall[i_fall] = get_crossing(t, y, i, y_half, False, n)[0]
+        i_fall += 1
+
+  return (edges_rise[:i_rise], edges_fall[:i_fall])

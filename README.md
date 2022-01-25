@@ -48,33 +48,33 @@ Explain how to use your project.
 Make sure to install package with [testing extension](#optional)
 ```bash
 # To run the automated tests, execute:
-python tests discover -s tests -t . --locals
+python -m tests discover -s tests -t . --locals
 
 # To save the results to file, execute:
-python tests discover -s tests -t . --locals &> testing.log
+python -m tests discover -s tests -t . --locals &> testing.log
 
 ## The following is a synopsis of unittest main arguments ##
 # To run a singular test file, execute:
-python tests $path_to_test_file
-python tests tests.measurement.test_mask
+python -m tests $path_to_test_file
+python -m tests tests.measurement.test_mask
 
 # To run a singular test class, execute:
-python tests $path_to_test_file.$class
-python tests tests.measurement.test_mask.TestMaskDecagon
+python -m tests $path_to_test_file.$class
+python -m tests tests.measurement.test_mask.TestMaskDecagon
 
 # To run a singular test method, execute:
-python tests $path_to_test_file.$class.$method
-python tests tests.measurement.test_mask.TestMaskDecagon.test_init
+python -m tests $path_to_test_file.$class.$method
+python -m tests tests.measurement.test_mask.TestMaskDecagon.test_init
 
 # Multiple can be strung together
-python tests tests.measurement.test_mask tests.test_math
+python -m tests tests.measurement.test_mask tests.test_math
 ```
 ```bash
 # To run coverage and print the report with missing lines, execute:
 python -m coverage run && python -m coverage report -m
 
 # To run profiler, execute:
-python -m cProfile -s tottime -m tests discover -s tests -t . --locals > profile.log
+python -m cProfile -s tottime -m tests discover -s tests -t . > profile.log
 
 # To run linting, execute:
 python -m pylint hardware_tools tests tools setup.py
