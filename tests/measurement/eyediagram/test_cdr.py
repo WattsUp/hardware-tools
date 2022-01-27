@@ -73,7 +73,7 @@ class TestCDR(base.TestBase):
   def setUp(self):
     super().setUp()
     self._t_sym = 0.5e-9  # 1GHz clock
-    self._n_sym = int(50e3)
+    self._n_sym = int(10e3)
     self._n_data_edges = self._n_sym
 
     # Override for derrived classes
@@ -228,6 +228,12 @@ class TestCDR(base.TestBase):
     edges = edges_ext.get_np(waveforms[0], waveforms[1], 2.6e-05, 2.4e-5,
                              2.2e-5)
     edges = np.sort(np.concatenate(edges))
+
+    fs = (waveforms.shape[1] - 1) / (waveforms[0, -1] - waveforms[0, 0])
+    f_lp = 0.75 / 8e-9
+    sos = signal.bessel(4, f_lp, fs=fs, output="sos")
+    zi = signal.sosfilt_zi(sos) * waveforms[1, 0]
+    waveforms[1], _ = signal.sosfilt(sos, waveforms[1], zi=zi)
 
     self._t_sym = 8.000084e-9
     self._cdr._t_sym_initial = 8e-9  # pylint: disable=protected-access

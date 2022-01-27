@@ -240,7 +240,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     oma_cross = self._RNG.uniform(-1, 1)
     vecp = self._RNG.uniform(-1, 1)
 
-    m = pam2.MeasuresPAM2(np_clean, np_grid, np_mask, np_hits, np_margin)
+    m = pam2.MeasuresPAM2()
+    m.set_images(np_clean, np_grid, np_mask, np_hits, np_margin)
     m.n_sym = n_sym
     m.n_sym_bad = n_sym_bad
     m.transition_dist = transition_dist

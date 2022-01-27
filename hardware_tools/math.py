@@ -703,6 +703,25 @@ class UncertainValue:
     self.value = value
     self.stddev = stddev
 
+  @staticmethod
+  def samples(x: np.ndarray) -> UncertainValue:
+    """Create an UncertainValue from samples
+
+    Args:
+      x: List of samples to compute mean and population standard deviation
+
+    Returns:
+      UncertainValue with the mean and standard deviation of the samples
+    """
+    if x.size < 1:
+      return UncertainValue(np.nan, np.nan)
+    m = x.mean()
+    c = x - m
+    return UncertainValue(m, np.sqrt(np.dot(c, c) / x.size))
+
+  def __str__(self) -> str:
+    return f"(µ={self.value},σ={self.stddev})"
+
   def __add__(self, b) -> UncertainValue:
     if isinstance(b, UncertainValue):
       v = self.value + b.value
@@ -741,38 +760,48 @@ class UncertainValue:
       s = self.stddev / abs(b)
     return UncertainValue(v, s)
 
-  def __lt__(self, b):
+  def __lt__(self, b) -> bool:
     if isinstance(b, UncertainValue):
       return self.value < b.value
     else:
       return self.value < b
 
-  def __le__(self, b):
+  def __le__(self, b) -> bool:
     if isinstance(b, UncertainValue):
       return self.value <= b.value
     else:
       return self.value <= b
 
-  def __eq__(self, b):
+  def __eq__(self, b) -> bool:
     if isinstance(b, UncertainValue):
       return self.value == b.value
     else:
       return self.value == b
 
-  def __ne__(self, b):
+  def __ne__(self, b) -> bool:
     if isinstance(b, UncertainValue):
       return self.value != b.value
     else:
       return self.value != b
 
-  def __ge__(self, b):
+  def __ge__(self, b) -> bool:
     if isinstance(b, UncertainValue):
       return self.value >= b.value
     else:
       return self.value >= b
 
-  def __gt__(self, b):
+  def __gt__(self, b) -> bool:
     if isinstance(b, UncertainValue):
       return self.value > b.value
     else:
       return self.value > b
+
+  def log(self) -> UncertainValue:
+    v = np.log(self.value)
+    s = np.abs(self.stddev / self.value)
+    return UncertainValue(v, s)
+
+  def log10(self) -> UncertainValue:
+    v = np.log10(self.value)
+    s = np.abs(self.stddev / (self.value * np.log(10)))
+    return UncertainValue(v, s)

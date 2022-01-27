@@ -3,7 +3,7 @@
 
 import numpy as np
 
-from hardware_tools.extensions import cdr_slow as cdr_ext
+from hardware_tools.extensions import cdr as cdr_ext
 
 
 class CDR:
@@ -19,6 +19,7 @@ class CDR:
       t_sym: Initial PLL period for a single symbol
     """
     self._t_sym_initial = t_sym
+    self._t_sym_initial_error = 0.01
     self._avg_sym_min = 0.9
     self._avg_sym_max = 5
     self._max_correctable_disjoints = 10
@@ -60,9 +61,11 @@ class CDR:
           f" {self._avg_sym_min} < {avg_sym} < {self._avg_sym_max}")
 
     # Step 2: Minimize number of TIE disjoints
-    t_sym = cdr_ext.minimize_tie_disjoints(data_edges,
-                                           t_sym=t_sym,
-                                           tol=self._max_correctable_disjoints)
+    t_sym = cdr_ext.minimize_tie_disjoints(
+        data_edges,
+        t_min=t_sym * (1 - self._t_sym_initial_error),
+        t_max=t_sym * (1 + self._t_sym_initial_error),
+        tol=self._max_correctable_disjoints)
 
     # Step 3: Remove linear drift from TIEs
     t_sym = cdr_ext.detrend_ties(data_edges, t_sym)

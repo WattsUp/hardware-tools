@@ -20,6 +20,8 @@ from hardware_tools import math, strformat
 from hardware_tools.extensions import bresenham
 from hardware_tools.measurement.mask import Mask
 
+colorama.init(autoreset=True)
+
 
 class ClockPolarity(Enum):
   RISING = 1  # Sample on clock's rising edge
@@ -35,6 +37,7 @@ class Measures(ABC):
   All images are base64 encoded PNGs, use save_images to save to disk
 
   Properties:
+    n_samples: Number of samples collected
     n_sym: Number of symbols tested
     n_sym_bad: Number of symbols that failed, requires a mask
     transition_dist: Distribution of transitions plotted eg:
@@ -48,10 +51,27 @@ class Measures(ABC):
     image_margin: image of margin adjusted mask
   """
 
-  def __init__(self, np_clean: np.ndarray, np_grid: np.ndarray,
-               np_mask: np.ndarray, np_hits: np.ndarray,
-               np_margin: np.ndarray) -> None:
+  def __init__(self) -> None:
     """Create a new Measures object
+    """
+    super().__init__()
+
+    self.n_samples = None
+    self.n_sym = None
+    self.n_sym_bad = None
+    self.transition_dist = None
+    self.mask_margin = None
+
+    self._np_image_clean = None
+    self._np_image_grid = None
+    self._np_image_mask = None
+    self._np_image_hits = None
+    self._np_image_margin = None
+
+  def set_images(self, np_clean: np.ndarray, np_grid: np.ndarray,
+                 np_mask: np.ndarray, np_hits: np.ndarray,
+                 np_margin: np.ndarray) -> None:
+    """Set images
 
     Images are numpy format, RGBA, shape=(rows, columns, 4), [0.0, 1.0]
 
@@ -62,13 +82,6 @@ class Measures(ABC):
       np_hits: numpy image for image_hits
       np_margin: numpy image for image_margin
     """
-    super().__init__()
-
-    self.n_sym = None
-    self.n_sym_bad = None
-    self.transition_dist = None
-    self.mask_margin = None
-
     self._np_image_clean = np_clean
     self._np_image_grid = np_grid
     self._np_image_mask = np_mask
@@ -94,22 +107,32 @@ class Measures(ABC):
 
   @property
   def image_clean(self) -> str:
+    if self._np_image_clean is None:
+      return None
     return math.Image.np_to_base64(self._np_image_clean)
 
   @property
   def image_grid(self) -> str:
+    if self._np_image_grid is None:
+      return None
     return math.Image.np_to_base64(self._np_image_grid)
 
   @property
   def image_mask(self) -> str:
+    if self._np_image_mask is None:
+      return None
     return math.Image.np_to_base64(self._np_image_mask)
 
   @property
   def image_hits(self) -> str:
+    if self._np_image_hits is None:
+      return None
     return math.Image.np_to_base64(self._np_image_hits)
 
   @property
   def image_margin(self) -> str:
+    if self._np_image_margin is None:
+      return None
     return math.Image.np_to_base64(self._np_image_margin)
 
   def to_dict(self) -> dict:
@@ -148,9 +171,7 @@ class EyeDiagram(ABC):
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
-               resolution: int = 2000,
-               unipolar: bool = True,
-               resample: int = 50) -> None:
+               resolution: int = 2000) -> None:
     """Create a new EyeDiagram. Lazy creation, does not compute anything
 
     Args:
@@ -164,14 +185,14 @@ class EyeDiagram(ABC):
       y_unit: Real world units of vertical axis, used for print statements
       mask: Mask object used for hit detection, None will not check for hits
       resolution: Resolution of square eye diagram image, 2UI x 2UA
-      unipolar: True will plot amplitude [-0.5, 1.5]UA, False will plot [-1, 1]
-      resample: n=0 will not resample, n>0 will use sinc interpolation to
-        resample a single symbol to at least n segments (t_delta = t_symbol / n)
 
     Raises:
       ValueError if waveforms or clocks is wrong shape
     """
     super().__init__()
+    # TODO (WattsUp) allow differential signal [t, y_p, y_n]
+    # and produce pos, neg, pos-neg, pos+neg eye diagrams
+    # TODO (WattsUp) add clock_edges and get_clock_edges()
     if len(waveforms.shape) == 2:
       waveforms = np.array([waveforms])
     elif len(waveforms.shape) != 3:
@@ -195,8 +216,7 @@ class EyeDiagram(ABC):
     self._t_unit = t_unit
     self._y_unit = y_unit
     self._mask = mask
-    self._unipolar = unipolar
-    self._resample = resample
+    # TODO (WattsUp) Add option to disable interpolation, point cloud only
 
     self._resolution = resolution
     self._raw_heatmap = np.zeros((resolution, resolution), dtype=np.int32)
@@ -230,7 +250,6 @@ class EyeDiagram(ABC):
     Returns:
       Measures object containing resultant metrics, specific to line encoding
     """
-    colorama.init(autoreset=True)
     start = datetime.datetime.now()
     if n_threads < 1:
       n_threads = min(multiprocessing.cpu_count(), self._waveforms.shape[0])
@@ -264,21 +283,23 @@ class EyeDiagram(ABC):
                        indent=indent + 2,
                        debug_plots=debug_plots)
 
-    if print_progress:
-      print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
-            "Step 4: Stacking waveforms")
-    self._step4_stack(n_threads=n_threads,
-                      print_progress=print_progress,
-                      indent=indent + 2,
-                      debug_plots=debug_plots)
+    # TODO (WattsUp) Measure then stack, validate histogram works
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
-            "Step 5: Measuring waveform")
-    self._step5_measure(n_threads=n_threads,
+            "Step 4: Measuring waveform")
+    self._step4_measure(n_threads=n_threads,
                         print_progress=print_progress,
                         indent=indent + 2,
                         debug_plots=debug_plots)
+
+    if print_progress:
+      print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
+            "Step 5: Stacking waveforms")
+    self._step5_stack(n_threads=n_threads,
+                      print_progress=print_progress,
+                      indent=indent + 2,
+                      debug_plots=debug_plots)
 
     self._calculated = True
 
@@ -347,6 +368,9 @@ class EyeDiagram(ABC):
     self._centers_i = []
     self._centers_t = []
 
+    i_width = int((self._t_sym.value / self._t_delta) + 0.5) + 2
+    max_i = self._waveforms.shape[2]
+
     if print_progress:
       print(f"{'':>{indent}}Starting sampling")
     for i in range(self._waveforms.shape[0]):
@@ -355,9 +379,11 @@ class EyeDiagram(ABC):
       t_zero = self._waveforms[i, 0, 0]
       for b in self._clock_edges[i]:
         center_t = b % self._t_delta
-        centers_t.append(-center_t)
-
         center_i = int(((b - t_zero - center_t) / self._t_delta) + 0.5)
+
+        if (center_i - i_width) < 0 or (center_i + i_width) >= max_i:
+          continue
+        centers_t.append(-center_t)
         centers_i.append(center_i)
 
       self._centers_i.append(centers_i)
@@ -414,12 +440,32 @@ class EyeDiagram(ABC):
       pyplot.close()
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
-  def _step4_stack(self,
+  @abstractmethod
+  def _step4_measure(self,
+                     n_threads: int = 1,
+                     print_progress: bool = True,
+                     indent: int = 0,
+                     debug_plots: str = None) -> None:
+    """Calculation step 4: compute measures
+
+    Dependent on line encoding
+
+    Args:
+      n_threads: number of thread to execute across
+      print_progress: True will print statements along the way, False will not.
+      indent: Indent all print statements that much
+      debug_plots: base filename to save debug plots to. None will not save any
+        plots.
+    """
+    # self._measures = Measures
+    pass  # pragma: no cover
+
+  def _step5_stack(self,
                    n_threads: int = 1,
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
-    """Calculation step 4: stack waveforms
+    """Calculation step 5: stack waveforms
 
     Args:
       n_threads: number of thread to execute across
@@ -429,8 +475,8 @@ class EyeDiagram(ABC):
         plots.
     """
 
-    min_y = -0.5 if self._unipolar else -1.0
-    max_y = 1.5 if self._unipolar else 1.0
+    min_y = -0.5
+    max_y = 1.5
     # Convert UA to real vertical units
     min_y = min_y * self._y_ua + self._y_zero
     max_y = max_y * self._y_ua + self._y_zero
@@ -447,12 +493,11 @@ class EyeDiagram(ABC):
         self._t_sym.value,
         min_y,
         max_y,
-        self._resample,
         self._resolution
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
     output = self._collect_runners(_runner_stack, args_list, n_threads,
-                                   print_progress, indent)
+                                   print_progress, indent + 2)
 
     self._raw_heatmap = np.zeros((self._resolution, self._resolution),
                                  dtype=np.int32)
@@ -466,7 +511,7 @@ class EyeDiagram(ABC):
       print(f"{'':>{indent}}Completed stacking")
 
     if debug_plots is not None:
-      debug_plots += ".step4.png"
+      debug_plots += ".step5.png"
       image = self._raw_heatmap.copy()
 
       # Replace 0s with nan to be colored transparent
@@ -479,26 +524,6 @@ class EyeDiagram(ABC):
       image = pyplot.cm.jet(image)
       math.Image.np_to_file(image, debug_plots)
       print(f"{'':>{indent}}Saved image to {debug_plots}")
-
-  @abstractmethod
-  def _step5_measure(self,
-                     n_threads: int = 1,
-                     print_progress: bool = True,
-                     indent: int = 0,
-                     debug_plots: str = None) -> None:
-    """Calculation step 5: compute measures
-
-    Dependent on line encoding
-
-    Args:
-      n_threads: number of thread to execute across
-      print_progress: True will print statements along the way, False will not.
-      indent: Indent all print statements that much
-      debug_plots: base filename to save debug plots to. None will not save any
-        plots.
-    """
-    # self._measures = Measures
-    pass  # pragma: no cover
 
   @staticmethod
   def _collect_runners(method: Callable,
@@ -574,7 +599,6 @@ def _runner_stack(waveform_y: np.ndarray,
                   t_sym: float,
                   min_y: float,
                   max_y: float,
-                  resample: int = 50,
                   resolution: int = 500) -> np.ndarray:
   """Stack waveforms and counting overlaps in a heat map
 
@@ -584,60 +608,30 @@ def _runner_stack(waveform_y: np.ndarray,
       Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
     centers_i: List of symbol centers indices
     t_delta: Time between samples
+    t_sym: Duration of one symbol
     min_y: Lower vertical value for bottom of grid
     max_y: Upper vertical value for top of grid.
       Grid units = (y - min_y) / (max_y - min_y)
-    resample: n=0 will not resample, n>0 will use sinc interpolation to
-      resample a single symbol to at least n segments
     resolution: Resolution of square eye diagram image, 2UI x 2UA
 
   Returns:
     2D grid of heat map counts
   """
-  i_width = int((t_sym / t_delta) + 0.5)
+  i_width = int((t_sym / t_delta) + 0.5) + 2
   t_width_ui = (i_width * t_delta / t_sym)
 
   t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, i_width * 2 + 1)
 
   waveform_y = (waveform_y - min_y) / (max_y - min_y)
 
-  factor = int(np.ceil(resample / i_width))
-  if factor > 1:
-    # Expand to 3 bits for better sinc interpolation at the edges
-    i_width = int((t_sym / t_delta * 1.5) + 0.5)
-    t_width_ui = (i_width * t_delta / t_sym)
-    t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, i_width * 2 + 1)
-    t_new = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui,
-                        i_width * 2 * factor + 1)
-
-    period = t0[1] - t0[0]
-    sinc = np.tile(t_new, (len(t0), 1)) - \
-        np.tile(t0[:, np.newaxis], (1, len(t_new)))
-    reference_sinc = np.sinc(sinc / period)
-  else:
-    # Add an extra sample on either end
-    i_width += 2
-    t_width_ui = (i_width * t_delta / t_sym)
-    t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, i_width * 2 + 1)
-
   grid = np.zeros((resolution, resolution), dtype=np.int32)
-
-  max_i = len(waveform_y)
 
   for i in range(len(centers_t)):
     c_i = centers_i[i]
     c_t = centers_t[i] / t_sym
 
-    if (c_i - i_width) < 0 or (c_i + i_width + 1) > max_i:
-      continue
-
-    if factor > 1:
-      t = (t_new + c_t)
-      y_original = waveform_y[c_i - i_width:c_i + i_width + 1]
-      y = np.dot(y_original, reference_sinc)
-    else:
-      t = (t0 + c_t)
-      y = waveform_y[c_i - i_width:c_i + i_width + 1]
+    t = (t0 + c_t)
+    y = waveform_y[c_i - i_width:c_i + i_width + 1]
 
     td = (((t + 0.5) / 2) * resolution).astype(np.int32)
     yd = (y * resolution).astype(np.int32)
