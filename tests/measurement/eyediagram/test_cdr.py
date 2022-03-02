@@ -225,15 +225,18 @@ class TestCDR(base.TestBase):
     data_path = str(self._DATA_ROOT.joinpath("pam2-optical-1e8.npz"))
     with np.load(data_path) as file_zip:
       waveforms = file_zip[file_zip.files[0]]
-    edges = edges_ext.get_np(waveforms[0], waveforms[1], 2.6e-05, 2.4e-5,
-                             2.2e-5)
-    edges = np.sort(np.concatenate(edges))
+    waveforms = waveforms[0]
 
+    # 4th order bessel filter since O/E converter's is too high bandwidth
     fs = (waveforms.shape[1] - 1) / (waveforms[0, -1] - waveforms[0, 0])
     f_lp = 0.75 / 8e-9
     sos = signal.bessel(4, f_lp, fs=fs, output="sos")
     zi = signal.sosfilt_zi(sos) * waveforms[1, 0]
     waveforms[1], _ = signal.sosfilt(sos, waveforms[1], zi=zi)
+
+    edges = edges_ext.get_np(waveforms[0], waveforms[1], 7.39e-6, 6.82e-6,
+                             6.26e-6)
+    edges = np.sort(np.concatenate(edges))
 
     self._t_sym = 8.000084e-9
     self._cdr._t_sym_initial = 8e-9  # pylint: disable=protected-access

@@ -134,13 +134,14 @@ class MaskDecagon(Mask):
 
   def adjust(self, factor: float) -> MaskDecagon:
     if factor > 0:
-      x1 = factor * 0.0 + (1 - factor) * self._x1
-      x2 = factor * 0.0 + (1 - factor) * self._x2
-      x3 = factor * 0.0 + (1 - factor) * self._x3
-      y1 = factor * 0.0 + (1 - factor) * self._y1
-      y2 = factor * 0.0 + (1 - factor) * self._y2
-      y3 = factor * 0.0 + (1 - factor) * self._y3
-      y4 = factor * 0.0 + (1 - factor) * self._y4
+      # x2, x3, and y2 remain proportional to preserve the shape
+      x1 = (1 - factor) * self._x1
+      x2 = 0.5 - (0.5 - x1) * (0.5 - self._x2) / (0.5 - self._x1)
+      x3 = 0.5 - (0.5 - x1) * (0.5 - self._x3) / (0.5 - self._x1)
+      y1 = (1 - factor) * self._y1
+      y2 = 0.5 - (0.5 - y1) * (0.5 - self._y2) / (0.5 - self._y1)
+      y3 = (1 - factor) * self._y3
+      y4 = (1 - factor) * self._y4
     else:
       factor = -factor
       x1 = factor * 0.5 + (1 - factor) * self._x1

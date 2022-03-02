@@ -11,7 +11,8 @@ import numpy as np
 from matplotlib import pyplot
 
 from hardware_tools import math, strformat
-from hardware_tools.extensions import edges, intersections
+from hardware_tools.extensions import edges as edges_ext
+from hardware_tools.extensions import intersections
 from hardware_tools.measurement.mask import Mask
 from hardware_tools.measurement.eyediagram import cdr, eyediagram
 
@@ -157,6 +158,7 @@ class PAM2(eyediagram.EyeDiagram):
     self._y_0 = y_0
     self._y_1 = y_1
 
+    # TODO (WattsUp) Move config to base class
     self._config = {
         # Step 1
         "hysteresis": None,  # Difference between rising and falling thresholds
@@ -164,7 +166,7 @@ class PAM2(eyediagram.EyeDiagram):
         "hist_n_max": 50e5,  # Maximum number of points in a histogram
 
         # Step 2
-        "clock_polarity": eyediagram.ClockPolarity.RISING,  # If given clocks
+        "clock_polarity": eyediagram.ClockPolarity.RISING,
         "cdr": None,  # Clock recovery algorithm, None will use cdr.CDR
         "fallback_period": 100e-9,  # If CDR cannot run (low SNR)
 
@@ -301,24 +303,19 @@ class PAM2(eyediagram.EyeDiagram):
           self._y_falling
       ] for i in range(self._waveforms.shape[0])]
       # yapf: enable
-      output = self._collect_runners(edges.get_np, args_list, n_threads,
+      output = self._collect_runners(edges_ext.get_np, args_list, n_threads,
                                      print_progress, indent + 2)
       for o in output:
-        if self._config["clock_polarity"] is eyediagram.ClockPolarity.RISING:
-          e = o[0]
-        elif self._config["clock_polarity"] is eyediagram.ClockPolarity.FALLING:
-          e = o[1]
-        else:
-          e = np.sort(np.concatenate(o))
+        e = _filter_edge_polarity(o, self._config["clock_polarity"])
         periods.append(np.diff(e))
         self._clock_edges.append(e.tolist())
     elif self._low_snr:
       # Generate clock pulses at the fallback_period fixed rate
-      self._t_sym = math.UncertainValue(self._config["fallback_period"], 0)
+      self._t_sym = self._config["fallback_period"]
 
       for i in range(self._waveforms.shape[0]):
-        t = self._waveforms[i][0][0] + self._t_sym.value
-        e = np.arange(t, self._waveforms[i][0][-1], self._t_sym.value)
+        t = self._waveforms[i][0][0] + self._t_sym
+        e = np.arange(t, self._waveforms[i][0][-1], self._t_sym)
         self._clock_edges.append(e.tolist())
       return
     else:
@@ -351,7 +348,8 @@ class PAM2(eyediagram.EyeDiagram):
     # Two pass average to remove outliers arising from idle time
     periods = np.concatenate(periods)
     periods = periods[periods < 10 * periods.mean()]
-    self._t_sym = math.UncertainValue(periods.mean(), periods.std())
+    t_sym = math.UncertainValue.samples(periods)
+    self._t_sym = t_sym.value
 
     if debug_plots is not None:
       debug_plots += ".step2.png"
@@ -362,17 +360,16 @@ class PAM2(eyediagram.EyeDiagram):
       formatter_t = pyplot.FuncFormatter(tick_formatter_t)
 
       _, subplots = pyplot.subplots(2, 1)
-      subplots[0].set_title(
-          "Symbol Period Deviation from " +
-          strformat.metric_prefix(self._t_sym.value, self._t_unit))
-      subplots[0].hist((periods - self._t_sym.value),
+      subplots[0].set_title("Symbol Period Deviation from " +
+                            strformat.metric_prefix(t_sym.value, self._t_unit))
+      subplots[0].hist((periods - t_sym.value),
                        50,
                        density=True,
                        color="b",
                        alpha=0.5)
       subplots[0].axvline(x=0, color="g")
-      subplots[0].axvline(x=(self._t_sym.stddev), color="y")
-      subplots[0].axvline(x=(-self._t_sym.stddev), color="y")
+      subplots[0].axvline(x=(t_sym.stddev), color="y")
+      subplots[0].axvline(x=(-t_sym.stddev), color="y")
       subplots[0].xaxis.set_major_formatter(formatter_t)
       subplots[0].set_ylabel("Density")
 
@@ -396,7 +393,7 @@ class PAM2(eyediagram.EyeDiagram):
                      debug_plots: str = None) -> None:
     m = MeasuresPAM2()
 
-    t_sym = self._t_sym.value
+    t_sym = self._t_sym
 
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform vertically")
@@ -478,9 +475,13 @@ class PAM2(eyediagram.EyeDiagram):
     m.oma_cross = m.y_1_cross - m.y_0_cross
     # median_unbiased: "This method is probably the best method if the sample
     # distribution function is unknown"
-    a_0 = np.percentile(s_y_1, 0.05, method="median_unbiased") - np.percentile(
-        s_y_0, 99.95, method="median_unbiased")
-    m.vecp = np.log10(m.oma_cross / a_0) * 10
+    if s_y_0.size < 1 or s_y_1.size < 1:
+      m.vecp = math.UncertainValue(np.nan, np.nan)
+    else:
+      a_0 = np.percentile(s_y_1, 0.05,
+                          method="median_unbiased") - np.percentile(
+                              s_y_0, 99.95, method="median_unbiased")
+      m.vecp = np.log10(m.oma_cross / a_0) * 10
 
     # Update levels if not manual
     if self._y_0 is None:
@@ -578,7 +579,10 @@ class PAM2(eyediagram.EyeDiagram):
         t_cross_left + 3 * t_cross_left.stddev)
     m.width_r = m.width / m.t_sym
     m.dcd = (m.t_1 - m.t_0) / (m.t_sym * 2)
-    m.jitter_pp = s_t_cross_left.ptp()
+    if s_t_cross_left.size < 1:
+      m.jitter_pp = np.nan
+    else:
+      m.jitter_pp = s_t_cross_left.ptp()
     m.jitter_rms = t_cross_left.stddev
 
     if print_progress:
@@ -587,6 +591,8 @@ class PAM2(eyediagram.EyeDiagram):
     if self._mask is None:
       m.mask_margin = np.nan
       m.n_sym_bad = np.nan
+      self._offenders = []
+      self._hits = []
     else:
       # yapf: disable
       args_list = [[
@@ -617,17 +623,9 @@ class PAM2(eyediagram.EyeDiagram):
       m.n_sym_bad = offender_count
 
     self._measures = m
-    for k, v in m.to_dict().items():
-      if v is None:
-        print(f"{k:20}: None")
-      elif isinstance(v, math.UncertainValue):
-        print(f"{k:20}: {v.value:8.6e} {v.stddev:8.6e}")
-      elif isinstance(v, float):
-        print(f"{k:20}: {v:8.6e}")
-      elif isinstance(v, int):
-        print(f"{k:20}: {v:8}")
-      else:
-        print(f"{k:20}: Not printable")
+
+    if print_progress:
+      print(f"{'':>{indent}}Completed PAM2 measuring")
 
     if debug_plots is not None:
       debug_plots += ".step4.png"
@@ -807,6 +805,26 @@ class PAM2(eyediagram.EyeDiagram):
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
 
+def _filter_edge_polarity(edges: tuple[np.ndarray],
+                          polarity: eyediagram.ClockPolarity) -> np.ndarray:
+  """Filter edges to fit polarity restrictions and return
+
+  ClockPolarity.BOTH concatenates then sorts rising and falling edges
+
+  Args:
+    edges: Tuple[rising, falling] List of edge timestamps, see edges.get_np
+    polarity: Polarity of edges to filter to
+
+  Returns:
+    Single dimensional array of edges
+  """
+  if polarity is eyediagram.ClockPolarity.RISING:
+    return edges[0]
+  elif polarity is eyediagram.ClockPolarity.FALLING:
+    return edges[1]
+  return np.sort(np.concatenate(edges))
+
+
 def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   """Calculate the high and low levels of the waveform
 
@@ -866,20 +884,15 @@ def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
     y_half: Interpolated edge value
     y_fall: Falling threshold
     cdr_obj: CDR object to execute on waveform
+    polarity: Polarity of data edges to clock off of
 
   Returns:
     Dictionary of values:
       edges: List of clock edges in time
       ties: List of Time Interval Errors (TIEs)
   """
-  data_edges = edges.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
-  if polarity is eyediagram.ClockPolarity.RISING:
-    data_edges = data_edges[0]
-  elif polarity is eyediagram.ClockPolarity.FALLING:
-    data_edges = data_edges[1]
-  else:
-    data_edges = np.sort(np.concatenate(data_edges))
-  results = cdr_obj.run(data_edges)
+  data_edges = edges_ext.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
+  results = cdr_obj.run(_filter_edge_polarity(data_edges, polarity))
   return {"edges": results[0], "ties": results[1]}
 
 
@@ -1088,8 +1101,10 @@ def _runner_sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
       if y_cross_min <= y <= y_cross_max:
         if -0.5 <= t <= 0.5:
           values["t_cross_left"].append(t)
-        elif 0.5 <= t <= 1.5:
+        elif 0.5 < t <= 1.5:
           values["t_cross_right"].append(t)
+        else:
+          pass  # pragma: no cover, just a glitch
 
     if edge_dir[i] is None:
       continue

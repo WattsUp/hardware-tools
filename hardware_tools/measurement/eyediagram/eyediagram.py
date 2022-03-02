@@ -13,8 +13,9 @@ from typing import Callable, Union
 
 import colorama
 from colorama import Fore
-import numpy as np
 from matplotlib import pyplot
+import numpy as np
+import skimage.draw
 
 from hardware_tools import math, strformat
 from hardware_tools.extensions import bresenham
@@ -269,7 +270,7 @@ class EyeDiagram(ABC):
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
-            "Step 1: Determining receiver clock")
+            "Step 2: Determining receiver clock")
     self._step2_clock(n_threads=n_threads,
                       print_progress=print_progress,
                       indent=indent + 2,
@@ -282,8 +283,6 @@ class EyeDiagram(ABC):
                        print_progress=print_progress,
                        indent=indent + 2,
                        debug_plots=debug_plots)
-
-    # TODO (WattsUp) Measure then stack, validate histogram works
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
@@ -325,9 +324,9 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # self._y_zero = float
-    # self._y_ua = float
-    pass  # pragma: no cover
+    # Derrived classes set these parameters
+    self._y_zero = 0.0  # pragma: no cover
+    self._y_ua = 0.0  # pragma: no cover
 
   @abstractmethod
   def _step2_clock(self,
@@ -346,9 +345,9 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # self._clock_edges = list[list[float]]
-    # self._t_sym = math.UncertainValue
-    pass  # pragma: no cover
+    # Derrived classes set these parameters
+    self._clock_edges = [[0.0]]  # pragma: no cover
+    self._t_sym = 0.0  # pragma: no cover
 
   def _step3_sample(self,
                     n_threads: int = 1,
@@ -368,7 +367,7 @@ class EyeDiagram(ABC):
     self._centers_i = []
     self._centers_t = []
 
-    i_width = int((self._t_sym.value / self._t_delta) + 0.5) + 2
+    i_width = int((self._t_sym / self._t_delta) + 0.5) + 2
     max_i = self._waveforms.shape[2]
 
     if print_progress:
@@ -406,7 +405,7 @@ class EyeDiagram(ABC):
       formatter_t = pyplot.FuncFormatter(tick_formatter_t)
       formatter_y = pyplot.FuncFormatter(tick_formatter_y)
 
-      hw = int((self._t_sym.value / self._t_delta) + 0.5)
+      hw = int((self._t_sym / self._t_delta) + 0.5)
       n = hw * 2 + 1
 
       for i in range(self._waveforms.shape[0]):
@@ -415,15 +414,13 @@ class EyeDiagram(ABC):
         for edge in range(n_plot):
           c_i = self._centers_i[i][edge]
           c_t = self._centers_t[i][edge]
-          if (c_i - hw) < 0 or (c_i + hw + 1) >= self._waveforms.shape[2]:
-            continue
           x = np.linspace(-hw * self._t_delta, hw * self._t_delta, n) + c_t
           y = self._waveforms[i, 1, c_i - hw:c_i + hw + 1]
           pyplot.plot(x, y, color="b")
 
-      pyplot.axvline(x=(-self._t_sym.value / 2), color="g")
+      pyplot.axvline(x=-(self._t_sym / 2), color="g")
       pyplot.axvline(x=0, color="r")
-      pyplot.axvline(x=(self._t_sym.value / 2), color="g")
+      pyplot.axvline(x=(self._t_sym / 2), color="g")
       pyplot.axhline(y=self._y_zero, color="g")
       pyplot.axhline(y=(self._y_ua + self._y_zero), color="g")
 
@@ -457,8 +454,50 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # self._measures = Measures
-    pass  # pragma: no cover
+    # Derrived classes set these parameters
+    self._measures = Measures()  # pragma: no cover
+    self._offenders = [[]]  # pragma: no cover list[list[indices]]
+    self._hits = [[]]  # pragma: no cover list[[t_UI, y_UA]]
+
+  def _draw_grid(self, image_grid: np.ndarray) -> None:
+    """Draw reference grid
+
+    Override if wanting more levels such as thresholds
+
+    Args:
+      image_grid: Image to draw onto, [x, y] coordinates
+    """
+    image_grid[:, :, 0:2] = 1.0  # Yellow
+    image_grid[self._uia_to_image(0.0), :, 3] = 1.0
+    image_grid[self._uia_to_image(0.5), ::3, 3] = 1.0
+    image_grid[self._uia_to_image(1.0), :, 3] = 1.0
+    image_grid[:, self._uia_to_image(0.0), 3] = 1.0
+    image_grid[::3, self._uia_to_image(0.5), 3] = 1.0
+    image_grid[:, self._uia_to_image(1.0), 3] = 1.0
+    for u in [-0.25, 0.25, 0.75, 1.25]:
+      image_grid[::10, self._uia_to_image(u), 3] = 1.0
+      image_grid[self._uia_to_image(u), ::10, 3] = 1.0
+
+  def _uia_to_image(self,
+                    u: float,
+                    return_list: bool = True) -> Union[list[int], int]:
+    """Convert UI/UA coordinates to image coordinates
+
+    Args:
+      u: UI/UA value
+      return_list: True will return position inside a list, False will return
+        scaler
+
+    Returns:
+      If return_list is true, list of position, list to clip outside image
+      If return_list is false, position without clipping
+    """
+    pos = int((u + 0.5) / 2 * self._resolution)
+    if not return_list:
+      return pos
+    if 0 <= pos <= self._resolution:
+      return [pos]
+    return []
 
   def _step5_stack(self,
                    n_threads: int = 1,
@@ -475,11 +514,11 @@ class EyeDiagram(ABC):
         plots.
     """
 
-    min_y = -0.5
-    max_y = 1.5
+    min_y_ua = -0.5
+    max_y_ua = 1.5
     # Convert UA to real vertical units
-    min_y = min_y * self._y_ua + self._y_zero
-    max_y = max_y * self._y_ua + self._y_zero
+    min_y = min_y_ua * self._y_ua + self._y_zero
+    max_y = max_y_ua * self._y_ua + self._y_zero
 
     if print_progress:
       print(f"{'':>{indent}}Starting stacking")
@@ -490,7 +529,7 @@ class EyeDiagram(ABC):
         self._centers_t[i],
         self._centers_i[i],
         self._t_delta,
-        self._t_sym.value,
+        self._t_sym,
         min_y,
         max_y,
         self._resolution
@@ -504,25 +543,90 @@ class EyeDiagram(ABC):
     for o in output:
       self._raw_heatmap += o
 
-    self._raw_heatmap = self._raw_heatmap.T[::-1, :]
+    # [x, y] coordinates to image coordinates
+    self._raw_heatmap = np.rot90(self._raw_heatmap)
     self._raw_heatmap = self._raw_heatmap.astype(np.float32)
+
+    if print_progress:
+      print(f"{'':>{indent}}Generating images")
+    image = self._raw_heatmap.copy()
+
+    # Replace 0s with nan to be colored transparent
+    image[image == 0] = np.nan
+
+    # Normalize heatmap to 0 to 1
+    image_max = np.nanmax(image)
+    image = image / image_max
+
+    image_clean = pyplot.cm.jet(image)
+
+    image_grid = np.zeros(image_clean.shape)
+    image_mask = np.zeros(image_clean.shape)
+    image_hits = np.zeros(image_clean.shape)
+    image_margin = np.zeros(image_clean.shape)
+
+    # Draw a grid for reference levels
+    self._draw_grid(image_grid)
+
+    if self._mask:
+      for path in self._mask.paths:
+        x = [self._uia_to_image(p[0], return_list=False) for p in path]
+        y = [self._uia_to_image(p[1], return_list=False) for p in path]
+        rr, cc = skimage.draw.polygon(x, y, shape=image_mask.shape)
+        image_mask[rr, cc] = [1.0, 0.0, 1.0, 0.5]  # Magenta a=0.5
+
+      for path in self._mask.adjust(self._measures.mask_margin).paths:
+        x = [self._uia_to_image(p[0], return_list=False) for p in path]
+        y = [self._uia_to_image(p[1], return_list=False) for p in path]
+        rr, cc = skimage.draw.polygon(x, y, shape=image_margin.shape)
+        image_margin[rr, cc] = [1.0, 0.0, 1.0, 0.5]  # Magenta a=0.5
+
+      # Draw hits and offending bit waveforms
+      image_hits[:, :, 0] = 1.0  # Red
+      radius = int(max(3, self._resolution / 500))
+      for h in self._hits[:10000]:
+        x = self._uia_to_image(h[0], return_list=False)
+        y = self._uia_to_image(h[1], return_list=False)
+        rr, cc = skimage.draw.circle_perimeter(x,
+                                               y,
+                                               radius,
+                                               shape=image_margin.shape)
+        image_hits[rr, cc, 3] = 1
+
+      # Plot subset of offenders
+      # yapf: disable
+      args_list = [[
+          self._waveforms[i][1],
+          self._centers_t[i],
+          self._centers_i[i],
+          self._t_delta,
+          self._t_sym,
+          min_y,
+          max_y,
+          self._resolution,
+          self._offenders[i][:2]
+      ] for i in range(self._waveforms.shape[0])]
+      # yapf: enable
+      output = self._collect_runners(_runner_draw_symbols, args_list, n_threads,
+                                     print_progress, indent + 2)
+      for o in output:
+        image_hits = math.Image.layer_rgba(image_hits, o)
+
+    # [x, y] coordinates to image coordinates
+    image_grid = np.rot90(image_grid)
+    image_mask = np.rot90(image_mask)
+    image_hits = np.rot90(image_hits)
+    image_margin = np.rot90(image_margin)
+
+    self._measures.set_images(image_clean, image_grid, image_mask, image_hits,
+                              image_margin)
 
     if print_progress:
       print(f"{'':>{indent}}Completed stacking")
 
     if debug_plots is not None:
       debug_plots += ".step5.png"
-      image = self._raw_heatmap.copy()
-
-      # Replace 0s with nan to be colored transparent
-      image[image == 0] = np.nan
-
-      # Normalize heatmap to 0 to 1
-      image_max = np.nanmax(image)
-      image = image / image_max
-
-      image = pyplot.cm.jet(image)
-      math.Image.np_to_file(image, debug_plots)
+      math.Image.np_to_file(image_clean, debug_plots)
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   @staticmethod
@@ -592,14 +696,9 @@ class EyeDiagram(ABC):
     return self._measures
 
 
-def _runner_stack(waveform_y: np.ndarray,
-                  centers_t: list[float],
-                  centers_i: list[int],
-                  t_delta: float,
-                  t_sym: float,
-                  min_y: float,
-                  max_y: float,
-                  resolution: int = 500) -> np.ndarray:
+def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
+                  centers_i: list[int], t_delta: float, t_sym: float,
+                  min_y: float, max_y: float, resolution: int) -> np.ndarray:
   """Stack waveforms and counting overlaps in a heat map
 
   Args:
@@ -638,3 +737,61 @@ def _runner_stack(waveform_y: np.ndarray,
     bresenham.draw(td, yd, grid)
 
   return grid
+
+
+def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
+                         centers_i: list[int], t_delta: float, t_sym: float,
+                         min_y: float, max_y: float, resolution: int,
+                         sym_indices: list[int]) -> np.ndarray:
+  """Stack waveforms and counting overlaps in a heat map
+
+  Args:
+    waveform_y: Waveform data array [y0, y1,..., yn]
+    centers_t: List of symbol centers in time for sub t_delta alignment.
+      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
+    centers_i: List of symbol centers indices
+    t_delta: Time between samples
+    t_sym: Duration of one symbol
+    min_y: Lower vertical value for bottom of grid
+    max_y: Upper vertical value for top of grid.
+      Grid units = (y - min_y) / (max_y - min_y)
+    resolution: Resolution of square eye diagram image, 2UI x 2UA
+    sym_indices: Symbol indices to draw
+
+  Returns:
+    RGBA image, [x, y] coordinates
+  """
+  i_width = int((t_sym / t_delta) + 0.5) + 2
+  t_width_ui = (i_width * t_delta / t_sym)
+
+  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, i_width * 2 + 1)
+
+  waveform_y = (waveform_y - min_y) / (max_y - min_y)
+
+  image = np.zeros((resolution, resolution, 4))
+  image[:, :, 0] = 1.0  # Red
+
+  for i in sym_indices:
+    c_i = centers_i[i]
+    c_t = centers_t[i] / t_sym
+
+    t = (t0 + c_t)
+    y = waveform_y[c_i - i_width:c_i + i_width + 1]
+
+    td = (((t + 0.5) / 2) * resolution).astype(np.int32)
+    yd = (y * resolution).astype(np.int32)
+
+    for ii in range(1, len(td)):
+      if td[ii] < 0 or td[ii - 1] > (resolution):
+        continue
+      rr, cc, val = skimage.draw.line_aa(td[ii], yd[ii], td[ii - 1], yd[ii - 1])
+
+      # Trim to image size
+      mask = (rr >= 0) & (rr < resolution) & (cc >= 0) & (cc < resolution)
+      rr = rr[mask]
+      cc = cc[mask]
+      val = val[mask]
+
+      image[rr, cc, 3] = val + (1 - val) * image[rr, cc, 3]
+
+  return image

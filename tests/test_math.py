@@ -523,8 +523,24 @@ class TestMath(base.TestBase):
     std_a = samples_a.std()
     std_b = samples_b.std()
 
-    a = math.UncertainValue(avg_a, std_a)
-    b = math.UncertainValue(avg_b, std_b)
+    a = math.UncertainValue.samples(samples_a)
+    b = math.UncertainValue.samples(samples_b)
+    self.assertEqualWithinSampleError(avg_a, a.value, n)
+    self.assertEqualWithinSampleError(std_a, a.stddev, n)
+    self.assertEqualWithinSampleError(avg_b, b.value, n)
+    self.assertEqualWithinSampleError(std_b, b.stddev, n)
+
+    r = math.UncertainValue.samples(np.array([]))
+    self.assertTrue(np.isnan(r.value))
+    self.assertTrue(np.isnan(r.stddev))
+
+    r = str(a)
+    self.assertEqual(r, f"(µ={a.value},σ={a.stddev})")
+    r = f"{a}"
+    self.assertEqual(r, f"(µ={a.value},σ={a.stddev})")
+    r = f"{a:6.4e}"
+    self.assertEqual(r, f"(µ={a.value:6.4e},σ={a.stddev:6.4e})")
+    self.assertRaises(TypeError, str.format, "{0:5d}", a)
 
     samples_r = samples_a + samples_b
     r = a + b
@@ -593,3 +609,17 @@ class TestMath(base.TestBase):
     self.assertTrue((a > b) == (avg_a > avg_b))
     self.assertTrue((a > c) == (avg_a > c))
     self.assertFalse(a > avg_a)
+
+    # This is an approximation, check approximation
+    samples_a = self._RNG.uniform(9.0, 10.0, n)
+    a = math.UncertainValue.samples(samples_a)
+    r = np.log(a)
+    r_stddev = a.stddev / a.value
+    self.assertEqualWithinSampleError(np.log(a.value), r.value, n)
+    self.assertEqualWithinSampleError(r_stddev, r.stddev, n)
+
+    # This is an approximation, check approximation
+    r = np.log10(a)
+    r_stddev = a.stddev / (a.value * np.log(10))
+    self.assertEqualWithinSampleError(np.log10(a.value), r.value, n)
+    self.assertEqualWithinSampleError(r_stddev, r.stddev, n)

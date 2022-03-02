@@ -113,13 +113,15 @@ class TestMaskDecagon(base.TestBase):
     f = 0.1
     m_adjusted = m.adjust(f)
 
+    x1_new = x1 * (1 - f)
+    y1_new = y1 * (1 - f)
     d = {
         "type": "decagon",
         "x1": x1 * (1 - f),
-        "x2": x2 * (1 - f),
-        "x3": x3 * (1 - f),
+        "x2": 0.5 - (0.5 - x1_new) * (0.5 - x2) / (0.5 - x1),
+        "x3": 0.5 - (0.5 - x1_new) * (0.5 - x3) / (0.5 - x1),
         "y1": y1 * (1 - f),
-        "y2": y2 * (1 - f),
+        "y2": 0.5 - (0.5 - y1_new) * (0.5 - y2) / (0.5 - y1),
         "y3": y3 * (1 - f),
         "y4": y4 * (1 - f)
     }

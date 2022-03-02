@@ -719,7 +719,17 @@ class UncertainValue:
     c = x - m
     return UncertainValue(m, np.sqrt(np.dot(c, c) / x.size))
 
-  def __str__(self) -> str:
+  def __format__(self, format_spec: str) -> str:
+    if len(format_spec) == 0:
+      return str(self)
+    understood = [str(i) for i in range(10)]
+    understood.extend(["e", "E", "g", "G", "f", "F", "n", "%"])
+    if format_spec[-1] not in understood:
+      raise TypeError(
+          f"Unsupported format spec passed to UncertainValue '{format_spec}'")
+    return f"(µ={self.value:{format_spec}},σ={self.stddev:{format_spec}})"
+
+  def __repr__(self) -> str:
     return f"(µ={self.value},σ={self.stddev})"
 
   def __add__(self, b) -> UncertainValue:

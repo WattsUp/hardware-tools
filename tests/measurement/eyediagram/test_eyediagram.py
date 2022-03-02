@@ -4,15 +4,19 @@
 from __future__ import annotations
 
 import io
+import os
 from unittest import mock
 
 import numpy as np
 from scipy import signal
 
 from hardware_tools import math
+from hardware_tools.measurement import mask
 from hardware_tools.measurement.eyediagram import eyediagram
 
 from tests import base
+
+from tests.measurement.eyediagram.addition_runner import runner_addition
 
 _rng = np.random.default_rng()
 f_scope = 5e9
@@ -46,20 +50,28 @@ class Derrived(eyediagram.EyeDiagram):
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
-    self._t_sym = math.UncertainValue(t_bit, 0)
+    self._t_sym = t_bit
     self._clock_edges = []
     for i in range(self._waveforms.shape[0]):
       t_start = self._waveforms[i][0][0] - 1 / f_scope / 2 - t_bit / 2
       e = np.arange(t_start, self._waveforms[i][0][-1], t_bit)
       self._clock_edges.append(e.tolist())
-    self._clock_edges[-1] = self._clock_edges[-1][-5:]
+    self._clock_edges[-1] = self._clock_edges[-1]
 
   def _step4_measure(self,
                      n_threads: int = 1,
                      print_progress: bool = True,
                      indent: int = 0,
                      debug_plots: str = None) -> None:
-    self._measures = eyediagram.Measures()
+    m = eyediagram.Measures()
+    m.mask_margin = 0.5
+    self._measures = m
+    self._offenders = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
+    self._hits = [[0, 0.5]]
+
+  def _draw_grid(self, image_grid: np.ndarray) -> None:
+    super()._draw_grid(image_grid)
+    image_grid[self._uia_to_image(-10), ::10, 3] = 1.0
 
 
 class TestEyeDiagram(base.TestBase):
@@ -96,8 +108,16 @@ class TestEyeDiagram(base.TestBase):
 
     self.assertRaises(RuntimeError, eye.get_raw_heatmap)
 
-    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye.calculate(print_progress=True, n_threads=0)
+    fake_stdout = fake_stdout.getvalue()
+    self.assertIn("Starting eye", fake_stdout)
+    self.assertIn("Step 1", fake_stdout)
+    self.assertIn("Step 2", fake_stdout)
+    self.assertIn("Step 3", fake_stdout)
+    self.assertIn("Step 4", fake_stdout)
+    self.assertIn("Step 5", fake_stdout)
+    self.assertIn("Completed eye", fake_stdout)
 
     heatmap = eye.get_raw_heatmap()
     self.assertIsInstance(heatmap, np.ndarray)
@@ -112,58 +132,95 @@ class TestEyeDiagram(base.TestBase):
 
     self.assertRaises(RuntimeError, eye.get_measures)
 
-    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye.calculate(print_progress=False, n_threads=1)
+    self.assertEqual("", fake_stdout.getvalue())
 
     m = eye.get_measures()
     self.assertIsInstance(m, eyediagram.Measures)
 
+  def test_collect_runners(self):
+
+    args_list = [[1, 2], [10, 20]]
+
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      output = eyediagram.EyeDiagram._collect_runners(  # pylint: disable=protected-access
+          runner_addition,
+          args_list,
+          n_threads=1,
+          print_progress=True)
+    self.assertIn("Ran waveform #1", fake_stdout.getvalue())
+    self.assertEqual(output[0], args_list[0][0] + args_list[0][1])
+    self.assertEqual(output[1], args_list[1][0] + args_list[1][1])
+
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      output = eyediagram.EyeDiagram._collect_runners(  # pylint: disable=protected-access
+          runner_addition,
+          args_list,
+          n_threads=1,
+          print_progress=False)
+    self.assertEqual("", fake_stdout.getvalue())
+    self.assertEqual(output[0], args_list[0][0] + args_list[0][1])
+    self.assertEqual(output[1], args_list[1][0] + args_list[1][1])
+
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      output = eyediagram.EyeDiagram._collect_runners(  # pylint: disable=protected-access
+          runner_addition,
+          args_list,
+          n_threads=2,
+          print_progress=True)
+    self.assertIn("Ran waveform #1", fake_stdout.getvalue())
+    self.assertEqual(output[0], args_list[0][0] + args_list[0][1])
+    self.assertEqual(output[1], args_list[1][0] + args_list[1][1])
+
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      output = eyediagram.EyeDiagram._collect_runners(  # pylint: disable=protected-access
+          runner_addition,
+          args_list,
+          n_threads=2,
+          print_progress=False)
+    self.assertEqual("", fake_stdout.getvalue())
+    self.assertEqual(output[0], args_list[0][0] + args_list[0][1])
+    self.assertEqual(output[1], args_list[1][0] + args_list[1][1])
+
   def test_step3(self):
     path = str(self._TEST_ROOT.joinpath("eyediagram_step3"))
-    waveforms = np.array([[t, y], [t, y]])
-    clocks = np.array([[t, clock], [t, clock]])
+    waveforms = np.array([[t, y]])
+    clocks = np.array([[t, clock]])
 
     eye = Derrived(waveforms, clocks=clocks, resolution=1000)
-    with mock.patch("sys.stdout", new=io.StringIO()) as _:
-      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step3_sample(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
-    self.assertIn("Completed sampling", fake_stdout.getvalue())
+      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+    self.assertIn("Saved image to", fake_stdout.getvalue())
+    self.assertTrue(os.path.exists(path + ".step3.png"))
 
   def test_step5(self):
     path = str(self._TEST_ROOT.joinpath("eyediagram_step5"))
-    waveforms = np.array([[t, y], [t, y]])
-    clocks = np.array([[t, clock], [t, clock]])
+    waveforms = np.array([[t, y]])
+    clocks = np.array([[t, clock]])
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=200)
-    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+    m = mask.MaskDecagon(0.18, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
+    eye = Derrived(waveforms, clocks=clocks, resolution=1000, mask=m)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step4_measure(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step5_stack(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+      eye._calculated = True  # pylint: disable=protected-access
+    self.assertIn("Saved image to", fake_stdout.getvalue())
+    self.assertTrue(os.path.exists(path + ".step5.png"))
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=200)
-    with mock.patch("sys.stdout", new=io.StringIO()) as _:
-      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step4_measure(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step5_stack(print_progress=False, n_threads=2, debug_plots=None)  # pylint: disable=protected-access
+    m = eye.get_measures().to_dict()
+    self.assertIsNotNone(m["image_clean"])
+    self.assertIsNotNone(m["image_grid"])
+    self.assertIsNotNone(m["image_mask"])
+    self.assertIsNotNone(m["image_hits"])
+    self.assertIsNotNone(m["image_margin"])
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=200)
-    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step4_measure(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
-      eye._step5_stack(print_progress=True, n_threads=2, debug_plots=None)  # pylint: disable=protected-access
-    self.assertIn("Ran waveform #0", fake_stdout.getvalue())
+    eye.get_measures().save_images(path)
 
 
 class TestEyeDiagramMeasures(base.TestBase):
@@ -173,6 +230,7 @@ class TestEyeDiagramMeasures(base.TestBase):
   def test_to_dict(self):
     n_sym = self._RNG.integers(1000, 10000)
     n_sym_bad = self._RNG.integers(0, n_sym)
+    n_samples = n_sym * self._RNG.integers(5, 50)
     mask_margin = self._RNG.uniform(-1, 1)
     transition_dist = {
         "000": self._RNG.integers(0, n_sym),
@@ -185,7 +243,7 @@ class TestEyeDiagramMeasures(base.TestBase):
         "111": self._RNG.integers(0, n_sym),
     }
 
-    resolution = 200
+    resolution = 10
     shape = (resolution, resolution, 4)
 
     np_clean = self._RNG.uniform(0.0, 1.0, size=shape)
@@ -195,13 +253,32 @@ class TestEyeDiagramMeasures(base.TestBase):
     np_margin = self._RNG.uniform(0.0, 1.0, size=shape)
 
     m = eyediagram.Measures()
-    m.set_images(np_clean, np_grid, np_mask, np_hits, np_margin)
+    m.n_samples = n_samples
     m.n_sym = n_sym
     m.n_sym_bad = n_sym_bad
     m.transition_dist = transition_dist
     m.mask_margin = mask_margin
 
     d = {
+        "n_samples": n_samples,
+        "n_sym": n_sym,
+        "n_sym_bad": n_sym_bad,
+        "mask_margin": mask_margin,
+        "transition_dist": transition_dist,
+        "image_clean": None,
+        "image_grid": None,
+        "image_mask": None,
+        "image_hits": None,
+        "image_margin": None
+    }
+    m_dict = m.to_dict()
+    self.assertListEqual(sorted(d.keys()), sorted(m_dict.keys()))
+    self.assertDictEqual(d, m_dict)
+
+    m.set_images(np_clean, np_grid, np_mask, np_hits, np_margin)
+
+    d = {
+        "n_samples": n_samples,
         "n_sym": n_sym,
         "n_sym_bad": n_sym_bad,
         "mask_margin": mask_margin,
@@ -212,14 +289,17 @@ class TestEyeDiagramMeasures(base.TestBase):
         "image_hits": math.Image.np_to_base64(np_hits),
         "image_margin": math.Image.np_to_base64(np_margin)
     }
-    self.assertDictEqual(d, m.to_dict())
+    m_dict = m.to_dict()
+    self.assertListEqual(sorted(d.keys()), sorted(m_dict.keys()))
+    self.assertDictEqual(d, m_dict)
 
   def test_save_images(self):
     n_sym = self._RNG.integers(1000, 10000)
     n_sym_bad = self._RNG.integers(0, n_sym)
+    n_samples = n_sym * self._RNG.integers(5, 50)
     mask_margin = self._RNG.uniform(-1, 1)
 
-    resolution = 200
+    resolution = 10
     shape = (resolution, resolution, 4)
 
     np_clean = self._RNG.uniform(0.0, 1.0, size=shape)
@@ -230,6 +310,7 @@ class TestEyeDiagramMeasures(base.TestBase):
 
     m = eyediagram.Measures()
     m.set_images(np_clean, np_grid, np_mask, np_hits, np_margin)
+    m.n_samples = n_samples
     m.n_sym = n_sym
     m.n_sym_bad = n_sym_bad
     m.mask_margin = mask_margin

@@ -20,6 +20,18 @@ List of dependencies for package to run.
 * Test extensions, installed via `pip install hardware_tools[test]`
   * time-machine
   * AutoDict
+
+### Virtual Environment
+If using hardware-tools in a virtual environment, do not place it within this repo directory. Set it outside due to an issue compiling the extensions with cython since it tries to compile the code inside the virtual environment as well.
+```bash
+mkdir workspace-hardware-tools
+cd workspace-hardware-tools
+python -m venv .
+source ./Scripts/activate # or .\Scripts\activate.bat
+git clone https://github.com/WattsUp/hardware-tools
+cd hardware-tools
+python -m pip install .
+```
 ----
 ## Installation / Build / Deployment
 ```bash
