@@ -12,7 +12,7 @@ from matplotlib import pyplot
 
 from hardware_tools import math, strformat
 from hardware_tools.extensions import edges as edges_ext
-from hardware_tools.extensions import intersections
+from hardware_tools.extensions import pam2 as pam2_ext
 from hardware_tools.measurement.mask import Mask
 from hardware_tools.measurement.eyediagram import cdr, eyediagram
 
@@ -163,7 +163,7 @@ class PAM2(eyediagram.EyeDiagram):
         # Step 1
         "hysteresis": None,  # Difference between rising and falling thresholds
         "hysteresis_ua": 0.1,  # Units of normalized amplitude, lower priority
-        "hist_n_max": 50e5,  # Maximum number of points in a histogram
+        "hist_n_max": 10e3,  # Maximum number of points in a histogram
 
         # Step 2
         "clock_polarity": eyediagram.ClockPolarity.RISING,
@@ -199,23 +199,13 @@ class PAM2(eyediagram.EyeDiagram):
     y_0 = math.UncertainValue(0, 0)
     y_1 = math.UncertainValue(0, 0)
     if self._y_0 is None or self._y_1 is None or debug_plots is not None:
-      # Need to measure at least one
-      # yapf: disable
-      args_list = [[
-          self._waveforms[i][1],
-          self._config["hist_n_max"]
-      ] for i in range(self._waveforms.shape[0])]
-      # yapf: enable
-      output = self._collect_runners(_runner_levels, args_list, n_threads,
-                                     print_progress, indent + 2)
+      waveform_y = self._waveforms[:, 1].flatten()
+      output = _runner_levels(waveform_y, self._config["hist_n_max"])
 
-      y_min = min([o["min"] for o in output])
-      y_max = max([o["max"] for o in output])
-      for o in output:
-        y_0 += o["0"]
-        y_1 += o["1"]
-      y_0 = y_0 / len(output)
-      y_1 = y_1 / len(output)
+      y_min = output["min"]
+      y_max = output["max"]
+      y_0 = output["0"]
+      y_1 = output["1"]
     if self._y_0 is not None:
       y_0.value = self._y_0
     if self._y_1 is not None:
@@ -250,11 +240,8 @@ class PAM2(eyediagram.EyeDiagram):
 
       n = 1000
       y_range = np.linspace(y_min, y_max, n)
-      curve_0 = np.zeros(n)
-      curve_1 = np.zeros(n)
-      for o in output:
-        curve_0 += o["fit_0"].compute(y_range)
-        curve_1 += o["fit_1"].compute(y_range)
+      curve_0 = output["fit_0"].compute(y_range)
+      curve_1 = output["fit_1"].compute(y_range)
       pyplot.plot(y_range, curve_0 / len(output))
       pyplot.plot(y_range, curve_1 / len(output))
       pyplot.axvline(x=self._y_zero, color="g")
@@ -410,7 +397,7 @@ class PAM2(eyediagram.EyeDiagram):
         self._config["cross_width"]
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output = self._collect_runners(_runner_sample_vertical, args_list,
+    output = self._collect_runners(pam2_ext.sample_vertical, args_list,
                                    n_threads, print_progress, indent + 2)
 
     s_y_0 = np.array([])
@@ -509,7 +496,7 @@ class PAM2(eyediagram.EyeDiagram):
         self._config["edge_location"]
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output = self._collect_runners(_runner_sample_horizontal, args_list,
+    output = self._collect_runners(pam2_ext.sample_horizontal, args_list,
                                    n_threads, print_progress, indent + 2)
 
     s_t_rise_lower = np.array([])
@@ -606,8 +593,12 @@ class PAM2(eyediagram.EyeDiagram):
           self._mask
       ] for i in range(self._waveforms.shape[0])]
       # yapf: enable
-      output = self._collect_runners(_runner_sample_mask, args_list, n_threads,
-                                     print_progress, indent + 2)
+      output = self._collect_runners(
+          eyediagram._runner_sample_mask,  # pylint: disable=protected-access
+          args_list,
+          n_threads,
+          print_progress,
+          indent + 2)
 
       self._offenders = []
       self._hits = []
@@ -842,6 +833,10 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
       fit_1: GaussianMix for y_1
   """
   if n_max is not None:
+    ratio = len(waveform_y) / n_max
+    if ratio > 10:
+      ratio = max(1, int(ratio / 2))
+      waveform_y = waveform_y[::ratio]
     waveform_y = math.Bin.downsample(waveform_y, n_max)
 
   y_min = waveform_y.min()
@@ -856,8 +851,8 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   values_1 = waveform_y[np.where(waveform_y > y_mid)]
   y_1.stddev = values_1.std()
 
-  fit_0 = math.GaussianMix.fit_samples(values_0, n_max=3)
-  fit_1 = math.GaussianMix.fit_samples(values_1, n_max=3)
+  fit_0 = math.GaussianMix.fit_samples(values_0, n_max=2)
+  fit_1 = math.GaussianMix.fit_samples(values_1, n_max=2)
 
   y_0.value = fit_0.center()
   y_1.value = fit_1.center()
@@ -894,309 +889,3 @@ def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
   data_edges = edges_ext.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
   results = cdr_obj.run(_filter_edge_polarity(data_edges, polarity))
   return {"edges": results[0], "ties": results[1]}
-
-
-def _runner_sample_vertical(waveform_y: np.ndarray, centers_t: list[float],
-                            centers_i: list[int], t_delta: float, t_sym: float,
-                            y_half: float, level_width: float,
-                            cross_width: float) -> dict:
-  """Measure vertical parameters
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_half: Decision threshold for a low or high symbol
-    level_width: Width of y_0, y_1 windows, UI
-    cross_width: Width of y_cross window, UI
-
-  Returns:
-    Dictionary of values:
-      y_0: List of samples within the y_0 window, logical 0
-      y_1: List of samples within the y_1 window, logical 1
-      y_cross: List of samples within the y_cross window, edge
-      y_0_cross: List of samples within the y_cross window, logical 0
-      y_1_cross: List of samples within the y_cross window, logical 1
-      transitions: Dictionary of collected transitions, see MeasuresPAM2
-      edge_dir: List of edge directions, True=rising, False=falling, None=none
-  """
-  i_width = int((t_sym / t_delta) + 0.5) + 2
-  t_width_ui = (i_width * t_delta / t_sym)
-
-  n = i_width * 2 + 1
-  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
-
-  abc_width = max(level_width, 1.01 * t_delta / t_sym)
-  t_a_min = -0.5 - abc_width / 2
-  t_a_max = -0.5 + abc_width / 2
-  t_b_min = 0.5 - abc_width / 2
-  t_b_max = 0.5 + abc_width / 2
-  t_c_min = 1.5 - abc_width / 2
-  t_c_max = 1.5 + abc_width / 2
-
-  t_sym_min = 0.5 - level_width / 2
-  t_sym_max = 0.5 + level_width / 2
-
-  t_cross_min = 0.0 - cross_width / 2
-  t_cross_max = 0.0 + cross_width / 2
-
-  t_sym_cross_min = 0.5 - level_width / 2
-  t_sym_cross_max = 0.5 + level_width / 2
-
-  values = {
-      "y_0": [],
-      "y_1": [],
-      "y_cross": [],
-      "y_0_cross": [],
-      "y_1_cross": [],
-      "transitions": {
-          "000": 0,
-          "001": 0,
-          "010": 0,
-          "011": 0,
-          "100": 0,
-          "101": 0,
-          "110": 0,
-          "111": 0,
-      },
-      "edge_dir": []
-  }
-
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
-    c_t = centers_t[i] / t_sym
-
-    samples_a = []
-    samples_b = []
-    samples_c = []
-
-    samples_sym = []
-    samples_cross = []
-    samples_sym_cross = []
-    for ii in range(n):
-      t = t0[ii] + c_t
-      y = waveform_y[c_i - i_width + ii]
-
-      if t_a_min <= t <= t_a_max:
-        samples_a.append(y)
-      elif t_b_min <= t <= t_b_max:
-        samples_b.append(y)
-      elif t_c_min <= t <= t_c_max:
-        samples_c.append(y)
-
-      if t_sym_min <= t <= t_sym_max:
-        samples_sym.append(y)
-
-      if t_cross_min <= t <= t_cross_max:
-        samples_cross.append(y)
-
-      if t_sym_cross_min <= t <= t_sym_cross_max:
-        samples_sym_cross.append(y)
-
-    sym_a = np.mean(samples_a) > y_half
-    sym_b = np.mean(samples_b) > y_half
-    sym_c = np.mean(samples_c) > y_half
-
-    if sym_a != sym_b:
-      values["y_cross"].extend(samples_cross)
-      values["edge_dir"].append(sym_b)
-    else:
-      values["edge_dir"].append(None)
-      if sym_b:
-        values["y_1_cross"].extend(samples_sym_cross)
-      else:
-        values["y_0_cross"].extend(samples_sym_cross)
-
-    seq = "1" if sym_a else "0"
-
-    if sym_b:
-      values["y_1"].extend(samples_sym)
-      seq += "1"
-    else:
-      values["y_0"].extend(samples_sym)
-      seq += "0"
-
-    seq += "1" if sym_c else "0"
-
-    values["transitions"][seq] += 1
-
-  return values
-
-
-def _runner_sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
-                              centers_i: list[int], edge_dir: list[bool],
-                              t_delta: float, t_sym: float, y_zero: float,
-                              y_ua: float, y_cross: float, hist_height: float,
-                              edge_location: list[float]) -> dict:
-  """Measure horizontal parameters
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    edge_dir: List of edge directions, True=rising, False=falling, None=none
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_zero: Amplitude of a logical 0
-    y_ua: Normalized amplitude
-    y_cross: Amplitude of crossing point
-    hist_height: Height of time windows, UA
-    edge_location: Location of upper and lower edge windows, UA
-
-  Returns:
-    Dictionary of values, all UI:
-      t_rise_lower: List of samples within the lower edge window, rising
-      t_rise_upper: List of samples within the upper edge window, rising
-      t_rise_half: List of samples within the 50% window, rising
-      t_fall_lower: List of samples within the lower edge window, falling
-      t_fall_upper: List of samples within the upper edge window, falling
-      t_fall_half: List of samples within the 50% window, falling
-      t_cross_left: List of samples within the cross window, left edge
-      t_cross_right: List of samples within the cross window, right edge
-  """
-  i_width = int((t_sym / t_delta) + 0.5) + 2
-  t_width_ui = (i_width * t_delta / t_sym)
-
-  n = i_width * 2 + 1
-  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
-  center_offset = int(n * 1 / 4)
-
-  waveform_y = (waveform_y - y_zero) / y_ua
-  y_cross = (y_cross - y_zero) / y_ua
-
-  y_lower_min = edge_location[0] - hist_height / 2
-  y_lower_max = edge_location[0] + hist_height / 2
-  y_upper_min = edge_location[1] - hist_height / 2
-  y_upper_max = edge_location[1] + hist_height / 2
-
-  y_cross_min = y_cross - hist_height / 2
-  y_cross_max = y_cross + hist_height / 2
-
-  y_half_min = 0.5 - hist_height / 2
-  y_half_max = 0.5 + hist_height / 2
-
-  values = {
-      "t_rise_lower": [],
-      "t_rise_upper": [],
-      "t_rise_half": [],
-      "t_fall_lower": [],
-      "t_fall_upper": [],
-      "t_fall_half": [],
-      "t_cross_left": [],
-      "t_cross_right": []
-  }
-
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
-    c_t = centers_t[i] / t_sym
-
-    for ii in range(n):
-      t = t0[ii] + c_t
-      y = waveform_y[c_i - i_width + ii]
-
-      if y_cross_min <= y <= y_cross_max:
-        if -0.5 <= t <= 0.5:
-          values["t_cross_left"].append(t)
-        elif 0.5 < t <= 1.5:
-          values["t_cross_right"].append(t)
-        else:
-          pass  # pragma: no cover, just a glitch
-
-    if edge_dir[i] is None:
-      continue
-    y_front = waveform_y[c_i - i_width:c_i + 1]
-    y_center = waveform_y[c_i - i_width + center_offset:c_i + center_offset + 1]
-
-    if edge_dir[i]:
-      # Rising edge starts at minimum on [-0.5, 0.5]
-      ii = np.argmin(y_front)
-      # Stop at maximum on [0.0, 1.0]
-      ii_stop = center_offset + np.argmax(y_center)
-    else:
-      # Falling edge starts at maximum on [-0.5, 0.5]
-      ii = np.argmax(y_front)
-      # Stop at minimum on [0.0, 1.0]
-      ii_stop = center_offset + np.argmin(y_center)
-    while ii <= ii_stop:
-      t = t0[ii] + c_t
-      y = waveform_y[c_i - i_width + ii]
-
-      if y_lower_min <= y <= y_lower_max:
-        if edge_dir[i]:
-          values["t_rise_lower"].append(t)
-        else:
-          values["t_fall_lower"].append(t)
-
-      if y_upper_min <= y <= y_upper_max:
-        if edge_dir[i]:
-          values["t_rise_upper"].append(t)
-        else:
-          values["t_fall_upper"].append(t)
-
-      if y_half_min <= y <= y_half_max:
-        if edge_dir[i]:
-          values["t_rise_half"].append(t)
-        else:
-          values["t_fall_half"].append(t)
-
-      ii += 1
-
-  return values
-
-
-def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
-                        centers_i: list[int], t_delta: float, t_sym: float,
-                        y_zero: float, y_ua: float, mask: Mask) -> dict:
-  """Measure mask parameters
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_zero: Amplitude of a logical 0
-    y_ua: Normalized amplitude
-    mask: Mask to test to
-
-  Returns:
-    Dictionary of values:
-      offenders: List of bit indices that hit the mask
-      hits: List of mask collision coordinates [[UI, UA],...]
-      margin: Largest mask margin with zero hits [-1.0, 1.0]
-  """
-  i_width = int((t_sym / t_delta) + 0.5) + 2
-  t_width_ui = (i_width * t_delta / t_sym)
-
-  n = i_width * 2 + 1
-  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
-
-  waveform_y = (waveform_y - y_zero) / y_ua
-
-  values = {"offenders": [], "hits": [], "margin": 1.0}
-
-  mask_adj = mask.adjust(values["margin"])
-
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
-    c_t = centers_t[i] / t_sym
-
-    t = t0 + c_t
-    y = waveform_y[c_i - i_width:c_i + i_width + 1]
-
-    hits = intersections.get_hits_np(t, y, mask.paths)
-    if hits.size > 0:
-      values["offenders"].append(i)
-      values["hits"].extend(hits.tolist())
-
-    while intersections.is_hitting_np(
-        t, y, mask_adj.paths) and values["margin"] > -1.0:
-      values["margin"] -= 0.001
-      mask_adj = mask.adjust(values["margin"])
-
-  return values

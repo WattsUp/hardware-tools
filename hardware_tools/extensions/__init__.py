@@ -24,3 +24,9 @@ try:
 except ImportError:
   print("The cython version of intersections is not available")
   from hardware_tools.extensions import intersections_slow as intersections
+
+try:
+  from hardware_tools.extensions import pam2_fast as pam2
+except ImportError:
+  print("The cython version of PAM2 is not available")
+  from hardware_tools.extensions import pam2_slow as pam2

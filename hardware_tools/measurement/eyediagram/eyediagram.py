@@ -19,6 +19,7 @@ import skimage.draw
 
 from hardware_tools import math, strformat
 from hardware_tools.extensions import bresenham
+from hardware_tools.extensions import intersections
 from hardware_tools.measurement.mask import Mask
 
 colorama.init(autoreset=True)
@@ -194,6 +195,9 @@ class EyeDiagram(ABC):
     # TODO (WattsUp) allow differential signal [t, y_p, y_n]
     # and produce pos, neg, pos-neg, pos+neg eye diagrams
     # TODO (WattsUp) add clock_edges and get_clock_edges()
+    # TODO (WattsUp) add bathtub curves and extrapolated BER
+    # TODO (WattsUp) look into different multithreading due to
+    # "waiting for lock"
     if len(waveforms.shape) == 2:
       waveforms = np.array([waveforms])
     elif len(waveforms.shape) != 3:
@@ -795,3 +799,57 @@ def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
       image[rr, cc, 3] = val + (1 - val) * image[rr, cc, 3]
 
   return image
+
+
+def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
+                        centers_i: list[int], t_delta: float, t_sym: float,
+                        y_zero: float, y_ua: float, mask: Mask) -> dict:
+  """Measure mask parameters
+
+  Args:
+    waveform_y: Waveform data array [y0, y1,..., yn]
+    centers_t: List of symbol centers in time for sub t_delta alignment.
+      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
+    centers_i: List of symbol centers indices
+    t_delta: Time between samples
+    t_sym: Duration of one symbol
+    y_zero: Amplitude of a logical 0
+    y_ua: Normalized amplitude
+    mask: Mask to test to
+
+  Returns:
+    Dictionary of values:
+      offenders: List of bit indices that hit the mask
+      hits: List of mask collision coordinates [[UI, UA],...]
+      margin: Largest mask margin with zero hits [-1.0, 1.0]
+  """
+  i_width = int((t_sym / t_delta) + 0.5) + 2
+  t_width_ui = (i_width * t_delta / t_sym)
+
+  n = i_width * 2 + 1
+  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
+
+  waveform_y = (waveform_y - y_zero) / y_ua
+
+  values = {"offenders": [], "hits": [], "margin": 1.0}
+
+  mask_adj = mask.adjust(values["margin"])
+
+  for i in range(len(centers_t)):
+    c_i = centers_i[i]
+    c_t = centers_t[i] / t_sym
+
+    t = t0 + c_t
+    y = waveform_y[c_i - i_width:c_i + i_width + 1]
+
+    hits = intersections.get_hits_np(t, y, mask.paths)
+    if hits.size > 0:
+      values["offenders"].append(i)
+      values["hits"].extend(hits.tolist())
+
+    while intersections.is_hitting_np(
+        t, y, mask_adj.paths) and values["margin"] > -1.0:
+      values["margin"] -= 0.001
+      mask_adj = mask.adjust(values["margin"])
+
+  return values

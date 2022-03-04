@@ -70,6 +70,24 @@ class TestPAM2(base.TestBase):
     self.assertEqualWithinError(v_falling, eye._y_falling, 0.01)  # pylint: disable=protected-access
     self.assertTrue(eye._low_snr)  # pylint: disable=protected-access
 
+    noise = np.array([t[:n], self._RNG.uniform(-v_signal, 2 * v_signal, n)])
+    eye = pam2.PAM2(noise, y_0=0, y_1=v_signal, hist_n_max=n // 9)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+    self.assertTrue(os.path.exists(path + ".step1.png"))
+    fake_stdout = fake_stdout.getvalue()
+    self.assertNotIn("Completed PAM2 levels", fake_stdout)
+    self.assertIn("Saved image to", fake_stdout)
+    self.assertEqualWithinError(0, eye._y_zero / v_signal, 0.01)  # pylint: disable=protected-access
+    self.assertEqualWithinError(v_signal, eye._y_ua, 0.01)  # pylint: disable=protected-access
+    v_half = v_signal * 0.5
+    v_rising = v_signal * 0.55
+    v_falling = v_signal * 0.45
+    self.assertEqualWithinError(v_half, eye._y_half, 0.01)  # pylint: disable=protected-access
+    self.assertEqualWithinError(v_rising, eye._y_rising, 0.01)  # pylint: disable=protected-access
+    self.assertEqualWithinError(v_falling, eye._y_falling, 0.01)  # pylint: disable=protected-access
+    self.assertTrue(eye._low_snr)  # pylint: disable=protected-access
+
     hysteresis = 0.5
     eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal, hysteresis=hysteresis)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
@@ -223,7 +241,6 @@ class TestPAM2(base.TestBase):
     self.assertTrue(np.isnan(m.y_cross_r.value))
 
   def test_optical_1e8(self):
-    path = str(self._TEST_ROOT.joinpath("eyediagram_pam2_optical_1e8"))
     data_path = str(self._DATA_ROOT.joinpath("pam2-optical-1e8.npz"))
     with np.load(data_path) as file_zip:
       waveforms = file_zip[file_zip.files[0]]
@@ -275,8 +292,6 @@ class TestPAM2(base.TestBase):
     m = eye.get_measures()
     for k, v in m.to_dict().items():
       self.assertIsNotNone(v, msg=f"Key={k}")
-
-    m.save_images(path)
 
 
 class TestEyeDiagramMeasuresPAM2(base.TestBase):
