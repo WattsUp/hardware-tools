@@ -137,8 +137,8 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: list[float],
 def sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
                       centers_i: list[int], edge_dir: list[bool],
                       t_delta: float, t_sym: float, y_zero: float, y_ua: float,
-                      y_cross: float, hist_height: float,
-                      edge_location: list[float]) -> dict:
+                      y_cross: float, hist_height: float, edge_lower: float,
+                      edge_upper: float) -> dict:
   """Measure horizontal parameters
 
   Args:
@@ -153,7 +153,8 @@ def sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
     y_ua: Normalized amplitude
     y_cross: Amplitude of crossing point
     hist_height: Height of time windows, UA
-    edge_location: Location of upper and lower edge windows, UA
+    edge_lower: Threshold level for lower transition (rise start), UA
+    edge_upper: Threshold level for upper transition (rise stop), UA
 
   Returns:
     Dictionary of values, all UI:
@@ -176,10 +177,10 @@ def sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
   waveform_y = (waveform_y - y_zero) / y_ua
   y_cross = (y_cross - y_zero) / y_ua
 
-  y_lower_min = edge_location[0] - hist_height / 2
-  y_lower_max = edge_location[0] + hist_height / 2
-  y_upper_min = edge_location[1] - hist_height / 2
-  y_upper_max = edge_location[1] + hist_height / 2
+  y_lower_min = edge_lower - hist_height / 2
+  y_lower_max = edge_lower + hist_height / 2
+  y_upper_min = edge_upper - hist_height / 2
+  y_upper_max = edge_upper + hist_height / 2
 
   y_cross_min = y_cross - hist_height / 2
   y_cross_max = y_cross + hist_height / 2

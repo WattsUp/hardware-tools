@@ -98,7 +98,7 @@ class TestPAM2(base.TestBase):
   def _test_sample_horizontal(self, module):
     result = module.sample_horizontal(y, centers_t, centers_i, edge_dir,
                                       t_delta, t_bit, 0.0, v_signal,
-                                      v_signal / 2, 0.05, [0.2, 0.8])
+                                      v_signal / 2, 0.05, 0.2, 0.8)
 
     center = -0.066  # Due to filter delay
     target = {
@@ -125,13 +125,13 @@ class TestPAM2(base.TestBase):
     start = time.perf_counter()
     result_slow = pam2_slow.sample_horizontal(y, centers_t, centers_i, edge_dir,
                                               t_delta, t_bit, 0.0, v_signal,
-                                              v_signal / 2, 0.05, [0.2, 0.8])
+                                              v_signal / 2, 0.05, 0.2, 0.8)
     elapsed_slow = time.perf_counter() - start
 
     start = time.perf_counter()
     result_fast = pam2_fast.sample_horizontal(y, centers_t, centers_i, edge_dir,
                                               t_delta, t_bit, 0.0, v_signal,
-                                              v_signal / 2, 0.05, [0.2, 0.8])
+                                              v_signal / 2, 0.05, 0.2, 0.8)
     elapsed_fast = time.perf_counter() - start
 
     self.log_speed(elapsed_slow, elapsed_fast)

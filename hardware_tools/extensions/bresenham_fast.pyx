@@ -112,3 +112,40 @@ def draw(np.ndarray x,
     grid: Grid to interpolate onto
   """
   draw_c(x, y, grid)
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void draw_points_c(np.ndarray[np.int32_t, ndim=1] x,
+         np.ndarray[np.int32_t, ndim=1] y,
+         np.ndarray[np.int32_t, ndim=2] grid):
+  """Plots a series of points onto a grid
+
+  Args:
+    x: Series of x values
+    y: Series of y values
+    grid: Grid to plot onto
+  """
+  cdef Py_ssize_t n = x.shape[0]
+  cdef Py_ssize_t n_x = grid.shape[0]
+  cdef Py_ssize_t n_y = grid.shape[1]
+  cdef Py_ssize_t i
+  cdef np.int32_t x1, y1
+
+  for i in range(n):
+    x1 = x[i]
+    y1 = y[i]
+    if (0 <= x1 < n_x) and (0 <= y1 < n_y):
+      grid[x1, y1] += 1
+
+def draw_points(np.ndarray x,
+         np.ndarray y,
+         np.ndarray grid) -> None:
+  """Plots a series of points onto a grid
+
+  Args:
+    x: Series of x values
+    y: Series of y values
+    grid: Grid to plot onto
+  """
+  draw_points_c(x, y, grid)

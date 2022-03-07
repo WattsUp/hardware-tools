@@ -64,10 +64,14 @@ class Derrived(eyediagram.EyeDiagram):
                      indent: int = 0,
                      debug_plots: str = None) -> None:
     m = eyediagram.Measures()
-    m.mask_margin = 0.5
+    if self._mask is not None:
+      results = eyediagram._runner_sample_mask(  # pylint: disable=protected-access
+          self._waveforms[0][1], self._centers_t[0], self._centers_i[0],
+          self._t_delta, self._t_sym, self._y_zero, self._y_ua, self._mask)
+      m.mask_margin = results["margin"]
+      self._offenders = [results["offenders"]]
+      self._hits = results["hits"]
     self._measures = m
-    self._offenders = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]]
-    self._hits = [[0, 0.5]]
 
   def _draw_grid(self, image_grid: np.ndarray) -> None:
     super()._draw_grid(image_grid)
@@ -100,6 +104,10 @@ class TestEyeDiagram(base.TestBase):
     clocks = np.array([t, clock])
     self.assertRaises(ValueError, Derrived, waveforms, clocks=clocks)
     self.assertRaises(ValueError, Derrived, waveforms, clocks=clock)
+
+    self.assertRaises(KeyError,
+                      eyediagram.Config,
+                      this_keyword_does_not_exist=None)
 
   def test_get_raw_heatmap(self):
     waveforms = np.array([t, y])
@@ -203,6 +211,29 @@ class TestEyeDiagram(base.TestBase):
 
     m = mask.MaskDecagon(0.18, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
     eye = Derrived(waveforms, clocks=clocks, resolution=1000, mask=m)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step4_measure(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step5_stack(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+      eye._calculated = True  # pylint: disable=protected-access
+    self.assertIn("Saved image to", fake_stdout.getvalue())
+    self.assertTrue(os.path.exists(path + ".step5.png"))
+
+    m = eye.get_measures().to_dict()
+    self.assertIsNotNone(m["image_clean"])
+    self.assertIsNotNone(m["image_grid"])
+    self.assertIsNotNone(m["image_mask"])
+    self.assertIsNotNone(m["image_hits"])
+    self.assertIsNotNone(m["image_margin"])
+
+    eye.get_measures().save_images(path)
+
+    path = str(self._TEST_ROOT.joinpath("eyediagram_step5_points"))
+    m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
+    c = eyediagram.Config(point_cloud=True)
+    eye = Derrived(waveforms, clocks=clocks, resolution=1000, mask=m, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access

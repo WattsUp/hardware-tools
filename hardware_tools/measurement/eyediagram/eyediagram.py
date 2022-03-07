@@ -161,6 +161,77 @@ class Measures(ABC):
     return d
 
 
+class Config():
+  """EyeDiagram configuration
+
+  Extend for additional configuration specific to derrived EyeDiagram
+
+  Properties:
+    hysteresis: float, difference between rising and falling thresholds
+    hysteresis_ua: float,  units of normalized amplitude, lower priority
+    levels_n_max: int, Maximum of points in levels histogram
+
+    clock_polarity: ClockPolarity, clock off rising, falling, or both edges
+    cdr: cdr.CDR, clock recovery algorithm, None will use cdr.CDR
+    fallback_period: float, if CDR cannot run (low SNR) fallback period to
+      generate constant clock
+
+    level_width: float, width of histogram for y levels, UI
+    cross_width: float, width of histogram for y cross levels, UI
+    time_hight: float, height of histogram for edge times, UA
+    edge_lower: float, lower threshold for edge times, UA. Rising edge start.
+    edge_upper: float, upper threshold for edge times, UA. Rising edge stop.
+    noise_floor: math.UncertainValue, value of noise floor affecting y levels
+
+    point_cloud: bool, True will disable interpolation when stacking
+  """
+
+  def __init__(self, **kwargs) -> None:
+    """Initialize Configuration
+
+    Args:
+      All kwargs passed to self.consume
+    """
+    # Step 1
+    self.hysteresis = None
+    self.hysteresis_ua = 0.1
+    self.levels_n_max = 10e3
+
+    # Step 2
+    self.clock_polarity = ClockPolarity.RISING
+    self.cdr = None
+    self.fallback_period = 100e-9
+
+    # Step 3
+
+    # Step 4
+    self.level_width = 0.2
+    self.cross_width = 0.1
+    self.time_height = 0.05
+    self.edge_lower = 0.2
+    self.edge_upper = 0.8
+    self.noise_floor = math.UncertainValue(0, 0)
+
+    # Step 5
+    self.point_cloud = False
+
+    self.consume(kwargs)
+
+  def consume(self, config: dict) -> None:
+    """Consume configuration from dictionary
+
+    Args:
+      config: Dictionary of configuration values
+
+    Raises:
+      KeyError if an configuration parameter is unrecognized
+    """
+    for k, v in config.items():
+      if not hasattr(self, k):
+        raise KeyError(f"Unrecognized additional configuration: {k}={v}")
+      setattr(self, k, v)
+
+
 class EyeDiagram(ABC):
   """Eye Diagram to layer repeated waveforms and measure the resultant heat map
 
@@ -173,7 +244,8 @@ class EyeDiagram(ABC):
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
-               resolution: int = 2000) -> None:
+               resolution: int = 2000,
+               config: Config = None) -> None:
     """Create a new EyeDiagram. Lazy creation, does not compute anything
 
     Args:
@@ -187,6 +259,7 @@ class EyeDiagram(ABC):
       y_unit: Real world units of vertical axis, used for print statements
       mask: Mask object used for hit detection, None will not check for hits
       resolution: Resolution of square eye diagram image, 2UI x 2UA
+      config: Configuration settings
 
     Raises:
       ValueError if waveforms or clocks is wrong shape
@@ -221,7 +294,6 @@ class EyeDiagram(ABC):
     self._t_unit = t_unit
     self._y_unit = y_unit
     self._mask = mask
-    # TODO (WattsUp) Add option to disable interpolation, point cloud only
 
     self._resolution = resolution
     self._raw_heatmap = np.zeros((resolution, resolution), dtype=np.int32)
@@ -237,6 +309,11 @@ class EyeDiagram(ABC):
     self._clock_edges = None
 
     self._calculated = False
+
+    if config is None:
+      self._config = Config()
+    else:
+      self._config = config
 
   def calculate(self,
                 n_threads: int = 0,
@@ -536,7 +613,8 @@ class EyeDiagram(ABC):
         self._t_sym,
         min_y,
         max_y,
-        self._resolution
+        self._resolution,
+        self._config.point_cloud
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
     output = self._collect_runners(_runner_stack, args_list, n_threads,
@@ -702,7 +780,8 @@ class EyeDiagram(ABC):
 
 def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
                   centers_i: list[int], t_delta: float, t_sym: float,
-                  min_y: float, max_y: float, resolution: int) -> np.ndarray:
+                  min_y: float, max_y: float, resolution: int,
+                  point_cloud: bool) -> np.ndarray:
   """Stack waveforms and counting overlaps in a heat map
 
   Args:
@@ -716,6 +795,7 @@ def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
     max_y: Upper vertical value for top of grid.
       Grid units = (y - min_y) / (max_y - min_y)
     resolution: Resolution of square eye diagram image, 2UI x 2UA
+    point_cloud: True will not linearly interpolate, False will
 
   Returns:
     2D grid of heat map counts
@@ -738,7 +818,19 @@ def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
 
     td = (((t + 0.5) / 2) * resolution).astype(np.int32)
     yd = (y * resolution).astype(np.int32)
-    bresenham.draw(td, yd, grid)
+    if point_cloud:
+      bresenham.draw_points(td, yd, grid)
+    else:
+      bresenham.draw(td, yd, grid)
+
+  if point_cloud:
+    # Normalize density such that each column has the same number of counts
+    # Since point cloud lacks the interpolation
+    n = len(centers_t)
+    grid = grid.astype(np.float64)
+    for i in range(resolution):
+      grid[i] *= (n / np.sum(grid[i]))
+    grid = grid.astype(np.int32)
 
   return grid
 

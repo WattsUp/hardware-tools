@@ -71,3 +71,18 @@ def draw(x: np.ndarray, y: np.ndarray, grid: np.ndarray) -> None:
     draw_segment(x1, y1, x2, y2, grid)
   if (0 <= x2 < grid.shape[0]) and (0 <= y2 < grid.shape[1]):
     grid[x2, y2] += 1
+
+
+def draw_points(x: np.ndarray, y: np.ndarray, grid: np.ndarray) -> None:
+  """Plots a series of points onto a grid
+
+  Args:
+    x: Series of x values
+    y: Series of y values
+    grid: Grid to plot onto
+  """
+  for i in range(x.size):
+    x1 = x[i]
+    y1 = y[i]
+    if (0 <= x1 < grid.shape[0]) and (0 <= y1 < grid.shape[1]):
+      grid[x1, y1] += 1

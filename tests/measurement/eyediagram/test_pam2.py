@@ -42,10 +42,10 @@ class TestPAM2(base.TestBase):
     pam2.PAM2(waveforms)
     pam2.PAM2(waveforms, clocks=clocks)
 
-    self.assertRaises(KeyError,
+    self.assertRaises(ValueError,
                       pam2.PAM2,
                       waveforms,
-                      this_keyword_does_not_exist=None)
+                      config=eyediagram.Config())
 
   def test_step1(self):
     n = n_scope // 10  # Don't need that many samples to test step 1
@@ -53,7 +53,9 @@ class TestPAM2(base.TestBase):
     waveforms = np.array([t[:n], y[:n]])
 
     noise = np.array([t[:n], self._RNG.uniform(-v_signal, 2 * v_signal, n)])
-    eye = pam2.PAM2(noise, y_0=0, y_1=v_signal, hist_n_max=None)
+
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, levels_n_max=None)
+    eye = pam2.PAM2(noise, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
     self.assertTrue(os.path.exists(path + ".step1.png"))
@@ -71,7 +73,8 @@ class TestPAM2(base.TestBase):
     self.assertTrue(eye._low_snr)  # pylint: disable=protected-access
 
     noise = np.array([t[:n], self._RNG.uniform(-v_signal, 2 * v_signal, n)])
-    eye = pam2.PAM2(noise, y_0=0, y_1=v_signal, hist_n_max=n // 9)
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, levels_n_max=n // 9)
+    eye = pam2.PAM2(noise, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
     self.assertTrue(os.path.exists(path + ".step1.png"))
@@ -89,7 +92,8 @@ class TestPAM2(base.TestBase):
     self.assertTrue(eye._low_snr)  # pylint: disable=protected-access
 
     hysteresis = 0.5
-    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal, hysteresis=hysteresis)
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, hysteresis=hysteresis)
+    eye = pam2.PAM2(waveforms, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
     self.assertEqual("", fake_stdout.getvalue())
@@ -108,11 +112,11 @@ class TestPAM2(base.TestBase):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
 
-    eye = pam2.PAM2(waveforms,
-                    y_0=0,
-                    y_1=v_signal,
-                    cdr=cdr.CDR(t_bit),
-                    clock_polarity=eyediagram.ClockPolarity.RISING)
+    c = pam2.PAM2Config(y_0=0,
+                        y_1=v_signal,
+                        cdr=cdr.CDR(t_bit),
+                        clock_polarity=eyediagram.ClockPolarity.RISING)
+    eye = pam2.PAM2(waveforms, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
@@ -121,12 +125,11 @@ class TestPAM2(base.TestBase):
     self.assertNotIn("Calculating symbol period", fake_stdout)
     self.assertIn("Saved image to", fake_stdout)
 
-    eye = pam2.PAM2(waveforms,
-                    clocks=clocks,
-                    y_0=0,
-                    y_1=v_signal,
-                    fallback_period=t_bit,
-                    clock_polarity=eyediagram.ClockPolarity.RISING)
+    c = pam2.PAM2Config(y_0=0,
+                        y_1=v_signal,
+                        fallback_period=t_bit,
+                        clock_polarity=eyediagram.ClockPolarity.RISING)
+    eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
@@ -136,31 +139,30 @@ class TestPAM2(base.TestBase):
     self.assertIn("Saved image to", fake_stdout)
     self.assertLessEqual(np.abs(len(eye._clock_edges[0]) - n_bits), 1)  # pylint: disable=protected-access
 
-    eye = pam2.PAM2(waveforms,
-                    clocks=clocks,
-                    y_0=0,
-                    y_1=v_signal,
-                    fallback_period=t_bit,
-                    clock_polarity=eyediagram.ClockPolarity.FALLING)
+    c = pam2.PAM2Config(y_0=0,
+                        y_1=v_signal,
+                        fallback_period=t_bit,
+                        clock_polarity=eyediagram.ClockPolarity.FALLING)
+    eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
     self.assertEqual("", fake_stdout.getvalue())
     self.assertLessEqual(np.abs(len(eye._clock_edges[0]) - n_bits), 1)  # pylint: disable=protected-access
 
-    eye = pam2.PAM2(waveforms,
-                    clocks=clocks,
-                    y_0=0,
-                    y_1=v_signal,
-                    fallback_period=t_bit,
-                    clock_polarity=eyediagram.ClockPolarity.BOTH)
+    c = pam2.PAM2Config(y_0=0,
+                        y_1=v_signal,
+                        fallback_period=t_bit,
+                        clock_polarity=eyediagram.ClockPolarity.BOTH)
+    eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
     self.assertEqual("", fake_stdout.getvalue())
     self.assertLessEqual(np.abs(len(eye._clock_edges[0]) - n_bits * 2), 1)  # pylint: disable=protected-access
 
-    eye = pam2.PAM2(waveforms, y_0=0, y_1=v_signal, fallback_period=t_bit)
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, fallback_period=t_bit)
+    eye = pam2.PAM2(waveforms, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._low_snr = True  # pylint: disable=protected-access
@@ -173,7 +175,8 @@ class TestPAM2(base.TestBase):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
 
-    eye = pam2.PAM2(waveforms, clocks=clocks, y_0=0, y_1=v_signal)
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal)
+    eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
@@ -256,14 +259,12 @@ class TestPAM2(base.TestBase):
     waveforms[1, 1], _ = signal.sosfilt(sos, waveforms[1, 1], zi=zi)
 
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
+    c = pam2.PAM2Config(fallback_period=8e-9,
+                        clock_polarity=eyediagram.ClockPolarity.BOTH,
+                        noise_floor=math.UncertainValue(9.80964764e-08,
+                                                        2.50442542e-07))
 
-    eye = pam2.PAM2(waveforms,
-                    fallback_period=8e-9,
-                    clock_polarity=eyediagram.ClockPolarity.BOTH,
-                    resolution=1000,
-                    mask=m,
-                    noise_floor=math.UncertainValue(9.80964764e-08,
-                                                    2.50442542e-07))
+    eye = pam2.PAM2(waveforms, resolution=1000, mask=m, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye.calculate(print_progress=True, n_threads=1, debug_plots=None)
     fake_stdout = fake_stdout.getvalue()

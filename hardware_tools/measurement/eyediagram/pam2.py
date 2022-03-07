@@ -112,6 +112,31 @@ class MeasuresPAM2(eyediagram.Measures):
     self.vecp = None
 
 
+class PAM2Config(eyediagram.Config):
+  """PAM2 Specific configuration
+
+  Properties:
+    y_0: float, manual level for logical zero
+    y_1: float, manual level for logical one
+  """
+
+  def __init__(self, **kwargs) -> None:
+    super().__init__()
+    # Step 1
+    self.y_0 = None
+    self.y_1 = None
+
+    # Step 2
+
+    # Step 3
+
+    # Step 4
+
+    # Step 5
+
+    self.consume(kwargs)
+
+
 class PAM2(eyediagram.EyeDiagram):
   """Eye Diagram to layer repeated waveforms and measure the resultant heat map
 
@@ -125,9 +150,7 @@ class PAM2(eyediagram.EyeDiagram):
                y_unit: str = "",
                mask: Mask = None,
                resolution: int = 2000,
-               y_0: float = None,
-               y_1: float = None,
-               **kwargs) -> None:
+               config: PAM2Config = None) -> None:
     """Create a new PAM2 EyeDiagram. Lazy creation, does not compute anything
 
     Args:
@@ -141,10 +164,7 @@ class PAM2(eyediagram.EyeDiagram):
       y_unit: Real world units of vertical axis, used for print statements
       mask: Mask object used for hit detection, None will not check for hits
       resolution: Resolution of square eye diagram image, 2UI x 2UA
-      y_0: Manually specified value for 0 symbol, None will measure waveform
-      y_1: Manually specified value for 1 symbol, None will measure waveform
-
-      **kwargs: Override default configuration, see source for options
+      config: Configuration settings
 
     Raises:
       ValueError if waveforms or clocks is wrong shape
@@ -154,39 +174,14 @@ class PAM2(eyediagram.EyeDiagram):
                      t_unit=t_unit,
                      y_unit=y_unit,
                      mask=mask,
-                     resolution=resolution)
-    self._y_0 = y_0
-    self._y_1 = y_1
-
-    # TODO (WattsUp) Move config to base class
-    self._config = {
-        # Step 1
-        "hysteresis": None,  # Difference between rising and falling thresholds
-        "hysteresis_ua": 0.1,  # Units of normalized amplitude, lower priority
-        "hist_n_max": 10e3,  # Maximum number of points in a histogram
-
-        # Step 2
-        "clock_polarity": eyediagram.ClockPolarity.RISING,
-        "cdr": None,  # Clock recovery algorithm, None will use cdr.CDR
-        "fallback_period": 100e-9,  # If CDR cannot run (low SNR)
-
-        # Step 3: No configuration
-
-        # Step 4
-        "level_width": 0.2,  # Width of histogram for y_0, y_1, UI
-        "cross_width": 0.1,  # Width of histogram for y_cross, UI
-        "hist_height": 0.05,  # Height of histogram for time windows, UA
-        "edge_location": [0.2, 0.8],  # Location of thresholds for rise/fall
-        # time, UA
-        "noise_floor": math.UncertainValue(
-            0, 0),  # Value of noise floor affecting extinction_ratio
-
-        # Step 5: No configuration
-    }
-    for k, v in kwargs.items():
-      if k not in self._config:
-        raise KeyError(f"Unrecognized additional configuration: {k}={v}")
-      self._config[k] = v
+                     resolution=resolution,
+                     config=None)
+    if config is None:
+      self._config = PAM2Config()
+    elif isinstance(config, PAM2Config):
+      self._config = config
+    else:
+      raise ValueError("config must be of type PAM2Config")
 
   def _step1_levels(self,
                     n_threads: int = 1,
@@ -198,25 +193,26 @@ class PAM2(eyediagram.EyeDiagram):
 
     y_0 = math.UncertainValue(0, 0)
     y_1 = math.UncertainValue(0, 0)
-    if self._y_0 is None or self._y_1 is None or debug_plots is not None:
+    if ((self._config.y_0 is None) or (self._config.y_1 is None) or
+        (debug_plots is not None)):
       waveform_y = self._waveforms[:, 1].flatten()
-      output = _runner_levels(waveform_y, self._config["hist_n_max"])
+      output = _runner_levels(waveform_y, self._config.levels_n_max)
 
       y_min = output["min"]
       y_max = output["max"]
       y_0 = output["0"]
       y_1 = output["1"]
-    if self._y_0 is not None:
-      y_0.value = self._y_0
-    if self._y_1 is not None:
-      y_1.value = self._y_1
+    if self._config.y_0 is not None:
+      y_0.value = self._config.y_0
+    if self._config.y_1 is not None:
+      y_1.value = self._config.y_1
 
     if print_progress:
       print(f"{'':>{indent}}Computing thresholds")
-    if self._config["hysteresis"] is not None:
-      hys = self._config["hysteresis"]
+    if self._config.hysteresis is not None:
+      hys = self._config.hysteresis
     else:
-      hys = self._config["hysteresis_ua"] * (y_1 - y_0).value
+      hys = self._config.hysteresis_ua * (y_1 - y_0).value
 
     self._y_zero = y_0.value
     self._y_ua = (y_1 - y_0).value
@@ -293,12 +289,12 @@ class PAM2(eyediagram.EyeDiagram):
       output = self._collect_runners(edges_ext.get_np, args_list, n_threads,
                                      print_progress, indent + 2)
       for o in output:
-        e = _filter_edge_polarity(o, self._config["clock_polarity"])
+        e = _filter_edge_polarity(o, self._config.clock_polarity)
         periods.append(np.diff(e))
         self._clock_edges.append(e.tolist())
     elif self._low_snr:
       # Generate clock pulses at the fallback_period fixed rate
-      self._t_sym = self._config["fallback_period"]
+      self._t_sym = self._config.fallback_period
 
       for i in range(self._waveforms.shape[0]):
         t = self._waveforms[i][0][0] + self._t_sym
@@ -309,8 +305,8 @@ class PAM2(eyediagram.EyeDiagram):
       if print_progress:
         print(f"{'':>{indent}}Running clock data recovery")
       # Run CDR to generate edges
-      if self._config["cdr"] is None:
-        self._config["cdr"] = cdr.CDR(self._config["fallback_period"])
+      if self._config.cdr is None:
+        self._config.cdr = cdr.CDR(self._config.fallback_period)
       # yapf: disable
       args_list = [[
           self._waveforms[i][0],
@@ -318,8 +314,8 @@ class PAM2(eyediagram.EyeDiagram):
           self._y_rising,
           self._y_half,
           self._y_falling,
-          copy.deepcopy(self._config["cdr"]),
-          self._config["clock_polarity"]
+          copy.deepcopy(self._config.cdr),
+          self._config.clock_polarity
       ] for i in range(self._waveforms.shape[0])]
       # yapf: enable
       output = self._collect_runners(_runner_cdr, args_list, n_threads,
@@ -393,8 +389,8 @@ class PAM2(eyediagram.EyeDiagram):
         self._t_delta,
         t_sym,
         self._y_half,
-        self._config["level_width"],
-        self._config["cross_width"]
+        self._config.level_width,
+        self._config.cross_width
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
     output = self._collect_runners(pam2_ext.sample_vertical, args_list,
@@ -457,8 +453,8 @@ class PAM2(eyediagram.EyeDiagram):
     m.y_cross_r = (m.y_cross - m.y_0) / m.amp
 
     # Computed measures, optical
-    m.extinction_ratio = (m.y_1 - self._config["noise_floor"]) / (
-        m.y_0 - self._config["noise_floor"])
+    m.extinction_ratio = (m.y_1 - self._config.noise_floor) / (
+        m.y_0 - self._config.noise_floor)
     m.oma_cross = m.y_1_cross - m.y_0_cross
     # median_unbiased: "This method is probably the best method if the sample
     # distribution function is unknown"
@@ -471,12 +467,12 @@ class PAM2(eyediagram.EyeDiagram):
       m.vecp = np.log10(m.oma_cross / a_0) * 10
 
     # Update levels if not manual
-    if self._y_0 is None:
+    if self._config.y_0 is None:
       self._y_zero = m.y_0.value
-    if self._y_1 is None:
+    if self._config.y_1 is None:
       self._y_ua = m.amp.value
     else:
-      self._y_ua = self._y_1 - self._y_zero
+      self._y_ua = self._config.y_1 - self._y_zero
     self._y_half = self._y_ua / 2 + self._y_zero
 
     if print_progress:
@@ -492,8 +488,9 @@ class PAM2(eyediagram.EyeDiagram):
         self._y_zero,
         self._y_ua,
         m.y_cross.value,
-        self._config["hist_height"],
-        self._config["edge_location"]
+        self._config.time_height,
+        self._config.edge_lower,
+        self._config.edge_upper
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
     output = self._collect_runners(pam2_ext.sample_horizontal, args_list,
@@ -674,8 +671,8 @@ class PAM2(eyediagram.EyeDiagram):
       pyplot.plot(t, y, color="g", linestyle="--")
 
       # 01 path
-      y_lower = self._config["edge_location"][0] * self._y_ua + self._y_zero
-      y_upper = self._config["edge_location"][1] * self._y_ua + self._y_zero
+      y_lower = self._config.edge_lower * self._y_ua + self._y_zero
+      y_upper = self._config.edge_upper * self._y_ua + self._y_zero
       # yapf: disable
       t = [
           -0.5 * t_sym,
