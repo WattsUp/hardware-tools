@@ -24,7 +24,7 @@ n_bits = int(10e3)
 t_bit = t_scope / n_bits
 f_bit = 1 / t_bit
 bits = signal.max_len_seq(5, length=n_bits)[0]
-t = np.linspace(0, t_scope, n_scope)
+t = np.linspace(0, (n_scope - 1) / f_scope, n_scope)
 v_signal = 3.3
 v_error = v_signal * 0.05
 clock = (signal.square(2 * np.pi * (f_bit * t + 0.5)) + 1) / 2 * v_signal
@@ -244,13 +244,17 @@ class TestPAM2(base.TestBase):
     self.assertTrue(np.isnan(m.y_cross_r.value))
 
   def test_optical_1e8(self):
+    path = str(self._TEST_ROOT.joinpath("eyediagram_pam2-optical-1e8"))
     data_path = str(self._DATA_ROOT.joinpath("pam2-optical-1e8.npz"))
     with np.load(data_path) as file_zip:
       waveforms = file_zip[file_zip.files[0]]
+    waveforms_unfiltered = np.copy(waveforms)
 
     # 4th order bessel filter since O/E converter's is too high bandwidth
     fs = (waveforms.shape[2] - 1) / (waveforms[0, 0, -1] - waveforms[0, 0, 0])
-    f_lp = 0.75 / 8e-9
+    t_sym = 8e-9
+    f_lp = 0.75 / t_sym
+    filter_delay = t_sym / 0.75 / 2.11391767490422 / np.sqrt(2)
     sos = signal.bessel(4, f_lp, fs=fs, output="sos", norm="mag")
 
     zi = signal.sosfilt_zi(sos) * waveforms[0, 1, 0]
@@ -259,12 +263,12 @@ class TestPAM2(base.TestBase):
     waveforms[1, 1], _ = signal.sosfilt(sos, waveforms[1, 1], zi=zi)
 
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
-    c = pam2.PAM2Config(fallback_period=8e-9,
+    c = pam2.PAM2Config(fallback_period=t_sym,
                         clock_polarity=eyediagram.ClockPolarity.BOTH,
                         noise_floor=math.UncertainValue(9.80964764e-08,
                                                         2.50442542e-07))
 
-    eye = pam2.PAM2(waveforms, resolution=1000, mask=m, config=c)
+    eye = pam2.PAM2(waveforms[:1], resolution=1000, mask=m, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye.calculate(print_progress=True, n_threads=1, debug_plots=None)
     fake_stdout = fake_stdout.getvalue()
@@ -293,6 +297,29 @@ class TestPAM2(base.TestBase):
     m = eye.get_measures()
     for k, v in m.to_dict().items():
       self.assertIsNotNone(v, msg=f"Key={k}")
+
+    m.save_images(path)
+
+    path = str(
+        self._TEST_ROOT.joinpath("eyediagram_pam2-optical-1e8-unfiltered"))
+    c = pam2.PAM2Config(noise_floor=math.UncertainValue(9.80964764e-08,
+                                                        2.50442542e-07),
+                        y_0=m.y_0.value,
+                        y_1=m.y_1.value)
+    m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
+
+    eye = pam2.PAM2(waveforms_unfiltered[:1],
+                    clock_edges=eye.get_clock_edges()[:1] - filter_delay,
+                    resolution=1000,
+                    mask=m,
+                    config=c)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye.calculate(print_progress=True, n_threads=1, debug_plots=None)
+
+    m = eye.get_measures()
+    for k, v in m.to_dict().items():
+      self.assertIsNotNone(v, msg=f"Key={k}")
+    m.save_images(path)
 
 
 class TestEyeDiagramMeasuresPAM2(base.TestBase):
@@ -342,6 +369,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     t_1 = self._RNG.uniform(-1, 1)
     t_rise = self._RNG.uniform(-1, 1)
     t_fall = self._RNG.uniform(-1, 1)
+    t_rise_start = self._RNG.uniform(-1, 1)
+    t_fall_start = self._RNG.uniform(-1, 1)
     t_cross = self._RNG.uniform(-1, 1)
 
     f_sym = self._RNG.uniform(-1, 1)
@@ -382,6 +411,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     m.t_1 = t_1
     m.t_rise = t_rise
     m.t_fall = t_fall
+    m.t_rise_start = t_rise_start
+    m.t_fall_start = t_fall_start
     m.t_cross = t_cross
 
     m.f_sym = f_sym
@@ -417,6 +448,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
         "t_1": t_1,
         "t_rise": t_rise,
         "t_fall": t_fall,
+        "t_rise_start": t_rise_start,
+        "t_fall_start": t_fall_start,
         "t_cross": t_cross,
         "f_sym": f_sym,
         "width": width,

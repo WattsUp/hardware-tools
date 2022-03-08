@@ -108,31 +108,31 @@ class Measures(ABC):
     math.Image.np_to_file(self._np_image_margin, f"{basename}.margin.png")
 
   @property
-  def image_clean(self) -> str:
+  def image_clean(self) -> bytes:
     if self._np_image_clean is None:
       return None
     return math.Image.np_to_base64(self._np_image_clean)
 
   @property
-  def image_grid(self) -> str:
+  def image_grid(self) -> bytes:
     if self._np_image_grid is None:
       return None
     return math.Image.np_to_base64(self._np_image_grid)
 
   @property
-  def image_mask(self) -> str:
+  def image_mask(self) -> bytes:
     if self._np_image_mask is None:
       return None
     return math.Image.np_to_base64(self._np_image_mask)
 
   @property
-  def image_hits(self) -> str:
+  def image_hits(self) -> bytes:
     if self._np_image_hits is None:
       return None
     return math.Image.np_to_base64(self._np_image_hits)
 
   @property
-  def image_margin(self) -> str:
+  def image_margin(self) -> bytes:
     if self._np_image_margin is None:
       return None
     return math.Image.np_to_base64(self._np_image_margin)
@@ -241,6 +241,7 @@ class EyeDiagram(ABC):
   def __init__(self,
                waveforms: np.ndarray,
                clocks: np.ndarray = None,
+               clock_edges: np.ndarray = None,
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
@@ -255,6 +256,10 @@ class EyeDiagram(ABC):
       clocks: 3D array of clock waveforms, a 2D array is assumed to be a
         single clock waveform. None will recover the clock from the signal.
         [waveform0([[t0, t1,..., tn], [y0, y1,..., yn]]), waveform1,...]
+      clock_edges: 2D array of clock edges, None will recover the clock edges
+        from the signal or clock waveform. Primarily pass the output of
+        get_clock_edges(), see for example usage.
+        [edges0([t0, t1,..., tn]), edges1,...]
       t_unit: Real world units of horizontal axis, used for print statements
       y_unit: Real world units of vertical axis, used for print statements
       mask: Mask object used for hit detection, None will not check for hits
@@ -265,9 +270,6 @@ class EyeDiagram(ABC):
       ValueError if waveforms or clocks is wrong shape
     """
     super().__init__()
-    # TODO (WattsUp) allow differential signal [t, y_p, y_n]
-    # and produce pos, neg, pos-neg, pos+neg eye diagrams
-    # TODO (WattsUp) add clock_edges and get_clock_edges()
     # TODO (WattsUp) add bathtub curves and extrapolated BER
     # TODO (WattsUp) look into different multithreading due to
     # "waiting for lock"
@@ -288,6 +290,13 @@ class EyeDiagram(ABC):
       if clocks.shape != waveforms.shape:
         raise ValueError("clocks is not same shape as waveforms")
 
+    if clock_edges is not None:
+      if len(clock_edges.shape) != 2:
+        raise ValueError("clock_edges is not 2D")
+      if len(clock_edges) != waveforms.shape[0]:
+        raise ValueError(
+            "clock_edges does not have the same number of waveforms")
+
     self._waveforms = waveforms
     self._clocks = clocks
 
@@ -306,7 +315,7 @@ class EyeDiagram(ABC):
     self._t_delta = (self._waveforms[0, 0, -1] -
                      self._waveforms[0, 0, 0]) / (self._waveforms.shape[2] - 1)
     self._t_sym = None
-    self._clock_edges = None
+    self._clock_edges = clock_edges
 
     self._calculated = False
 
@@ -409,7 +418,6 @@ class EyeDiagram(ABC):
     self._y_zero = 0.0  # pragma: no cover
     self._y_ua = 0.0  # pragma: no cover
 
-  @abstractmethod
   def _step2_clock(self,
                    n_threads: int = 1,
                    print_progress: bool = True,
@@ -417,7 +425,8 @@ class EyeDiagram(ABC):
                    debug_plots: str = None) -> None:
     """Calculation step 2: clock recovery
 
-    Dependent on line encoding and clocks (passed during initialization)
+    Dependent on line encoding and clocks (passed during initialization).
+    This method will use config.fallback_period if self._clock_edges is None
 
     Args:
       n_threads: number of thread to execute across
@@ -426,9 +435,55 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # Derrived classes set these parameters
-    self._clock_edges = [[0.0]]  # pragma: no cover
-    self._t_sym = 0.0  # pragma: no cover
+    _ = n_threads
+    if self._clock_edges is None:
+      self._clock_edges = []
+      # Generate clock pulses at the fallback_period fixed rate
+      for i in range(self._waveforms.shape[0]):
+        t = self._waveforms[i][0][0] + self._config.fallback_period
+        e = np.arange(t, self._waveforms[i][0][-1],
+                      self._config.fallback_period)
+        self._clock_edges.append(e.tolist())
+    self._clock_edges = np.array(self._clock_edges)
+
+    if print_progress:
+      print(f"{'':>{indent}}Calculating symbol period")
+    periods = []
+    for edges in self._clock_edges:
+      periods.append(np.diff(edges))
+
+    # Two pass average to remove outliers arising from idle time
+    periods = np.concatenate(periods)
+    periods = periods[periods < 10 * periods.mean()]
+    t_sym = math.UncertainValue.samples(periods)
+    self._t_sym = t_sym.value
+
+    if debug_plots is not None:
+      debug_plots += ".step2.png"
+
+      def tick_formatter_t(t, _):
+        return strformat.metric_prefix(t, self._t_unit)
+
+      ax = pyplot.gca()
+      formatter_t = pyplot.FuncFormatter(tick_formatter_t)
+
+      pyplot.title("Symbol Period Deviation from " +
+                   strformat.metric_prefix(t_sym.value, self._t_unit))
+      pyplot.hist((periods - t_sym.value),
+                  50,
+                  density=True,
+                  color="b",
+                  alpha=0.5)
+      pyplot.axvline(x=0, color="g")
+      pyplot.axvline(x=(t_sym.stddev), color="y")
+      pyplot.axvline(x=(-t_sym.stddev), color="y")
+      ax.xaxis.set_major_formatter(formatter_t)
+      pyplot.ylabel("Density")
+
+      pyplot.tight_layout()
+      pyplot.savefig(debug_plots, bbox_inches="tight")
+      pyplot.close()
+      print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   def _step3_sample(self,
                     n_threads: int = 1,
@@ -777,6 +832,34 @@ class EyeDiagram(ABC):
       raise RuntimeError("EyeDiagram must be calculated first")
     return self._measures
 
+  def get_clock_edges(self) -> np.ndarray:
+    """Get clock edges found/used during calculation
+
+    Primarily used to pass into EyeDiagram construction such as with/without
+    filter or for differential signal decomposition. Also useful for TIE
+    analysis including jitter decomposition
+
+    waveform_filtered = apply_filter(waveform_raw)
+    eye_filtered = EyeDiagram(waveform_filtered)
+    eye_filtered.calculate()
+
+    clock_edges = eye_filtered.get_clock_edges() # Clock off filtered signal
+    config = Config("same vertical levels as eye_filtered")
+    eye_unfiltered = EyeDiagram(waveform_raw,
+                                clock_edges=clock_edges,
+                                config=config)
+    eye_unfiltered.calculate() # Compare with/without filter
+
+    Returns:
+      Array of clock edges per waveform
+
+    Raises:
+      RuntimeError if EyeDiagram is not calculated first
+    """
+    if not self._calculated:
+      raise RuntimeError("EyeDiagram must be calculated first")
+    return self._clock_edges
+
 
 def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
                   centers_i: list[int], t_delta: float, t_sym: float,
@@ -829,7 +912,7 @@ def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
     n = len(centers_t)
     grid = grid.astype(np.float64)
     for i in range(resolution):
-      grid[i] *= (n / np.sum(grid[i]))
+      grid[i] *= (n / max(1, np.sum(grid[i])))
     grid = grid.astype(np.int32)
 
   return grid

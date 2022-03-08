@@ -26,7 +26,7 @@ n_bits = int(10e3)
 t_bit = t_scope / n_bits
 f_bit = 1 / t_bit
 bits = signal.max_len_seq(5, length=n_bits)[0]
-t = np.linspace(0, t_scope, n_scope)
+t = np.linspace(0, (n_scope - 1) / f_scope, n_scope)
 v_signal = 3.3
 clock = (signal.square(2 * np.pi * (f_bit * t + 0.5)) + 1) / 2 * v_signal
 y = (np.repeat(bits, n_scope / n_bits) +
@@ -44,19 +44,23 @@ class Derrived(eyediagram.EyeDiagram):
                     debug_plots: str = None) -> None:
     self._y_zero = 0
     self._y_ua = v_signal
+    self._low_snr = False
 
   def _step2_clock(self,
                    n_threads: int = 1,
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
-    self._t_sym = t_bit
-    self._clock_edges = []
-    for i in range(self._waveforms.shape[0]):
-      t_start = self._waveforms[i][0][0] - 1 / f_scope / 2 - t_bit / 2
-      e = np.arange(t_start, self._waveforms[i][0][-1], t_bit)
-      self._clock_edges.append(e.tolist())
-    self._clock_edges[-1] = self._clock_edges[-1]
+    if not self._low_snr:
+      self._clock_edges = []
+      for i in range(self._waveforms.shape[0]):
+        t_start = self._waveforms[i][0][0] - 1 / f_scope / 2 - t_bit / 2
+        e = np.arange(t_start, self._waveforms[i][0][-1], t_bit)
+        self._clock_edges.append(e.tolist())
+    super()._step2_clock(n_threads=n_threads,
+                         print_progress=print_progress,
+                         indent=indent,
+                         debug_plots=debug_plots)
 
   def _step4_measure(self,
                      n_threads: int = 1,
@@ -104,6 +108,15 @@ class TestEyeDiagram(base.TestBase):
     clocks = np.array([t, clock])
     self.assertRaises(ValueError, Derrived, waveforms, clocks=clocks)
     self.assertRaises(ValueError, Derrived, waveforms, clocks=clock)
+
+    waveforms = np.array([[t, y], [t, y]])
+    clock_edges = np.array([[], []])
+    Derrived(waveforms, clock_edges=clock_edges)
+
+    clock_edges = np.array([])
+    self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
+    clock_edges = np.array([[]])
+    self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
 
     self.assertRaises(KeyError,
                       eyediagram.Config,
@@ -191,6 +204,24 @@ class TestEyeDiagram(base.TestBase):
     self.assertEqual(output[0], args_list[0][0] + args_list[0][1])
     self.assertEqual(output[1], args_list[1][0] + args_list[1][1])
 
+  def test_step2(self):
+    path = str(self._TEST_ROOT.joinpath("eyediagram_step2"))
+    waveforms = np.array([[t, y]])
+
+    eye = Derrived(waveforms, resolution=1000)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
+    self.assertIn("Saved image to", fake_stdout.getvalue())
+    self.assertTrue(os.path.exists(path + ".step2.png"))
+
+    eye = Derrived(waveforms, resolution=1000)
+    with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+      eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._low_snr = True  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=True, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+    self.assertIn("Calculating symbol period", fake_stdout.getvalue())
+
   def test_step3(self):
     path = str(self._TEST_ROOT.joinpath("eyediagram_step3"))
     waveforms = np.array([[t, y]])
@@ -231,9 +262,20 @@ class TestEyeDiagram(base.TestBase):
     eye.get_measures().save_images(path)
 
     path = str(self._TEST_ROOT.joinpath("eyediagram_step5_points"))
+    c = eyediagram.Config(point_cloud=True,)
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
-    c = eyediagram.Config(point_cloud=True)
-    eye = Derrived(waveforms, clocks=clocks, resolution=1000, mask=m, config=c)
+
+    f_lp = 0.75 / t_bit
+    sos = signal.bessel(4, f_lp, fs=f_scope, output="sos", norm="mag")
+    zi = signal.sosfilt_zi(sos) * y[0]
+    y_filtered, _ = signal.sosfilt(sos, y, zi=zi)
+    waveforms = np.array([t, y_filtered])
+    eye = Derrived(waveforms,
+                   clock_edges=eye.get_clock_edges(),
+                   resolution=1000,
+                   mask=m,
+                   config=c)
+    self.assertRaises(RuntimeError, eye.get_clock_edges)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access

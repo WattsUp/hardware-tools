@@ -17,7 +17,7 @@ t_scope = n_scope / f_scope
 n_bits = int(1e3)
 t_bit = t_scope / n_bits
 bits = signal.max_len_seq(5, length=n_bits)[0]
-t = np.linspace(0, t_scope, n_scope)
+t = np.linspace(0, (n_scope - 1) / f_scope, n_scope)
 v_signal = 3.3
 y = (np.repeat(bits, n_scope / n_bits) +
      _rng.normal(0, 0.05, size=n_scope)) * v_signal
@@ -35,7 +35,8 @@ max_i = n_scope
 centers_i = []
 centers_t = []
 t_zero = t[0]
-clock_edges = np.linspace(t_zero, t_zero + t_bit * (n_bits - 1), n_bits)
+clock_edges = np.linspace(t_zero, t_zero + t_bit * (n_bits - 1),
+                          n_bits) - 0.06 * t_bit  # Delay for filter
 for b in clock_edges:
   center_t = b % t_delta
   center_i = int(((b - t_zero - center_t) / t_delta) + 0.5)
@@ -100,16 +101,15 @@ class TestPAM2(base.TestBase):
                                       t_delta, t_bit, 0.0, v_signal,
                                       v_signal / 2, 0.05, 0.2, 0.8)
 
-    center = -0.066  # Due to filter delay
     target = {
-        "t_rise_lower": center - 0.145,
-        "t_rise_upper": center + 0.165,
-        "t_rise_half": center,
-        "t_fall_lower": center + 0.165,
-        "t_fall_upper": center - 0.145,
-        "t_fall_half": center,
-        "t_cross_left": center,
-        "t_cross_right": center + 1
+        "t_rise_lower": -0.148,
+        "t_rise_upper": 0.168,
+        "t_rise_half": 0,
+        "t_fall_lower": 0.168,
+        "t_fall_upper": -0.148,
+        "t_fall_half": 0,
+        "t_cross_left": 0,
+        "t_cross_right": 1
     }
     for k, v in result.items():
       if k in target:

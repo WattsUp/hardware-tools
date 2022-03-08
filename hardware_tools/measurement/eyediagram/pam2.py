@@ -57,6 +57,8 @@ class MeasuresPAM2(eyediagram.Measures):
     t_1: Mean value of logical 1 duration (y=50% histogram)
     t_rise: Mean value of rising edges lower to upper
     t_fall: Mean value of falling edges upper to lower
+    t_rise_start: Mean value of rising edge lower
+    t_fall_start: Mean value of rising edge upper
     t_cross: Mean value of crossing point
 
     f_sym: Frequency of symbols = 1 / t_sym
@@ -96,6 +98,8 @@ class MeasuresPAM2(eyediagram.Measures):
     self.t_1 = None
     self.t_rise = None
     self.t_fall = None
+    self.t_rise_start = None
+    self.t_fall_start = None
     self.t_cross = None
 
     self.f_sym = None
@@ -146,6 +150,7 @@ class PAM2(eyediagram.EyeDiagram):
   def __init__(self,
                waveforms: np.ndarray,
                clocks: np.ndarray = None,
+               clock_edges: np.ndarray = None,
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
@@ -171,6 +176,7 @@ class PAM2(eyediagram.EyeDiagram):
     """
     super().__init__(waveforms,
                      clocks=clocks,
+                     clock_edges=clock_edges,
                      t_unit=t_unit,
                      y_unit=y_unit,
                      mask=mask,
@@ -272,102 +278,60 @@ class PAM2(eyediagram.EyeDiagram):
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
-    self._clock_edges = []
-    periods = []
-    ties = None
-    if self._clocks is not None:
-      # Get edges from _clocks given clock_polarity
-      # yapf: disable
-      args_list = [[
-          self._clocks[i][0],
-          self._clocks[i][1],
-          self._y_rising,
-          self._y_half,
-          self._y_falling
-      ] for i in range(self._waveforms.shape[0])]
-      # yapf: enable
-      output = self._collect_runners(edges_ext.get_np, args_list, n_threads,
-                                     print_progress, indent + 2)
-      for o in output:
-        e = _filter_edge_polarity(o, self._config.clock_polarity)
-        periods.append(np.diff(e))
-        self._clock_edges.append(e.tolist())
-    elif self._low_snr:
-      # Generate clock pulses at the fallback_period fixed rate
-      self._t_sym = self._config.fallback_period
+    if self._clock_edges is None:
+      if self._clocks is not None:
+        self._clock_edges = []
+        # Get edges from _clocks given clock_polarity
+        # yapf: disable
+        args_list = [[
+            self._clocks[i][0],
+            self._clocks[i][1],
+            self._y_rising,
+            self._y_half,
+            self._y_falling
+        ] for i in range(self._waveforms.shape[0])]
+        # yapf: enable
+        output = self._collect_runners(edges_ext.get_np, args_list, n_threads,
+                                       print_progress, indent + 2)
+        for o in output:
+          e = _filter_edge_polarity(o, self._config.clock_polarity)
+          self._clock_edges.append(e.tolist())
+      elif not self._low_snr:
+        if print_progress:
+          print(f"{'':>{indent}}Running clock data recovery")
+        # Run CDR to generate edges
+        if self._config.cdr is None:
+          self._config.cdr = cdr.CDR(self._config.fallback_period)
+        # yapf: disable
+        args_list = [[
+            self._waveforms[i][0],
+            self._waveforms[i][1],
+            self._y_rising,
+            self._y_half,
+            self._y_falling,
+            copy.deepcopy(self._config.cdr),
+            self._config.clock_polarity
+        ] for i in range(self._waveforms.shape[0])]
+        # yapf: enable
+        output = self._collect_runners(_runner_cdr, args_list, n_threads,
+                                       print_progress, indent + 2)
+        self._clock_edges = []
+        for o in output:
+          self._clock_edges.append(o)
+    super()._step2_clock(n_threads=n_threads,
+                         print_progress=print_progress,
+                         indent=indent,
+                         debug_plots=debug_plots)
 
-      for i in range(self._waveforms.shape[0]):
-        t = self._waveforms[i][0][0] + self._t_sym
-        e = np.arange(t, self._waveforms[i][0][-1], self._t_sym)
-        self._clock_edges.append(e.tolist())
-      return
-    else:
-      if print_progress:
-        print(f"{'':>{indent}}Running clock data recovery")
-      # Run CDR to generate edges
-      if self._config.cdr is None:
-        self._config.cdr = cdr.CDR(self._config.fallback_period)
-      # yapf: disable
-      args_list = [[
-          self._waveforms[i][0],
-          self._waveforms[i][1],
-          self._y_rising,
-          self._y_half,
-          self._y_falling,
-          copy.deepcopy(self._config.cdr),
-          self._config.clock_polarity
-      ] for i in range(self._waveforms.shape[0])]
-      # yapf: enable
-      output = self._collect_runners(_runner_cdr, args_list, n_threads,
-                                     print_progress, indent + 2)
-      ties = []
-      for o in output:
-        self._clock_edges.append(o["edges"])
-        periods.append(np.diff(o["edges"]))
-        ties.append(o["ties"])
+  def _draw_grid(self, image_grid: np.ndarray) -> None:
+    """Draw reference grid
 
-    if print_progress:
-      print(f"{'':>{indent}}Calculating symbol period")
-    # Two pass average to remove outliers arising from idle time
-    periods = np.concatenate(periods)
-    periods = periods[periods < 10 * periods.mean()]
-    t_sym = math.UncertainValue.samples(periods)
-    self._t_sym = t_sym.value
-
-    if debug_plots is not None:
-      debug_plots += ".step2.png"
-
-      def tick_formatter_t(t, _):
-        return strformat.metric_prefix(t, self._t_unit)
-
-      formatter_t = pyplot.FuncFormatter(tick_formatter_t)
-
-      _, subplots = pyplot.subplots(2, 1)
-      subplots[0].set_title("Symbol Period Deviation from " +
-                            strformat.metric_prefix(t_sym.value, self._t_unit))
-      subplots[0].hist((periods - t_sym.value),
-                       50,
-                       density=True,
-                       color="b",
-                       alpha=0.5)
-      subplots[0].axvline(x=0, color="g")
-      subplots[0].axvline(x=(t_sym.stddev), color="y")
-      subplots[0].axvline(x=(-t_sym.stddev), color="y")
-      subplots[0].xaxis.set_major_formatter(formatter_t)
-      subplots[0].set_ylabel("Density")
-
-      subplots[1].set_title("Time Interval Errors")
-      if ties is not None:
-        ties = np.concatenate(ties)
-        subplots[1].hist(ties, 50, density=True, color="b", alpha=0.5)
-      subplots[1].xaxis.set_major_formatter(formatter_t)
-      subplots[1].set_ylabel("Density")
-      subplots[1].set_xlabel("Time")
-
-      pyplot.tight_layout()
-      pyplot.savefig(debug_plots, bbox_inches="tight")
-      pyplot.close()
-      print(f"{'':>{indent}}Saved image to {debug_plots}")
+    Args:
+      image_grid: Image to draw onto, [x, y] coordinates
+    """
+    super()._draw_grid(image_grid)
+    image_grid[::5, self._uia_to_image(self._config.edge_lower), 3] = 1.0
+    image_grid[::5, self._uia_to_image(self._config.edge_upper), 3] = 1.0
 
   def _step4_measure(self,
                      n_threads: int = 1,
@@ -555,6 +519,8 @@ class PAM2(eyediagram.EyeDiagram):
     m.t_1 = t_fall_half - t_rise_half + t_sym
     m.t_rise = t_rise_upper - t_rise_lower
     m.t_fall = t_fall_lower - t_fall_upper
+    m.t_rise_start = t_rise_lower
+    m.t_fall_start = t_fall_upper
     m.t_cross = t_cross_left
 
     m.f_sym = math.UncertainValue(1, 0) / m.t_sym
@@ -866,7 +832,7 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
 
 def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
                 y_half: float, y_fall: float, cdr_obj: cdr.CDR,
-                polarity: eyediagram.ClockPolarity) -> dict:
+                polarity: eyediagram.ClockPolarity) -> list[float]:
   """Recover a clock from the data signal
 
   Args:
@@ -879,10 +845,8 @@ def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
     polarity: Polarity of data edges to clock off of
 
   Returns:
-    Dictionary of values:
-      edges: List of clock edges in time
-      ties: List of Time Interval Errors (TIEs)
+    List of clock edges in time
   """
   data_edges = edges_ext.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
   results = cdr_obj.run(_filter_edge_polarity(data_edges, polarity))
-  return {"edges": results[0], "ties": results[1]}
+  return results[0]
