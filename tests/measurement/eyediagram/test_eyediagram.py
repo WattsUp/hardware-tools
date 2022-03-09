@@ -53,10 +53,12 @@ class Derrived(eyediagram.EyeDiagram):
                    debug_plots: str = None) -> None:
     if not self._low_snr:
       self._clock_edges = []
+      self._ties = []
       for i in range(self._waveforms.shape[0]):
         t_start = self._waveforms[i][0][0] - 1 / f_scope / 2 - t_bit / 2
         e = np.arange(t_start, self._waveforms[i][0][-1], t_bit)
         self._clock_edges.append(e.tolist())
+        self._ties.append(_rng.normal(0, 0.1 * t_bit, size=n_bits).tolist())
     super()._step2_clock(n_threads=n_threads,
                          print_progress=print_progress,
                          indent=indent,
@@ -75,6 +77,11 @@ class Derrived(eyediagram.EyeDiagram):
       m.mask_margin = results["margin"]
       self._offenders = [results["offenders"]]
       self._hits = results["hits"]
+    m.bathtub_curves = self._generate_bathtub_curves(
+        {"Eye 0": 0.5},
+        n_threads=n_threads,
+        print_progress=print_progress,
+        indent=indent)
     self._measures = m
 
   def _draw_grid(self, image_grid: np.ndarray) -> None:
@@ -110,12 +117,14 @@ class TestEyeDiagram(base.TestBase):
     self.assertRaises(ValueError, Derrived, waveforms, clocks=clock)
 
     waveforms = np.array([[t, y], [t, y]])
-    clock_edges = np.array([[], []])
+    clock_edges = [[], []]
     Derrived(waveforms, clock_edges=clock_edges)
 
-    clock_edges = np.array([])
+    clock_edges = np.array([[], []])
     self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
-    clock_edges = np.array([[]])
+    clock_edges = [None, None]
+    self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
+    clock_edges = [[]]
     self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
 
     self.assertRaises(KeyError,
@@ -219,8 +228,10 @@ class TestEyeDiagram(base.TestBase):
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
       eye._low_snr = True  # pylint: disable=protected-access
-      eye._step2_clock(print_progress=True, n_threads=1, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=True, n_threads=1, debug_plots=path)  # pylint: disable=protected-access
     self.assertIn("Calculating symbol period", fake_stdout.getvalue())
+    self.assertIn("Saved image to", fake_stdout.getvalue())
+    self.assertTrue(os.path.exists(path + ".step2.png"))
 
   def test_step3(self):
     path = str(self._TEST_ROOT.joinpath("eyediagram_step3"))
@@ -325,12 +336,15 @@ class TestEyeDiagramMeasures(base.TestBase):
     np_hits = self._RNG.uniform(0.0, 1.0, size=shape)
     np_margin = self._RNG.uniform(0.0, 1.0, size=shape)
 
+    bathtub_curves = {"Eye 0": self._RNG.uniform(0.0, 1.0, size=(2, n_sym))}
+
     m = eyediagram.Measures()
     m.n_samples = n_samples
     m.n_sym = n_sym
     m.n_sym_bad = n_sym_bad
     m.transition_dist = transition_dist
     m.mask_margin = mask_margin
+    m.bathtub_curves = bathtub_curves
 
     d = {
         "n_samples": n_samples,
@@ -338,6 +352,7 @@ class TestEyeDiagramMeasures(base.TestBase):
         "n_sym_bad": n_sym_bad,
         "mask_margin": mask_margin,
         "transition_dist": transition_dist,
+        "bathtub_curves": bathtub_curves,
         "image_clean": None,
         "image_grid": None,
         "image_mask": None,
@@ -356,6 +371,7 @@ class TestEyeDiagramMeasures(base.TestBase):
         "n_sym_bad": n_sym_bad,
         "mask_margin": mask_margin,
         "transition_dist": transition_dist,
+        "bathtub_curves": bathtub_curves,
         "image_clean": math.Image.np_to_base64(np_clean),
         "image_grid": math.Image.np_to_base64(np_grid),
         "image_mask": math.Image.np_to_base64(np_mask),

@@ -51,6 +51,10 @@ class Measures(ABC):
     image_mask: image of unadjusted mask
     image_hits: subset of mask hits and offending waveforms
     image_margin: image of margin adjusted mask
+    bathtub_curves: bathtub BER curves
+      dict{
+        slice_level_0: np.array([[t0, t1,..., tn], [ber0, ber1,..., bern]]),
+        slice_level_1:...}
   """
 
   def __init__(self) -> None:
@@ -69,6 +73,8 @@ class Measures(ABC):
     self._np_image_mask = None
     self._np_image_hits = None
     self._np_image_margin = None
+
+    self.bathtub_curves = None
 
   def set_images(self, np_clean: np.ndarray, np_grid: np.ndarray,
                  np_mask: np.ndarray, np_hits: np.ndarray,
@@ -241,7 +247,7 @@ class EyeDiagram(ABC):
   def __init__(self,
                waveforms: np.ndarray,
                clocks: np.ndarray = None,
-               clock_edges: np.ndarray = None,
+               clock_edges: list[list[float]] = None,
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
@@ -270,7 +276,6 @@ class EyeDiagram(ABC):
       ValueError if waveforms or clocks is wrong shape
     """
     super().__init__()
-    # TODO (WattsUp) add bathtub curves and extrapolated BER
     # TODO (WattsUp) look into different multithreading due to
     # "waiting for lock"
     if len(waveforms.shape) == 2:
@@ -291,11 +296,13 @@ class EyeDiagram(ABC):
         raise ValueError("clocks is not same shape as waveforms")
 
     if clock_edges is not None:
-      if len(clock_edges.shape) != 2:
-        raise ValueError("clock_edges is not 2D")
+      if not isinstance(clock_edges, list):
+        raise ValueError("clock_edges is not list")
       if len(clock_edges) != waveforms.shape[0]:
         raise ValueError(
             "clock_edges does not have the same number of waveforms")
+      if not isinstance(clock_edges[0], list):
+        raise ValueError("clock_edges is not 2D")
 
     self._waveforms = waveforms
     self._clocks = clocks
@@ -316,6 +323,7 @@ class EyeDiagram(ABC):
                      self._waveforms[0, 0, 0]) / (self._waveforms.shape[2] - 1)
     self._t_sym = None
     self._clock_edges = clock_edges
+    self._ties = None
 
     self._calculated = False
 
@@ -438,13 +446,14 @@ class EyeDiagram(ABC):
     _ = n_threads
     if self._clock_edges is None:
       self._clock_edges = []
+      self._ties = []
       # Generate clock pulses at the fallback_period fixed rate
       for i in range(self._waveforms.shape[0]):
         t = self._waveforms[i][0][0] + self._config.fallback_period
         e = np.arange(t, self._waveforms[i][0][-1],
                       self._config.fallback_period)
         self._clock_edges.append(e.tolist())
-    self._clock_edges = np.array(self._clock_edges)
+        self._ties.append([])
 
     if print_progress:
       print(f"{'':>{indent}}Calculating symbol period")
@@ -464,21 +473,29 @@ class EyeDiagram(ABC):
       def tick_formatter_t(t, _):
         return strformat.metric_prefix(t, self._t_unit)
 
-      ax = pyplot.gca()
       formatter_t = pyplot.FuncFormatter(tick_formatter_t)
 
-      pyplot.title("Symbol Period Deviation from " +
-                   strformat.metric_prefix(t_sym.value, self._t_unit))
-      pyplot.hist((periods - t_sym.value),
-                  50,
-                  density=True,
-                  color="b",
-                  alpha=0.5)
-      pyplot.axvline(x=0, color="g")
-      pyplot.axvline(x=(t_sym.stddev), color="y")
-      pyplot.axvline(x=(-t_sym.stddev), color="y")
-      ax.xaxis.set_major_formatter(formatter_t)
-      pyplot.ylabel("Density")
+      _, subplots = pyplot.subplots(2, 1)
+      subplots[0].set_title("Symbol Period Deviation from " +
+                            strformat.metric_prefix(t_sym.value, self._t_unit))
+      subplots[0].hist((periods - t_sym.value),
+                       50,
+                       density=True,
+                       color="b",
+                       alpha=0.5)
+      subplots[0].axvline(x=0, color="g")
+      subplots[0].axvline(x=(t_sym.stddev), color="y")
+      subplots[0].axvline(x=(-t_sym.stddev), color="y")
+      subplots[0].xaxis.set_major_formatter(formatter_t)
+      subplots[0].set_ylabel("Density")
+
+      subplots[1].set_title("Time Interval Errors")
+      ties = np.concatenate(self._ties)
+      if ties.size > 0:
+        subplots[1].hist(ties, 50, density=True, color="b", alpha=0.5)
+      subplots[1].xaxis.set_major_formatter(formatter_t)
+      subplots[1].set_ylabel("Density")
+      subplots[1].set_xlabel("Time")
 
       pyplot.tight_layout()
       pyplot.savefig(debug_plots, bbox_inches="tight")
@@ -594,6 +611,64 @@ class EyeDiagram(ABC):
     self._measures = Measures()  # pragma: no cover
     self._offenders = [[]]  # pragma: no cover list[list[indices]]
     self._hits = [[]]  # pragma: no cover list[[t_UI, y_UA]]
+
+  def _generate_bathtub_curves(self,
+                               y_slices: dict,
+                               n_threads: int = 1,
+                               print_progress: bool = True,
+                               indent: int = 0) -> dict:
+    """Generate bathtub BER curves
+
+    Args:
+      y_slices: levels to slice at, UA
+      n_threads: number of thread to execute across
+      print_progress: True will print statements along the way, False will not.
+      indent: Indent all print statements that much
+
+    Returns:
+      dict of curves, same keys as y_slices
+      {
+        slice_level_0: np.array([[t0, t1,..., tn], [ber0, ber1,..., bern]]),
+        slice_level_1:...}
+    """
+    levels = y_slices.values()
+    # yapf: disable
+    args_list = [[
+        self._waveforms[i][1],
+        self._centers_t[i],
+        self._centers_i[i],
+        self._t_delta,
+        self._t_sym,
+        self._y_zero,
+        self._y_ua,
+        levels
+    ] for i in range(self._waveforms.shape[0])]
+    # yapf: enable
+    output = self._collect_runners(_runner_y_slice, args_list, n_threads,
+                                   print_progress, indent + 2)
+
+    curves = {}
+    for i, key in enumerate(y_slices):
+      hits = []
+      for o in output:
+        hits.extend(o[i])
+      hits = np.sort(hits)
+      hits_left = hits[hits <= 0.5]
+      hits_right = hits[hits > 0.5]
+
+      n = len(hits_left)
+      t_left = hits_left
+      ber_left = (1 - np.arange(n) / n)
+
+      n = len(hits_right)
+      t_right = hits_right
+      ber_right = (1 - np.arange(n)[::-1] / n)
+
+      t = np.concatenate([[0.0], t_left, t_right, [1.0]])
+      ber = np.concatenate([[1], ber_left, ber_right, [1]])
+
+      curves[key] = np.array([t, ber])
+    return curves
 
   def _draw_grid(self, image_grid: np.ndarray) -> None:
     """Draw reference grid
@@ -832,7 +907,7 @@ class EyeDiagram(ABC):
       raise RuntimeError("EyeDiagram must be calculated first")
     return self._measures
 
-  def get_clock_edges(self) -> np.ndarray:
+  def get_clock_edges(self) -> list[list[float]]:
     """Get clock edges found/used during calculation
 
     Primarily used to pass into EyeDiagram construction such as with/without
@@ -1028,3 +1103,54 @@ def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
       mask_adj = mask.adjust(values["margin"])
 
   return values
+
+
+def _runner_y_slice(waveform_y: np.ndarray, centers_t: list[float],
+                    centers_i: list[int], t_delta: float, t_sym: float,
+                    y_zero: float, y_ua: float,
+                    y_slices: list[float]) -> list[list[float]]:
+  """Slice waveform at a level and record position of intersections
+
+  Args:
+    waveform_y: Waveform data array [y0, y1,..., yn]
+    centers_t: List of symbol centers in time for sub t_delta alignment.
+      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
+    centers_i: List of symbol centers indices
+    t_delta: Time between samples
+    t_sym: Duration of one symbol
+    y_zero: Amplitude of a logical 0
+    y_ua: Normalized amplitude
+    y_slices: Amplitudes of slices for hits (normally threshold level)
+
+  Returns:
+    list per y_slice level containing
+    list of intersections in time
+  """
+  i_width = int((t_sym / t_delta) + 0.5) + 2
+  t_width_ui = (i_width * t_delta / t_sym)
+
+  n = i_width * 2 + 1
+  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
+
+  waveform_y = (waveform_y - y_zero) / y_ua
+
+  slices = []
+  paths = []
+  n_slices = len(y_slices)
+  for y_slice in y_slices:
+    slices.append([])
+    paths.append([(0.0, y_slice), (1.0, y_slice)])
+
+  for i in range(len(centers_t)):
+    c_i = centers_i[i]
+    c_t = centers_t[i] / t_sym
+
+    t = t0 + c_t
+    y = waveform_y[c_i - i_width:c_i + i_width + 1]
+
+    for ii in range(n_slices):
+      hits = intersections.get_hits_np(t, y, [paths[ii]])
+      if hits.size > 0:
+        slices[ii].extend(hits[:, 0].tolist())
+
+  return slices

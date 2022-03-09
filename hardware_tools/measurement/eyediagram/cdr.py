@@ -12,17 +12,20 @@ class CDR:
   Base generates a constant clock with minimum mean squared error
   """
 
-  def __init__(self, t_sym: float) -> None:
+  def __init__(self, t_sym: float, fixed_period: bool = False) -> None:
     """Initialize CDR
 
     Args:
       t_sym: Initial PLL period for a single symbol
+      fixed_period: True will only let CDR adjust phase, False allows period
+        and phase adjustment
     """
     self._t_sym_initial = t_sym
     self._t_sym_initial_error = 0.01
     self._avg_sym_min = 0.9
     self._avg_sym_max = 5
     self._max_correctable_disjoints = 10
+    self._fixed_period = fixed_period
 
   def run(self, data_edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Run CDR to generate clock edges from data edges
@@ -35,7 +38,7 @@ class CDR:
       data_edges: List of data edges in time domain
 
     Returns:
-      List of clock edges in time domain.
+      List of clock edges in the time domain.
       List of Time Interval Errors (TIEs).
 
     Raises:
@@ -60,15 +63,16 @@ class CDR:
           "Average number of symbol between edges outside of allowable bounds"
           f" {self._avg_sym_min} < {avg_sym} < {self._avg_sym_max}")
 
-    # Step 2: Minimize number of TIE disjoints
-    t_sym = cdr_ext.minimize_tie_disjoints(
-        data_edges,
-        t_min=t_sym * (1 - self._t_sym_initial_error),
-        t_max=t_sym * (1 + self._t_sym_initial_error),
-        tol=self._max_correctable_disjoints)
+    if not self._fixed_period:
+      # Step 2: Minimize number of TIE disjoints
+      t_sym = cdr_ext.minimize_tie_disjoints(
+          data_edges,
+          t_min=t_sym * (1 - self._t_sym_initial_error),
+          t_max=t_sym * (1 + self._t_sym_initial_error),
+          tol=self._max_correctable_disjoints)
 
-    # Step 3: Remove linear drift from TIEs
-    t_sym = cdr_ext.detrend_ties(data_edges, t_sym)
+      # Step 3: Remove linear drift from TIEs
+      t_sym = cdr_ext.detrend_ties(data_edges, t_sym)
 
     # Step 4: Adjust t_start for zero mean ties
     ties = (data_edges - t_start + t_sym / 2) % t_sym - t_sym / 2

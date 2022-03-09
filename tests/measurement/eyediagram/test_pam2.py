@@ -308,8 +308,13 @@ class TestPAM2(base.TestBase):
                         y_1=m.y_1.value)
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
 
+    clock_edges = eye.get_clock_edges()
+    for edges in clock_edges:
+      for ii in range(len(edges)):
+        edges[ii] -= filter_delay
+
     eye = pam2.PAM2(waveforms_unfiltered[:1],
-                    clock_edges=eye.get_clock_edges()[:1] - filter_delay,
+                    clock_edges=clock_edges,
                     resolution=1000,
                     mask=m,
                     config=c)
@@ -350,6 +355,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     np_mask = self._RNG.uniform(0.0, 1.0, size=shape)
     np_hits = self._RNG.uniform(0.0, 1.0, size=shape)
     np_margin = self._RNG.uniform(0.0, 1.0, size=shape)
+
+    bathtub_curves = {"Eye 0": self._RNG.uniform(0.0, 1.0, size=(2, n_sym))}
 
     y_0 = self._RNG.uniform(-1, 1)
     y_1 = self._RNG.uniform(-1, 1)
@@ -392,6 +399,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     m.n_sym_bad = n_sym_bad
     m.transition_dist = transition_dist
     m.mask_margin = mask_margin
+    m.bathtub_curves = bathtub_curves
 
     m.y_0 = y_0
     m.y_1 = y_1
@@ -433,6 +441,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
         "n_sym_bad": n_sym_bad,
         "mask_margin": mask_margin,
         "transition_dist": transition_dist,
+        "bathtub_curves": bathtub_curves,
         "y_0": y_0,
         "y_1": y_1,
         "y_cross": y_cross,

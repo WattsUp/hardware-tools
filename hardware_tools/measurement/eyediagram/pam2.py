@@ -150,7 +150,7 @@ class PAM2(eyediagram.EyeDiagram):
   def __init__(self,
                waveforms: np.ndarray,
                clocks: np.ndarray = None,
-               clock_edges: np.ndarray = None,
+               clock_edges: list[list[float]] = None,
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
@@ -165,6 +165,10 @@ class PAM2(eyediagram.EyeDiagram):
       clocks: 3D array of clock waveforms, a 2D array is assumed to be a
         single clock waveform. None will recover the clock from the signal.
         [waveform0([[t0, t1,..., tn], [y0, y1,..., yn]]), waveform1,...]
+      clock_edges: 2D array of clock edges, None will recover the clock edges
+        from the signal or clock waveform. Primarily pass the output of
+        get_clock_edges(), see for example usage.
+        [edges0([t0, t1,..., tn]), edges1,...]
       t_unit: Real world units of horizontal axis, used for print statements
       y_unit: Real world units of vertical axis, used for print statements
       mask: Mask object used for hit detection, None will not check for hits
@@ -281,6 +285,7 @@ class PAM2(eyediagram.EyeDiagram):
     if self._clock_edges is None:
       if self._clocks is not None:
         self._clock_edges = []
+        self._ties = []
         # Get edges from _clocks given clock_polarity
         # yapf: disable
         args_list = [[
@@ -296,6 +301,7 @@ class PAM2(eyediagram.EyeDiagram):
         for o in output:
           e = _filter_edge_polarity(o, self._config.clock_polarity)
           self._clock_edges.append(e.tolist())
+          self._ties.append([])
       elif not self._low_snr:
         if print_progress:
           print(f"{'':>{indent}}Running clock data recovery")
@@ -316,8 +322,10 @@ class PAM2(eyediagram.EyeDiagram):
         output = self._collect_runners(_runner_cdr, args_list, n_threads,
                                        print_progress, indent + 2)
         self._clock_edges = []
+        self._ties = []
         for o in output:
-          self._clock_edges.append(o)
+          self._clock_edges.append(o[0].tolist())
+          self._ties.append(o[1].tolist())
     super()._step2_clock(n_threads=n_threads,
                          print_progress=print_progress,
                          indent=indent,
@@ -576,6 +584,12 @@ class PAM2(eyediagram.EyeDiagram):
       m.mask_margin = margin
       m.n_sym_bad = offender_count
 
+    m.bathtub_curves = self._generate_bathtub_curves(
+        {"Eye 0": 0.5},
+        n_threads=n_threads,
+        print_progress=print_progress,
+        indent=indent)
+
     self._measures = m
 
     if print_progress:
@@ -593,11 +607,12 @@ class PAM2(eyediagram.EyeDiagram):
         return strformat.metric_prefix(y, self._y_unit)
 
       formatter_y = pyplot.FuncFormatter(tick_formatter_y)
+      _, subplots = pyplot.subplots(2, 1)
 
       # 00 path
       t = [-0.5 * t_sym, 0.0, 0.5 * t_sym]
       y = [m.y_0.value, m.y_0_cross.value, m.y_0.value]
-      pyplot.plot(t, y, color="r")
+      subplots[0].plot(t, y, color="r")
       # yapf: disable
       y = [
           m.y_0.value + m.y_0.stddev,
@@ -605,7 +620,7 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_0.value + m.y_0.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="r", linestyle="--")
+      subplots[0].plot(t, y, color="r", linestyle="--")
       # yapf: disable
       y = [
           m.y_0.value - m.y_0.stddev,
@@ -613,12 +628,12 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_0.value - m.y_0.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="r", linestyle="--")
+      subplots[0].plot(t, y, color="r", linestyle="--")
 
       # 11 path
       t = [-0.5 * t_sym, 0.0, 0.5 * t_sym]
       y = [m.y_1.value, m.y_1_cross.value, m.y_1.value]
-      pyplot.plot(t, y, color="g")
+      subplots[0].plot(t, y, color="g")
       # yapf: disable
       y = [
           m.y_1.value + m.y_1.stddev,
@@ -626,7 +641,7 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_1.value + m.y_1.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="g", linestyle="--")
+      subplots[0].plot(t, y, color="g", linestyle="--")
       # yapf: disable
       y = [
           m.y_1.value - m.y_1.stddev,
@@ -634,7 +649,7 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_1.value - m.y_1.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="g", linestyle="--")
+      subplots[0].plot(t, y, color="g", linestyle="--")
 
       # 01 path
       y_lower = self._config.edge_lower * self._y_ua + self._y_zero
@@ -657,7 +672,7 @@ class PAM2(eyediagram.EyeDiagram):
       # yapf: enable
       slope_lower = (y[1] - y[0]) / (t[1] - t[0])
       slope_upper = (y[4] - y[3]) / (t[4] - t[3])
-      pyplot.plot(t, y, color="b")
+      subplots[0].plot(t, y, color="b")
       # yapf: disable
       t = [
           -0.5 * t_sym,
@@ -674,7 +689,7 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_1.value + m.y_1.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="b", linestyle="--")
+      subplots[0].plot(t, y, color="b", linestyle="--")
       # yapf: disable
       t = [
           -0.5 * t_sym,
@@ -691,7 +706,7 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_1.value - m.y_1.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="b", linestyle="--")
+      subplots[0].plot(t, y, color="b", linestyle="--")
 
       # 10 path
       # yapf: disable
@@ -712,7 +727,7 @@ class PAM2(eyediagram.EyeDiagram):
       # yapf: enable
       slope_upper = (y[1] - y[0]) / (t[1] - t[0])
       slope_lower = (y[4] - y[3]) / (t[4] - t[3])
-      pyplot.plot(t, y, color="y")
+      subplots[0].plot(t, y, color="y")
       # yapf: disable
       t = [
           -0.5 * t_sym,
@@ -729,7 +744,7 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_0.value - m.y_0.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="y", linestyle="--")
+      subplots[0].plot(t, y, color="y", linestyle="--")
       # yapf: disable
       t = [
           -0.5 * t_sym,
@@ -746,13 +761,19 @@ class PAM2(eyediagram.EyeDiagram):
           m.y_0.value + m.y_0.stddev
       ]
       # yapf: enable
-      pyplot.plot(t, y, color="y", linestyle="--")
+      subplots[0].plot(t, y, color="y", linestyle="--")
 
-      ax = pyplot.gca()
-      ax.xaxis.set_major_formatter(formatter_t)
-      ax.yaxis.set_major_formatter(formatter_y)
+      subplots[0].xaxis.set_major_formatter(formatter_t)
+      subplots[0].yaxis.set_major_formatter(formatter_y)
+      subplots[0].set_title("Simplified Eye")
 
-      pyplot.title("Simplified Eye")
+      for key, curve in m.bathtub_curves.items():
+        t = curve[0]
+        y = curve[1]
+        subplots[1].semilogy(t, y, label=key)
+      subplots[1].set_title("Bathtub curves")
+      subplots[1].legend(loc="upper center")
+
       pyplot.tight_layout()
       pyplot.savefig(debug_plots, bbox_inches="tight")
       pyplot.close()
@@ -830,9 +851,10 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   }
 
 
-def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
-                y_half: float, y_fall: float, cdr_obj: cdr.CDR,
-                polarity: eyediagram.ClockPolarity) -> list[float]:
+def _runner_cdr(
+    waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
+    y_half: float, y_fall: float, cdr_obj: cdr.CDR,
+    polarity: eyediagram.ClockPolarity) -> tuple[np.ndarray, np.ndarray]:
   """Recover a clock from the data signal
 
   Args:
@@ -845,8 +867,8 @@ def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
     polarity: Polarity of data edges to clock off of
 
   Returns:
-    List of clock edges in time
+    List of clock edges in the time domain.
+    List of Time Interval Errors (TIEs).
   """
   data_edges = edges_ext.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
-  results = cdr_obj.run(_filter_edge_polarity(data_edges, polarity))
-  return results[0]
+  return cdr_obj.run(_filter_edge_polarity(data_edges, polarity))

@@ -21,14 +21,14 @@ class TestCDR(base.TestBase):
     super().__init__(*args, **kwargs)
     self._cdr = None
 
-  def _plot(self, out, ties, ties_fit=None):
+  def _plot(self, out, ties, edges, ties_fit=None):
     from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
     _, subplots = pyplot.subplots(3, 1)
     periods = np.diff(out)
     subplots[0].plot(np.array(periods) / self._t_sym - 1)
     subplots[0].set_ylabel("UI")
-    subplots[0].set_title("Period error")
-    subplots[1].plot(ties / self._t_sym)
+    subplots[0].set_title(f"{self._testMethodName}: Period error")
+    subplots[1].plot(edges, ties / self._t_sym)
     subplots[1].set_title("Time interval error")
     subplots[1].set_ylabel("UI")
     subplots[2].hist(ties / self._t_sym, 50, density=True, alpha=0.5)
@@ -130,6 +130,28 @@ class TestCDR(base.TestBase):
 
     out, ties = self._cdr.run(edges)
     self._validate_quality(out, ties)
+
+  def test_fixed_period(self):
+    factor = 1 + self._RNG.uniform(10e-6, 50e-6)
+    self._cdr._t_sym_initial = self._t_sym * factor  # pylint: disable=protected-access
+    self._cdr._fixed_period = True  # pylint: disable=protected-access
+
+    edges = clock.edges(t_sym=self._t_sym, n=self._n_sym)
+    edges = self._adjust_edges(edges)
+
+    out, ties = self._cdr.run(edges)
+    # self._plot(out, ties, edges)
+    periods = np.diff(out)
+
+    # Within 100ppm accuracy
+    self.assertEqualWithinError(self._t_sym * factor, periods.mean(), 1e-6)
+
+    # Lower than 100ppm rms jitter and 1000ppm peak-to-peak jitter
+    self.assertEqualWithinError(0, periods.std(), 100e-6)
+    self.assertEqualWithinError(0, periods.ptp(), 1000e-6)
+
+    # Average TIE should be zero due to de-trending
+    self.assertEqualWithinError(0, ties.mean(), 100e-6)
 
   def test_random_jitter(self):
     t_rj = 0.002 * self._t_sym
@@ -241,7 +263,7 @@ class TestCDR(base.TestBase):
     self._t_sym = 8.000084e-9
     self._cdr._t_sym_initial = 8e-9  # pylint: disable=protected-access
     out, ties = self._cdr.run(edges)
-    # self._plot(out, ties)
+    # self._plot(out, ties, edges)
     periods = np.diff(out)
 
     # Within 100ppm accuracy
@@ -267,7 +289,7 @@ class TestCDR(base.TestBase):
     self._t_sym = 7.999799e-10
     self._cdr._t_sym_initial = 8e-10  # pylint: disable=protected-access
     out, ties = self._cdr.run(edges)
-    # self._plot(out, ties)
+    # self._plot(out, ties, edges)
     periods = np.diff(out)
 
     # Within 100ppm accuracy
