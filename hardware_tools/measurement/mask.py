@@ -116,17 +116,17 @@ class MaskDecagon(Mask):
     ]
 
     path_upper = [
-      (0, 1e3),
+      (0, 2),
       (0, 1 + y4),
       (1, 1 + y4),
-      (1, 1e3)
+      (1, 2)
     ]
 
     path_lower = [
-      (0, -1e3),
+      (0, -1),
       (0, -y3),
       (1, -y3),
-      (1, -1e3)
+      (1, -1)
     ]
     # yapf: enable
 

@@ -86,12 +86,8 @@ cdef dict sample_vertical_c(
   }
 
   cdef Py_ssize_t i, ii, c_i
-  cdef np.float64_t c_t, t, y, sym_a, sym_b, sym_c
+  cdef np.float64_t c_t, t, y, sym_a, sym_b, sym_c, n_a, n_b, n_c
   cdef str seq
-
-  cdef list samples_a = []
-  cdef list samples_b = []
-  cdef list samples_c = []
 
   cdef list samples_sym = []
   cdef list samples_cross = []
@@ -100,9 +96,12 @@ cdef dict sample_vertical_c(
     c_i = centers_i[i]
     c_t = centers_t[i] / t_sym
 
-    samples_a = []
-    samples_b = []
-    samples_c = []
+    sym_a = 0
+    sym_b = 0
+    sym_c = 0
+    n_a = 0
+    n_b = 0
+    n_c = 0
 
     samples_sym = []
     samples_cross = []
@@ -112,11 +111,14 @@ cdef dict sample_vertical_c(
       y = waveform_y[c_i - i_width + ii]
 
       if t_a_min <= t <= t_a_max:
-        samples_a.append(y)
+        sym_a += y
+        n_a += 1
       elif t_b_min <= t <= t_b_max:
-        samples_b.append(y)
+        sym_b += y
+        n_b += 1
       elif t_c_min <= t <= t_c_max:
-        samples_c.append(y)
+        sym_c += y
+        n_c += 1
 
       if t_sym_min <= t <= t_sym_max:
         samples_sym.append(y)
@@ -127,9 +129,9 @@ cdef dict sample_vertical_c(
       if t_sym_cross_min <= t <= t_sym_cross_max:
         samples_sym_cross.append(y)
 
-    sym_a = np.mean(samples_a) > y_half
-    sym_b = np.mean(samples_b) > y_half
-    sym_c = np.mean(samples_c) > y_half
+    sym_a = sym_a > (y_half * n_a)
+    sym_b = sym_b > (y_half * n_b)
+    sym_c = sym_c > (y_half * n_c)
 
     if sym_a != sym_b:
       values["y_cross"].extend(samples_cross)
@@ -235,7 +237,6 @@ cdef dict sample_horizontal_c(
   cdef Py_ssize_t n = i_width * 2 + 1
   cdef np.ndarray[np.float64_t, ndim=1] t0 = np.linspace(0.5 - t_width_ui,
       0.5 + t_width_ui, n)
-  cdef Py_ssize_t center_offset = int(n * 1 / 4)
 
   waveform_y = (waveform_y - y_zero) / y_ua
   y_cross = (y_cross - y_zero) / y_ua
@@ -262,9 +263,8 @@ cdef dict sample_horizontal_c(
       "t_cross_right": []
   }
 
-  cdef Py_ssize_t i, ii, ii_stop, c_i
+  cdef Py_ssize_t i, ii, c_i
   cdef np.float64_t c_t, t, y
-  cdef np.ndarray[np.float64_t, ndim=1] y_front, y_center
 
   for i in range(len(centers_t)):
     c_i = centers_i[i]
@@ -281,25 +281,9 @@ cdef dict sample_horizontal_c(
           values["t_cross_right"].append(t)
         else:
           pass  # pragma: no cover, just a glitch
-
-    if edge_dir[i] is None:
-      continue
-    y_front = waveform_y[c_i - i_width:c_i + 1]
-    y_center = waveform_y[c_i - i_width + center_offset:c_i + center_offset + 1]
-
-    if edge_dir[i]:
-      # Rising edge starts at minimum on [-0.5, 0.5]
-      ii = np.argmin(y_front)
-      # Stop at maximum on [0.0, 1.0]
-      ii_stop = center_offset + np.argmax(y_center)
-    else:
-      # Falling edge starts at maximum on [-0.5, 0.5]
-      ii = np.argmax(y_front)
-      # Stop at minimum on [0.0, 1.0]
-      ii_stop = center_offset + np.argmin(y_center)
-    while ii <= ii_stop:
-      t = t0[ii] + c_t
-      y = waveform_y[c_i - i_width + ii]
+      
+      if edge_dir[i] is None or t > 0.5:
+        continue
 
       if y_lower_min <= y <= y_lower_max:
         if edge_dir[i]:
@@ -318,8 +302,6 @@ cdef dict sample_horizontal_c(
           values["t_rise_half"].append(t)
         else:
           values["t_fall_half"].append(t)
-
-      ii += 1
 
   return values
 

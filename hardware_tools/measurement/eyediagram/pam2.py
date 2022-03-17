@@ -365,14 +365,14 @@ class PAM2(eyediagram.EyeDiagram):
         self._config.cross_width
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output = self._collect_runners(pam2_ext.sample_vertical, args_list,
-                                   n_threads, print_progress, indent + 2)
+    output_vert = self._collect_runners(pam2_ext.sample_vertical, args_list,
+                                        n_threads, print_progress, indent + 2)
 
-    s_y_0 = np.array([])
-    s_y_1 = np.array([])
-    s_y_cross = np.array([])
-    s_y_0_cross = np.array([])
-    s_y_1_cross = np.array([])
+    s_y_0 = []
+    s_y_1 = []
+    s_y_cross = []
+    s_y_0_cross = []
+    s_y_1_cross = []
     transitions = {
         "000": 0,
         "001": 0,
@@ -384,15 +384,20 @@ class PAM2(eyediagram.EyeDiagram):
         "111": 0,
     }
     edge_dir = []
-    for o in output:
-      s_y_0 = np.append(s_y_0, o["y_0"])
-      s_y_1 = np.append(s_y_1, o["y_1"])
-      s_y_cross = np.append(s_y_cross, o["y_cross"])
-      s_y_0_cross = np.append(s_y_0_cross, o["y_0_cross"])
-      s_y_1_cross = np.append(s_y_1_cross, o["y_1_cross"])
+    for i in range(self._waveforms.shape[0]):
+      s_y_0.extend(output_vert[i]["y_0"])
+      s_y_1.extend(output_vert[i]["y_1"])
+      s_y_cross.extend(output_vert[i]["y_cross"])
+      s_y_0_cross.extend(output_vert[i]["y_0_cross"])
+      s_y_1_cross.extend(output_vert[i]["y_1_cross"])
       for t in transitions:
-        transitions[t] += o["transitions"][t]
-      edge_dir.append(o["edge_dir"])
+        transitions[t] += output_vert[i]["transitions"][t]
+      edge_dir.append(output_vert[i]["edge_dir"])
+    s_y_0 = np.fromiter(s_y_0, np.float64)
+    s_y_1 = np.fromiter(s_y_1, np.float64)
+    s_y_cross = np.fromiter(s_y_cross, np.float64)
+    s_y_0_cross = np.fromiter(s_y_0_cross, np.float64)
+    s_y_1_cross = np.fromiter(s_y_1_cross, np.float64)
 
     if s_y_0.size < 1:
       print(f"{'':>{indent}}{Fore.RED}y_0 does not have any samples")
@@ -465,26 +470,35 @@ class PAM2(eyediagram.EyeDiagram):
         self._config.edge_upper
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output = self._collect_runners(pam2_ext.sample_horizontal, args_list,
-                                   n_threads, print_progress, indent + 2)
+    # output_horz? TODO
+    output_horz = self._collect_runners(pam2_ext.sample_horizontal, args_list,
+                                        n_threads, print_progress, indent + 2)
 
-    s_t_rise_lower = np.array([])
-    s_t_rise_upper = np.array([])
-    s_t_rise_half = np.array([])
-    s_t_fall_lower = np.array([])
-    s_t_fall_upper = np.array([])
-    s_t_fall_half = np.array([])
-    s_t_cross_left = np.array([])
-    s_t_cross_right = np.array([])
-    for o in output:
-      s_t_rise_lower = np.append(s_t_rise_lower, o["t_rise_lower"])
-      s_t_rise_upper = np.append(s_t_rise_upper, o["t_rise_upper"])
-      s_t_rise_half = np.append(s_t_rise_half, o["t_rise_half"])
-      s_t_fall_lower = np.append(s_t_fall_lower, o["t_fall_lower"])
-      s_t_fall_upper = np.append(s_t_fall_upper, o["t_fall_upper"])
-      s_t_fall_half = np.append(s_t_fall_half, o["t_fall_half"])
-      s_t_cross_left = np.append(s_t_cross_left, o["t_cross_left"])
-      s_t_cross_right = np.append(s_t_cross_right, o["t_cross_right"])
+    s_t_rise_lower = []
+    s_t_rise_upper = []
+    s_t_rise_half = []
+    s_t_fall_lower = []
+    s_t_fall_upper = []
+    s_t_fall_half = []
+    s_t_cross_left = []
+    s_t_cross_right = []
+    for i in range(self._waveforms.shape[0]):
+      s_t_rise_lower.extend(output_horz[i]["t_rise_lower"])
+      s_t_rise_upper.extend(output_horz[i]["t_rise_upper"])
+      s_t_rise_half.extend(output_horz[i]["t_rise_half"])
+      s_t_fall_lower.extend(output_horz[i]["t_fall_lower"])
+      s_t_fall_upper.extend(output_horz[i]["t_fall_upper"])
+      s_t_fall_half.extend(output_horz[i]["t_fall_half"])
+      s_t_cross_left.extend(output_horz[i]["t_cross_left"])
+      s_t_cross_right.extend(output_horz[i]["t_cross_right"])
+    s_t_rise_lower = np.fromiter(s_t_rise_lower, np.float64)
+    s_t_rise_upper = np.fromiter(s_t_rise_upper, np.float64)
+    s_t_rise_half = np.fromiter(s_t_rise_half, np.float64)
+    s_t_fall_lower = np.fromiter(s_t_fall_lower, np.float64)
+    s_t_fall_upper = np.fromiter(s_t_fall_upper, np.float64)
+    s_t_fall_half = np.fromiter(s_t_fall_half, np.float64)
+    s_t_cross_left = np.fromiter(s_t_cross_left, np.float64)
+    s_t_cross_right = np.fromiter(s_t_cross_right, np.float64)
 
     if s_t_rise_lower.size < 1:
       print(f"{'':>{indent}}{Fore.RED}t_rise_lower does not have any samples")
@@ -546,43 +560,44 @@ class PAM2(eyediagram.EyeDiagram):
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform mask")
 
+    # yapf: disable
+    args_list = [[
+        self._waveforms[i][1],
+        self._centers_t[i],
+        self._centers_i[i],
+        self._t_delta,
+        t_sym,
+        self._y_zero,
+        self._y_ua,
+        self._mask
+    ] for i in range(self._waveforms.shape[0])]
+    # yapf: enable
+    output_mask = self._collect_runners(
+        eyediagram._runner_sample_mask,  # pylint: disable=protected-access
+        args_list,
+        n_threads,
+        print_progress,
+        indent + 2)
+
+    self._offenders = []
+    self._hits = []
+    margin = 1.0
+    offender_count = 0
+    for o in output_mask:
+      self._offenders.append(o["offenders"])
+      offender_count += len(o["offenders"])
+      self._hits.extend(o["hits"])
+      margin = min(margin, o["margin"])
+
     if self._mask is None:
-      m.mask_margin = np.nan
-      m.n_sym_bad = np.nan
-      self._offenders = []
-      self._hits = []
-    else:
-      # yapf: disable
-      args_list = [[
-          self._waveforms[i][1],
-          self._centers_t[i],
-          self._centers_i[i],
-          self._t_delta,
-          t_sym,
-          self._y_zero,
-          self._y_ua,
-          self._mask
-      ] for i in range(self._waveforms.shape[0])]
-      # yapf: enable
-      output = self._collect_runners(
-          eyediagram._runner_sample_mask,  # pylint: disable=protected-access
-          args_list,
-          n_threads,
-          print_progress,
-          indent + 2)
+      margin = np.nan
+      offender_count = np.nan
 
-      self._offenders = []
-      self._hits = []
-      margin = 1.0
-      offender_count = 0
-      for o in output:
-        self._offenders.append(o["offenders"])
-        offender_count += len(o["offenders"])
-        self._hits.extend(o["hits"])
-        margin = min(margin, o["margin"])
+    m.mask_margin = margin
+    m.n_sym_bad = offender_count
 
-      m.mask_margin = margin
-      m.n_sym_bad = offender_count
+    if print_progress:
+      print(f"{'':>{indent}}Generating bathtub curves")
 
     m.bathtub_curves = self._generate_bathtub_curves(
         {"Eye 0": 0.5},

@@ -631,7 +631,7 @@ class EyeDiagram(ABC):
         slice_level_0: np.array([[t0, t1,..., tn], [ber0, ber1,..., bern]]),
         slice_level_1:...}
     """
-    levels = y_slices.values()
+    levels = list(y_slices.values())
     # yapf: disable
     args_list = [[
         self._waveforms[i][1],
@@ -796,14 +796,19 @@ class EyeDiagram(ABC):
       # Draw hits and offending bit waveforms
       image_hits[:, :, 0] = 1.0  # Red
       radius = int(max(3, self._resolution / 500))
-      for h in self._hits[:10000]:
+      hit_drawn = np.zeros((self._resolution, self._resolution), dtype=np.bool_)
+      for h in self._hits:
         x = self._uia_to_image(h[0], return_list=False)
         y = self._uia_to_image(h[1], return_list=False)
-        rr, cc = skimage.draw.circle_perimeter(x,
-                                               y,
-                                               radius,
-                                               shape=image_margin.shape)
-        image_hits[rr, cc, 3] = 1
+        if not hit_drawn[x, y]:
+          # Don't repeatably draw hits
+          # Opacity < 1 or antialiasing would make a difference
+          hit_drawn[x, y] = True
+          rr, cc = skimage.draw.circle_perimeter(x,
+                                                 y,
+                                                 radius,
+                                                 shape=image_margin.shape)
+          image_hits[rr, cc, 3] = 1
 
       # Plot subset of offenders
       # yapf: disable
@@ -1050,7 +1055,8 @@ def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
 
   return image
 
-
+# TODO make cython out of these runners
+# Combine these operations to save slicing?
 def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
                         centers_i: list[int], t_delta: float, t_sym: float,
                         y_zero: float, y_ua: float, mask: Mask) -> dict:
@@ -1073,6 +1079,9 @@ def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
       hits: List of mask collision coordinates [[UI, UA],...]
       margin: Largest mask margin with zero hits [-1.0, 1.0]
   """
+  values = {"offenders": [], "hits": [], "margin": 1.0}
+  if mask is None:
+    return values
   i_width = int((t_sym / t_delta) + 0.5) + 2
   t_width_ui = (i_width * t_delta / t_sym)
 
@@ -1080,8 +1089,6 @@ def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
   t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
 
   waveform_y = (waveform_y - y_zero) / y_ua
-
-  values = {"offenders": [], "hits": [], "margin": 1.0}
 
   mask_adj = mask.adjust(values["margin"])
 
@@ -1092,15 +1099,18 @@ def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
     t = t0 + c_t
     y = waveform_y[c_i - i_width:c_i + i_width + 1]
 
+    while values["margin"] > -1.0 and intersections.is_hitting_np(
+        t, y, mask_adj.paths):
+      values["margin"] -= 0.001
+      mask_adj = mask.adjust(values["margin"])
+
+    if values["margin"] > 0.0:
+      continue  # There won't be hits until the margin is negative
+
     hits = intersections.get_hits_np(t, y, mask.paths)
     if hits.size > 0:
       values["offenders"].append(i)
       values["hits"].extend(hits.tolist())
-
-    while intersections.is_hitting_np(
-        t, y, mask_adj.paths) and values["margin"] > -1.0:
-      values["margin"] -= 0.001
-      mask_adj = mask.adjust(values["margin"])
 
   return values
 
