@@ -162,29 +162,6 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: list[float],
                     centers_i: list[int], t_delta: float, t_sym: float,
                     y_half: float, level_width: float,
                     cross_width: float) -> dict:
-  """Measure vertical parameters
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_half: Decision threshold for a low or high symbol
-    level_width: Width of y_0, y_1 windows, UI
-    cross_width: Width of y_cross window, UI
-
-  Returns:
-    Dictionary of values:
-      y_0: List of samples within the y_0 window, logical 0
-      y_1: List of samples within the y_1 window, logical 1
-      y_cross: List of samples within the y_cross window, edge
-      y_0_cross: List of samples within the y_cross window, logical 0
-      y_1_cross: List of samples within the y_cross window, logical 1
-      transitions: Dictionary of collected transitions, see MeasuresPAM2
-      edge_dir: List of edge directions, True=rising, False=falling, None=none
-  """
   return sample_vertical_c(waveform_y, centers_t, centers_i, t_delta, t_sym,
       y_half, level_width, cross_width)
 
@@ -310,33 +287,5 @@ def sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
                       t_delta: float, t_sym: float, y_zero: float, y_ua: float,
                       y_cross: float, hist_height: float, edge_lower: float,
                       edge_upper: float) -> dict:
-  """Measure horizontal parameters
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    edge_dir: List of edge directions, True=rising, False=falling, None=none
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_zero: Amplitude of a logical 0
-    y_ua: Normalized amplitude
-    y_cross: Amplitude of crossing point
-    hist_height: Height of time windows, UA
-    edge_lower: Threshold level for lower transition (rise start), UA
-    edge_upper: Threshold level for upper transition (rise stop), UA
-
-  Returns:
-    Dictionary of values, all UI:
-      t_rise_lower: List of samples within the lower edge window, rising
-      t_rise_upper: List of samples within the upper edge window, rising
-      t_rise_half: List of samples within the 50% window, rising
-      t_fall_lower: List of samples within the lower edge window, falling
-      t_fall_upper: List of samples within the upper edge window, falling
-      t_fall_half: List of samples within the 50% window, falling
-      t_cross_left: List of samples within the cross window, left edge
-      t_cross_right: List of samples within the cross window, right edge
-  """
   return sample_horizontal_c(waveform_y, centers_t, centers_i, edge_dir,
       t_delta, t_sym, y_zero, y_ua, y_cross, hist_height, edge_lower, edge_upper)

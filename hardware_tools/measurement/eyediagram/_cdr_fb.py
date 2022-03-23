@@ -1,4 +1,5 @@
 """Clock data recovery helper functions, see measurement.eyediagram.cdr
+Fallback version for no cython
 """
 
 import numpy as np

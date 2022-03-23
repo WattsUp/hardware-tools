@@ -1,4 +1,5 @@
 """PAM2 helper functions, see measurement.eyediagram.pam2
+Fallback version for no cython
 """
 
 import numpy as np

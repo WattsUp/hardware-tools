@@ -3,7 +3,11 @@
 
 import numpy as np
 
-from hardware_tools.extensions import cdr as cdr_ext
+try:
+  from hardware_tools.measurement.eyediagram import _cdr
+except ImportError:
+  print(f"The cython version of {__name__} is not available")
+  from hardware_tools.measurement.eyediagram import _cdr_fb as _cdr
 
 
 class CDR:
@@ -65,14 +69,14 @@ class CDR:
 
     if not self._fixed_period:
       # Step 2: Minimize number of TIE disjoints
-      t_sym = cdr_ext.minimize_tie_disjoints(
+      t_sym = _cdr.minimize_tie_disjoints(
           data_edges,
           t_min=t_sym * (1 - self._t_sym_initial_error),
           t_max=t_sym * (1 + self._t_sym_initial_error),
           tol=self._max_correctable_disjoints)
 
       # Step 3: Remove linear drift from TIEs
-      t_sym = cdr_ext.detrend_ties(data_edges, t_sym)
+      t_sym = _cdr.detrend_ties(data_edges, t_sym)
 
     # Step 4: Adjust t_start for zero mean ties
     ties = (data_edges - t_start + t_sym / 2) % t_sym - t_sym / 2

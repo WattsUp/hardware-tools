@@ -132,24 +132,6 @@ def minimize_tie_disjoints(data_edges: np.ndarray,
                            t_max: float = None,
                            tol: int = 1,
                            max_iter: int = 10) -> float:
-  """Determine most likely clock period from minimizing time interval errors
-
-  Iterates until there are tol or fewer disjoints in the TIEs
-
-  Args:
-    data_edges: List of data edges in time domain
-    t_sym: Rough clock period, t_min = t_sym * 0.9, t_max = t_sym * 1.1
-    t_min: Minimum clock period, None requires t_sym instead
-    t_max: Maximum clock period, None requires t_sym instead
-    tol: Maximum number of disjoints willing to fix
-    max_iter: Maximum iterations to run
-
-  Returns:
-    Most probable clock period
-
-  Raises:
-    ArithmeticError if a symbol period cannot be determined
-  """
   if t_sym is not None:
     t_min = t_sym * 0.9
     t_max = t_sym * 1.1
@@ -213,17 +195,5 @@ cdef np.float64_t detrend_ties_c(np.ndarray[np.float64_t, ndim=1] data_edges,
   return t_sym
 
 
-def detrend_ties(data_edges: np.ndarray,
-                 t_sym: float) -> float:
-  """Remove linear drift from TIEs (wrong clock period)
-
-  Iterates the clock drifts less than tol over the duration
-
-  Args:
-    data_edges: List of data edges in time domain
-    t_sym: Initial clock period
-
-  Returns:
-    Most probable clock period
-  """
+def detrend_ties(data_edges: np.ndarray, t_sym: float) -> float:
   return detrend_ties_c(data_edges, t_sym)

@@ -17,9 +17,8 @@ from matplotlib import pyplot
 import numpy as np
 import skimage.draw
 
-from hardware_tools import math, strformat
-from hardware_tools.extensions import bresenham
-from hardware_tools.extensions import intersections
+from hardware_tools import strformat
+from hardware_tools.math import image, lines, stats
 from hardware_tools.measurement.mask import Mask
 
 colorama.init(autoreset=True)
@@ -107,41 +106,41 @@ class Measures(ABC):
         image_hits will be saved to "{basename}.hits.png"
         image_margin will be saved to "{basename}.margin.png"
     """
-    math.Image.np_to_file(self._np_image_clean, f"{basename}.clean.png")
-    math.Image.np_to_file(self._np_image_grid, f"{basename}.grid.png")
-    math.Image.np_to_file(self._np_image_mask, f"{basename}.mask.png")
-    math.Image.np_to_file(self._np_image_hits, f"{basename}.hits.png")
-    math.Image.np_to_file(self._np_image_margin, f"{basename}.margin.png")
+    image.np_to_file(self._np_image_clean, f"{basename}.clean.png")
+    image.np_to_file(self._np_image_grid, f"{basename}.grid.png")
+    image.np_to_file(self._np_image_mask, f"{basename}.mask.png")
+    image.np_to_file(self._np_image_hits, f"{basename}.hits.png")
+    image.np_to_file(self._np_image_margin, f"{basename}.margin.png")
 
   @property
   def image_clean(self) -> bytes:
     if self._np_image_clean is None:
       return None
-    return math.Image.np_to_base64(self._np_image_clean)
+    return image.np_to_base64(self._np_image_clean)
 
   @property
   def image_grid(self) -> bytes:
     if self._np_image_grid is None:
       return None
-    return math.Image.np_to_base64(self._np_image_grid)
+    return image.np_to_base64(self._np_image_grid)
 
   @property
   def image_mask(self) -> bytes:
     if self._np_image_mask is None:
       return None
-    return math.Image.np_to_base64(self._np_image_mask)
+    return image.np_to_base64(self._np_image_mask)
 
   @property
   def image_hits(self) -> bytes:
     if self._np_image_hits is None:
       return None
-    return math.Image.np_to_base64(self._np_image_hits)
+    return image.np_to_base64(self._np_image_hits)
 
   @property
   def image_margin(self) -> bytes:
     if self._np_image_margin is None:
       return None
-    return math.Image.np_to_base64(self._np_image_margin)
+    return image.np_to_base64(self._np_image_margin)
 
   def to_dict(self) -> dict:
     """Convert Measures to dictionary of values
@@ -216,7 +215,7 @@ class Config():
     self.time_height = 0.05
     self.edge_lower = 0.2
     self.edge_upper = 0.8
-    self.noise_floor = math.UncertainValue(0, 0)
+    self.noise_floor = stats.UncertainValue(0, 0)
 
     # Step 5
     self.point_cloud = False
@@ -464,7 +463,7 @@ class EyeDiagram(ABC):
     # Two pass average to remove outliers arising from idle time
     periods = np.concatenate(periods)
     periods = periods[periods < 10 * periods.mean()]
-    t_sym = math.UncertainValue.samples(periods)
+    t_sym = stats.UncertainValue.samples(periods)
     self._t_sym = t_sym.value
 
     if debug_plots is not None:
@@ -761,16 +760,16 @@ class EyeDiagram(ABC):
 
     if print_progress:
       print(f"{'':>{indent}}Generating images")
-    image = self._raw_heatmap.copy()
+    image_clean = self._raw_heatmap.copy()
 
     # Replace 0s with nan to be colored transparent
-    image[image == 0] = np.nan
+    image_clean[image_clean == 0] = np.nan
 
     # Normalize heatmap to 0 to 1
-    image_max = np.nanmax(image)
-    image = image / image_max
+    image_max = np.nanmax(image_clean)
+    image_clean = image_clean / image_max
 
-    image_clean = pyplot.cm.jet(image)
+    image_clean = pyplot.cm.jet(image_clean)
 
     image_grid = np.zeros(image_clean.shape)
     image_mask = np.zeros(image_clean.shape)
@@ -827,7 +826,7 @@ class EyeDiagram(ABC):
       output = self._collect_runners(_runner_draw_symbols, args_list, n_threads,
                                      print_progress, indent + 2)
       for o in output:
-        image_hits = math.Image.layer_rgba(image_hits, o)
+        image_hits = image.layer_rgba(image_hits, o)
 
     # [x, y] coordinates to image coordinates
     image_grid = np.rot90(image_grid)
@@ -843,7 +842,7 @@ class EyeDiagram(ABC):
 
     if debug_plots is not None:
       debug_plots += ".step5.png"
-      math.Image.np_to_file(image_clean, debug_plots)
+      image.np_to_file(image_clean, debug_plots)
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   @staticmethod
@@ -982,9 +981,9 @@ def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
     td = (((t + 0.5) / 2) * resolution).astype(np.int32)
     yd = (y * resolution).astype(np.int32)
     if point_cloud:
-      bresenham.draw_points(td, yd, grid)
+      lines.draw_points(td, yd, grid)
     else:
-      bresenham.draw(td, yd, grid)
+      lines.draw(td, yd, grid)
 
   if point_cloud:
     # Normalize density such that each column has the same number of counts
@@ -1027,8 +1026,8 @@ def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
 
   waveform_y = (waveform_y - min_y) / (max_y - min_y)
 
-  image = np.zeros((resolution, resolution, 4))
-  image[:, :, 0] = 1.0  # Red
+  img = np.zeros((resolution, resolution, 4))
+  img[:, :, 0] = 1.0  # Red
 
   for i in sym_indices:
     c_i = centers_i[i]
@@ -1051,9 +1050,10 @@ def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
       cc = cc[mask]
       val = val[mask]
 
-      image[rr, cc, 3] = val + (1 - val) * image[rr, cc, 3]
+      img[rr, cc, 3] = val + (1 - val) * img[rr, cc, 3]
 
-  return image
+  return img
+
 
 # TODO make cython out of these runners
 # Combine these operations to save slicing?
@@ -1099,15 +1099,14 @@ def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
     t = t0 + c_t
     y = waveform_y[c_i - i_width:c_i + i_width + 1]
 
-    while values["margin"] > -1.0 and intersections.is_hitting_np(
-        t, y, mask_adj.paths):
+    while values["margin"] > -1.0 and lines.is_hitting_np(t, y, mask_adj.paths):
       values["margin"] -= 0.001
       mask_adj = mask.adjust(values["margin"])
 
     if values["margin"] > 0.0:
       continue  # There won't be hits until the margin is negative
 
-    hits = intersections.get_hits_np(t, y, mask.paths)
+    hits = lines.hits_np(t, y, mask.paths)
     if hits.size > 0:
       values["offenders"].append(i)
       values["hits"].extend(hits.tolist())
@@ -1159,7 +1158,7 @@ def _runner_y_slice(waveform_y: np.ndarray, centers_t: list[float],
     y = waveform_y[c_i - i_width:c_i + i_width + 1]
 
     for ii in range(n_slices):
-      hits = intersections.get_hits_np(t, y, [paths[ii]])
+      hits = lines.hits_np(t, y, [paths[ii]])
       if hits.size > 0:
         slices[ii].extend(hits[:, 0].tolist())
 

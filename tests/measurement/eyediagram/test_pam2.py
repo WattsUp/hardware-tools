@@ -5,22 +5,25 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from unittest import mock
 
 import numpy as np
 from scipy import signal
 
-from hardware_tools import math
+from hardware_tools.math import image, stats
 from hardware_tools.measurement import mask
-from hardware_tools.measurement.eyediagram import cdr, pam2, eyediagram
+from hardware_tools.measurement.eyediagram import pam2, _pam2, _pam2_fb
+from hardware_tools.measurement.eyediagram import cdr, eyediagram
 
 from tests import base
 
+# TODO (WattsUp) Replace these generators with signal module
 _rng = np.random.default_rng()
 f_scope = 5e9
 n_scope = int(1e5)
 t_scope = n_scope / f_scope
-n_bits = int(10e3)
+n_bits = int(1e3)
 t_bit = t_scope / n_bits
 f_bit = 1 / t_bit
 bits = signal.max_len_seq(5, length=n_bits)[0]
@@ -30,6 +33,128 @@ v_error = v_signal * 0.05
 clock = (signal.square(2 * np.pi * (f_bit * t + 0.5)) + 1) / 2 * v_signal
 y = (np.repeat(bits, n_scope / n_bits) +
      _rng.normal(0, 0.05, size=n_scope)) * v_signal
+_f_lp = 0.75 / t_bit
+_sos = signal.bessel(4, _f_lp, fs=f_scope, output="sos", norm="mag")
+
+_zi = signal.sosfilt_zi(_sos) * y[0]
+y_filtered, _ = signal.sosfilt(_sos, y, zi=_zi)
+
+t_delta = 1 / f_scope
+
+i_width = int((t_bit / t_delta) + 0.5) + 2
+max_i = n_scope
+
+centers_i = []
+centers_t = []
+t_zero = t[0]
+clock_edges = np.linspace(t_zero, t_zero + t_bit * (n_bits - 1),
+                          n_bits) - 0.06 * t_bit  # Delay for filter
+for b in clock_edges:
+  center_t = b % t_delta
+  center_i = int(((b - t_zero - center_t) / t_delta) + 0.5)
+
+  if (center_i - i_width) < 0 or (center_i + i_width) >= max_i:
+    continue
+  centers_t.append(-center_t)
+  centers_i.append(center_i)
+edge_dir = _pam2_fb.sample_vertical(y_filtered, centers_t, centers_i, t_delta,
+                                    t_bit, v_signal / 2, 0.2, 0.1)["edge_dir"]
+
+
+class TestPAM2Ext(base.TestBase):
+  """Test PAM2 methods
+  """
+
+  def _test_sample_vertical(self, module):
+    result = module.sample_vertical(y_filtered, centers_t, centers_i, t_delta,
+                                    t_bit, v_signal / 2, 0.2, 0.1)
+
+    target = {
+        "y_0": 0,
+        "y_1": v_signal,
+        "y_cross": v_signal / 2,
+        "y_0_cross": 0,
+        "y_1_cross": v_signal
+    }
+    for k, v in result.items():
+      if k in target:
+        v_mean = np.mean(v)
+        self.assertEqualWithinError(target[k], v_mean, 0.05)
+
+    for k, v in result["transitions"].items():
+      # Generated bit pattern lacks even number of 000
+      if k == "000":
+        self.assertEqualWithinError(n_bits / 8 * 25 / 32, v, 0.1)
+      else:
+        self.assertEqualWithinError(n_bits / 8 * 33 / 32, v, 0.1)
+
+  def test_sample_vertical(self):
+    self._test_sample_vertical(_pam2_fb)
+    self._test_sample_vertical(_pam2)
+
+    # Validate fast is actually faster
+
+    start = time.perf_counter()
+    result_slow = _pam2_fb.sample_vertical(y_filtered, centers_t, centers_i,
+                                           t_delta, t_bit, v_signal / 2, 0.2,
+                                           0.1)
+    elapsed_slow = time.perf_counter() - start
+
+    start = time.perf_counter()
+    result_fast = _pam2.sample_vertical(y_filtered, centers_t, centers_i,
+                                        t_delta, t_bit, v_signal / 2, 0.2, 0.1)
+    elapsed_fast = time.perf_counter() - start
+
+    self.log_speed(elapsed_slow, elapsed_fast)
+    self.assertListEqual(result_slow["edge_dir"], result_fast["edge_dir"])
+    self.assertLess(elapsed_fast, elapsed_slow)
+
+  def _test_sample_horizontal(self, module):
+    result = module.sample_horizontal(y_filtered, centers_t, centers_i,
+                                      edge_dir, t_delta, t_bit, 0.0, v_signal,
+                                      v_signal / 2, 0.05, 0.2, 0.8)
+
+    target = {
+        "t_rise_lower": -0.148,
+        "t_rise_upper": 0.168,
+        "t_rise_half": 0,
+        "t_fall_lower": 0.168,
+        "t_fall_upper": -0.148,
+        "t_fall_half": 0,
+        "t_cross_left": 0,
+        "t_cross_right": 1
+    }
+    for k, v in result.items():
+      if k in target:
+        v_mean = np.mean(v)
+        self.assertEqualWithinError(target[k], v_mean, 0.05)
+
+  def test_sample_horizontal(self):
+    self._test_sample_horizontal(_pam2_fb)
+    self._test_sample_horizontal(_pam2)
+
+    # Validate fast is actually faster
+
+    start = time.perf_counter()
+    result_slow = _pam2_fb.sample_horizontal(y_filtered, centers_t, centers_i,
+                                             edge_dir, t_delta, t_bit, 0.0,
+                                             v_signal, v_signal / 2, 0.05, 0.2,
+                                             0.8)
+    elapsed_slow = time.perf_counter() - start
+
+    start = time.perf_counter()
+    result_fast = _pam2.sample_horizontal(y_filtered, centers_t, centers_i,
+                                          edge_dir, t_delta, t_bit, 0.0,
+                                          v_signal, v_signal / 2, 0.05, 0.2,
+                                          0.8)
+    elapsed_fast = time.perf_counter() - start
+
+    self.log_speed(elapsed_slow, elapsed_fast)
+    for k, v in result_slow.items():
+      v_mean_slow = np.mean(v)
+      v_mean_fast = np.mean(result_fast[k])
+      self.assertEqualWithinError(v_mean_slow, v_mean_fast, 0.01)
+    self.assertLess(elapsed_fast, elapsed_slow)
 
 
 class TestPAM2(base.TestBase):
@@ -265,8 +390,8 @@ class TestPAM2(base.TestBase):
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
     c = pam2.PAM2Config(fallback_period=t_sym,
                         clock_polarity=eyediagram.ClockPolarity.BOTH,
-                        noise_floor=math.UncertainValue(9.80964764e-08,
-                                                        2.50442542e-07))
+                        noise_floor=stats.UncertainValue(
+                            9.80964764e-08, 2.50442542e-07))
 
     eye = pam2.PAM2(waveforms[:1], resolution=1000, mask=m, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
@@ -302,19 +427,19 @@ class TestPAM2(base.TestBase):
 
     path = str(
         self._TEST_ROOT.joinpath("eyediagram_pam2-optical-1e8-unfiltered"))
-    c = pam2.PAM2Config(noise_floor=math.UncertainValue(9.80964764e-08,
-                                                        2.50442542e-07),
+    c = pam2.PAM2Config(noise_floor=stats.UncertainValue(
+        9.80964764e-08, 2.50442542e-07),
                         y_0=m.y_0.value,
                         y_1=m.y_1.value)
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
 
-    clock_edges = eye.get_clock_edges()
-    for edges in clock_edges:
+    clk_edges = eye.get_clock_edges()
+    for edges in clk_edges:
       for ii in range(len(edges)):
         edges[ii] -= filter_delay
 
     eye = pam2.PAM2(waveforms_unfiltered[:1],
-                    clock_edges=clock_edges,
+                    clock_edges=clk_edges,
                     resolution=1000,
                     mask=m,
                     config=c)
@@ -469,11 +594,11 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
         "extinction_ratio": extinction_ratio,
         "oma_cross": oma_cross,
         "vecp": vecp,
-        "image_clean": math.Image.np_to_base64(np_clean),
-        "image_grid": math.Image.np_to_base64(np_grid),
-        "image_mask": math.Image.np_to_base64(np_mask),
-        "image_hits": math.Image.np_to_base64(np_hits),
-        "image_margin": math.Image.np_to_base64(np_margin)
+        "image_clean": image.np_to_base64(np_clean),
+        "image_grid": image.np_to_base64(np_grid),
+        "image_mask": image.np_to_base64(np_mask),
+        "image_hits": image.np_to_base64(np_hits),
+        "image_margin": image.np_to_base64(np_margin)
     }
     m_dict = m.to_dict()
     self.assertListEqual(sorted(d.keys()), sorted(m_dict.keys()))

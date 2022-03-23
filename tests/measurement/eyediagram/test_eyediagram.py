@@ -10,7 +10,7 @@ from unittest import mock
 import numpy as np
 from scipy import signal
 
-from hardware_tools import math
+from hardware_tools.math import image
 from hardware_tools.measurement import mask
 from hardware_tools.measurement.eyediagram import eyediagram
 
@@ -372,11 +372,11 @@ class TestEyeDiagramMeasures(base.TestBase):
         "mask_margin": mask_margin,
         "transition_dist": transition_dist,
         "bathtub_curves": bathtub_curves,
-        "image_clean": math.Image.np_to_base64(np_clean),
-        "image_grid": math.Image.np_to_base64(np_grid),
-        "image_mask": math.Image.np_to_base64(np_mask),
-        "image_hits": math.Image.np_to_base64(np_hits),
-        "image_margin": math.Image.np_to_base64(np_margin)
+        "image_clean": image.np_to_base64(np_clean),
+        "image_grid": image.np_to_base64(np_grid),
+        "image_mask": image.np_to_base64(np_mask),
+        "image_hits": image.np_to_base64(np_hits),
+        "image_margin": image.np_to_base64(np_margin)
     }
     m_dict = m.to_dict()
     self.assertListEqual(sorted(d.keys()), sorted(m_dict.keys()))

@@ -10,11 +10,16 @@ from colorama import Fore
 import numpy as np
 from matplotlib import pyplot
 
-from hardware_tools import math, strformat
-from hardware_tools.extensions import edges as edges_ext
-from hardware_tools.extensions import pam2 as pam2_ext
+from hardware_tools import strformat
+from hardware_tools.math import gaussian, lines, stats
 from hardware_tools.measurement.mask import Mask
 from hardware_tools.measurement.eyediagram import cdr, eyediagram
+
+try:
+  from hardware_tools.measurement.eyediagram import _pam2
+except ImportError:
+  print(f"The cython version of {__name__} is not available")
+  from hardware_tools.measurement.eyediagram import _pam2_fb as _pam2
 
 colorama.init(autoreset=True)
 
@@ -201,8 +206,8 @@ class PAM2(eyediagram.EyeDiagram):
     if print_progress:
       print(f"{'':>{indent}}Starting PAM2 levels")
 
-    y_0 = math.UncertainValue(0, 0)
-    y_1 = math.UncertainValue(0, 0)
+    y_0 = stats.UncertainValue(0, 0)
+    y_1 = stats.UncertainValue(0, 0)
     if ((self._config.y_0 is None) or (self._config.y_1 is None) or
         (debug_plots is not None)):
       waveform_y = self._waveforms[:, 1].flatten()
@@ -296,7 +301,7 @@ class PAM2(eyediagram.EyeDiagram):
             self._y_falling
         ] for i in range(self._waveforms.shape[0])]
         # yapf: enable
-        output = self._collect_runners(edges_ext.get_np, args_list, n_threads,
+        output = self._collect_runners(lines.edges_np, args_list, n_threads,
                                        print_progress, indent + 2)
         for o in output:
           e = _filter_edge_polarity(o, self._config.clock_polarity)
@@ -365,7 +370,7 @@ class PAM2(eyediagram.EyeDiagram):
         self._config.cross_width
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output_vert = self._collect_runners(pam2_ext.sample_vertical, args_list,
+    output_vert = self._collect_runners(_pam2.sample_vertical, args_list,
                                         n_threads, print_progress, indent + 2)
 
     s_y_0 = []
@@ -415,11 +420,11 @@ class PAM2(eyediagram.EyeDiagram):
       m.n_sym += len(self._centers_i[i])
     m.n_samples = int(m.n_sym * t_sym / self._t_delta)
 
-    m.y_0 = math.UncertainValue.samples(s_y_0)
-    m.y_1 = math.UncertainValue.samples(s_y_1)
-    m.y_cross = math.UncertainValue.samples(s_y_cross)
-    m.y_0_cross = math.UncertainValue.samples(s_y_0_cross)
-    m.y_1_cross = math.UncertainValue.samples(s_y_1_cross)
+    m.y_0 = stats.UncertainValue.samples(s_y_0)
+    m.y_1 = stats.UncertainValue.samples(s_y_1)
+    m.y_cross = stats.UncertainValue.samples(s_y_cross)
+    m.y_0_cross = stats.UncertainValue.samples(s_y_0_cross)
+    m.y_1_cross = stats.UncertainValue.samples(s_y_1_cross)
     m.transition_dist = transitions
 
     # Computed measures
@@ -436,7 +441,7 @@ class PAM2(eyediagram.EyeDiagram):
     # median_unbiased: "This method is probably the best method if the sample
     # distribution function is unknown"
     if s_y_0.size < 1 or s_y_1.size < 1:
-      m.vecp = math.UncertainValue(np.nan, np.nan)
+      m.vecp = stats.UncertainValue(np.nan, np.nan)
     else:
       a_0 = np.percentile(s_y_1, 0.05,
                           method="median_unbiased") - np.percentile(
@@ -471,7 +476,7 @@ class PAM2(eyediagram.EyeDiagram):
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
     # output_horz? TODO
-    output_horz = self._collect_runners(pam2_ext.sample_horizontal, args_list,
+    output_horz = self._collect_runners(_pam2.sample_horizontal, args_list,
                                         n_threads, print_progress, indent + 2)
 
     s_t_rise_lower = []
@@ -526,14 +531,14 @@ class PAM2(eyediagram.EyeDiagram):
     s_t_cross_left = s_t_cross_left * t_sym
     s_t_cross_right = s_t_cross_right * t_sym
 
-    t_rise_lower = math.UncertainValue.samples(s_t_rise_lower)
-    t_rise_upper = math.UncertainValue.samples(s_t_rise_upper)
-    t_rise_half = math.UncertainValue.samples(s_t_rise_half)
-    t_fall_lower = math.UncertainValue.samples(s_t_fall_lower)
-    t_fall_upper = math.UncertainValue.samples(s_t_fall_upper)
-    t_fall_half = math.UncertainValue.samples(s_t_fall_half)
-    t_cross_left = math.UncertainValue.samples(s_t_cross_left)
-    t_cross_right = math.UncertainValue.samples(s_t_cross_right)
+    t_rise_lower = stats.UncertainValue.samples(s_t_rise_lower)
+    t_rise_upper = stats.UncertainValue.samples(s_t_rise_upper)
+    t_rise_half = stats.UncertainValue.samples(s_t_rise_half)
+    t_fall_lower = stats.UncertainValue.samples(s_t_fall_lower)
+    t_fall_upper = stats.UncertainValue.samples(s_t_fall_upper)
+    t_fall_half = stats.UncertainValue.samples(s_t_fall_half)
+    t_cross_left = stats.UncertainValue.samples(s_t_cross_left)
+    t_cross_right = stats.UncertainValue.samples(s_t_cross_right)
 
     # Computed measures
     m.t_sym = t_cross_right - t_cross_left
@@ -545,7 +550,7 @@ class PAM2(eyediagram.EyeDiagram):
     m.t_fall_start = t_fall_upper
     m.t_cross = t_cross_left
 
-    m.f_sym = math.UncertainValue(1, 0) / m.t_sym
+    m.f_sym = stats.UncertainValue(1, 0) / m.t_sym
 
     m.width = (t_cross_right - 3 * t_cross_right.stddev) - (
         t_cross_left + 3 * t_cross_left.stddev)
@@ -836,13 +841,13 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
     if ratio > 10:
       ratio = max(1, int(ratio / 2))
       waveform_y = waveform_y[::ratio]
-    waveform_y = math.Bin.downsample(waveform_y, n_max)
+    waveform_y = stats.downsample(waveform_y, n_max)
 
   y_min = waveform_y.min()
   y_max = waveform_y.max()
   y_mid = (y_min + y_max) / 2
-  y_0 = math.UncertainValue(0, 0)
-  y_1 = math.UncertainValue(0, 0)
+  y_0 = stats.UncertainValue(0, 0)
+  y_1 = stats.UncertainValue(0, 0)
 
   values_0 = waveform_y[np.where(waveform_y < y_mid)]
   y_0.stddev = values_0.std()
@@ -850,8 +855,8 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   values_1 = waveform_y[np.where(waveform_y > y_mid)]
   y_1.stddev = values_1.std()
 
-  fit_0 = math.GaussianMix.fit_samples(values_0, n_max=2)
-  fit_1 = math.GaussianMix.fit_samples(values_1, n_max=2)
+  fit_0 = gaussian.fit_mix_samples(values_0, n_max=2)
+  fit_1 = gaussian.fit_mix_samples(values_1, n_max=2)
 
   y_0.value = fit_0.center()
   y_1.value = fit_1.center()
@@ -885,5 +890,5 @@ def _runner_cdr(
     List of clock edges in the time domain.
     List of Time Interval Errors (TIEs).
   """
-  data_edges = edges_ext.get_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
+  data_edges = lines.edges_np(waveform_t, waveform_y, y_rise, y_half, y_fall)
   return cdr_obj.run(_filter_edge_polarity(data_edges, polarity))

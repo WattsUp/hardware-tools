@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from hardware_tools.measurement import mask
-from hardware_tools.extensions import intersections
+from hardware_tools.math import lines
 
 from tests import base
 
@@ -62,7 +62,7 @@ class TestMaskDecagon(base.TestBase):
     t = [0, 1]
     yp = -y3 - 0.1
     y = [yp, yp]
-    hits = intersections.get_hits(t, y, m.paths)
+    hits = lines.hits(t, y, m.paths)
     targets = [(0, yp), (1, yp)]
     for hit, target in zip(hits, targets):
       self.assertEqualWithinError(target[0], hit[0], 0.01)
@@ -71,7 +71,7 @@ class TestMaskDecagon(base.TestBase):
     t = [0, 1]
     yp = 1 + y4 + 0.1
     y = [yp, yp]
-    hits = intersections.get_hits(t, y, m.paths)
+    hits = lines.hits(t, y, m.paths)
     targets = [(0, yp), (1, yp)]
     for hit, target in zip(hits, targets):
       self.assertEqualWithinError(target[0], hit[0], 0.01)
@@ -80,7 +80,7 @@ class TestMaskDecagon(base.TestBase):
     t = [0, 1]
     yp = 0.5
     y = [yp, yp]
-    hits = intersections.get_hits(t, y, m.paths)
+    hits = lines.hits(t, y, m.paths)
     targets = [(x1, yp), (1 - x1, yp)]
     for hit, target in zip(hits, targets):
       self.assertEqualWithinError(target[0], hit[0], 0.01)

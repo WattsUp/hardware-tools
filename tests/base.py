@@ -9,7 +9,7 @@ import unittest
 import autodict
 import numpy as np
 
-from hardware_tools import math
+from hardware_tools.math import gaussian
 
 from tests import TEST_LOG
 
@@ -33,7 +33,7 @@ class TestBase(unittest.TestCase):
       error = np.abs(real - target)
     else:
       error = np.abs(real / target - 1)
-    threshold = math.Gaussian.sample_error_inv(n, self._P_FAIL)
+    threshold = gaussian.sample_error_inv(n, self._P_FAIL)
     self.assertLessEqual(error, threshold)
 
   def assertEqualWithinError(self, target, real, threshold):
