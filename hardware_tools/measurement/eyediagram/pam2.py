@@ -565,38 +565,16 @@ class PAM2(eyediagram.EyeDiagram):
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform mask")
 
-    # yapf: disable
-    args_list = [[
-        self._waveforms[i][1],
-        self._centers_t[i],
-        self._centers_i[i],
-        self._t_delta,
-        t_sym,
-        self._y_zero,
-        self._y_ua,
-        self._mask
-    ] for i in range(self._waveforms.shape[0])]
-    # yapf: enable
-    output_mask = self._collect_runners(
-        eyediagram._runner_sample_mask,  # pylint: disable=protected-access
-        args_list,
-        n_threads,
-        print_progress,
-        indent + 2)
-
-    self._offenders = []
-    self._hits = []
-    margin = 1.0
-    offender_count = 0
-    for o in output_mask:
-      self._offenders.append(o["offenders"])
-      offender_count += len(o["offenders"])
-      self._hits.extend(o["hits"])
-      margin = min(margin, o["margin"])
+    output_mask = self._sample_mask(n_threads=n_threads,
+                                    print_progress=print_progress,
+                                    indent=indent)
 
     if self._mask is None:
       margin = np.nan
       offender_count = np.nan
+    else:
+      margin = output_mask["margin"]
+      offender_count = output_mask["offender_count"]
 
     m.mask_margin = margin
     m.n_sym_bad = offender_count

@@ -416,7 +416,7 @@ def edges_np(
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef tuple line_params_c(np.float64_t a1, np.float64_t a2, np.float64_t b1, np.float64_t b2):
+cdef LineParams line_params_c(np.float64_t a1, np.float64_t a2, np.float64_t b1, np.float64_t b2):
   """Convert pair of points to line parameters
 
   Args:
@@ -428,14 +428,15 @@ cdef tuple line_params_c(np.float64_t a1, np.float64_t a2, np.float64_t b1, np.f
   Returns:
     list[d2, d1, det([a, b])]
   """
-  cdef np.float64_t d2 = a2 - b2
-  cdef np.float64_t d1 = b1 - a1
-  cdef np.float64_t det = b1 * a2 - a1 * b2 # Already negated
-  return d2, d1, det
+  cdef LineParams params = LineParams()
+  params.d2 = a2 - b2
+  params.d1 = b1 - a1
+  params.det = b1 * a2 - a1 * b2 # Already negated
+  return params
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef tuple intersection_c(np.float64_t p1,
+cdef Point intersection_c(np.float64_t p1,
                  np.float64_t p2,
                  np.float64_t q1,
                  np.float64_t q2,
@@ -462,47 +463,48 @@ cdef tuple intersection_c(np.float64_t p1,
     Intersection point coordinates, None if not intersecting or parallel
   """
   # Get intersection point of lines [not segments]
-  cdef tuple l1 = line_params_c(p1, p2, q1, q2)
-  cdef tuple l2 = line_params_c(r1, r2, s1, s2)
-  cdef np.float64_t det = l1[0] * l2[1] - l1[1] * l2[0]
+  cdef LineParams l1 = line_params_c(p1, p2, q1, q2)
+  cdef LineParams l2 = line_params_c(r1, r2, s1, s2)
+  cdef np.float64_t det = l1.d2 * l2.d1 - l1.d1 * l2.d2
   if det == 0:
     return None
-  cdef np.float64_t det1 = l2[1] * l1[2] - l2[2] * l1[1]
-  cdef np.float64_t det2 = l1[0] * l2[2] - l1[2] * l2[0]
-  cdef np.float64_t i1 = det1 / det
-  cdef np.float64_t i2 = det2 / det
+  cdef np.float64_t det1 = l2.d1 * l1.det - l2.det * l1.d1
+  cdef np.float64_t det2 = l1.d2 * l2.det - l1.det * l2.d2
+  cdef Point point = Point()
+  point.x = det1 / det
+  point.y = det2 / det
 
   if not segments:
-    return i1, i2
+    return point
 
   # Check if point lies on the segments via bounds checking
   if p1 < q1:
-    if (i1 < p1) or (i1 > q1):
+    if (point.x < p1) or (point.x > q1):
       return None
   elif p1 > q1:
-    if (i1 > p1) or (i1 < q1):
+    if (point.x > p1) or (point.x < q1):
       return None
   if p2 < q2:
-    if (i2 < p2) or (i2 > q2):
+    if (point.y < p2) or (point.y > q2):
       return None
   elif p2 > q2:
-    if (i2 > p2) or (i2 < q2):
+    if (point.y > p2) or (point.y < q2):
       return None
 
   if r1 < s1:
-    if (i1 < r1) or (i1 > s1):
+    if (point.x < r1) or (point.x > s1):
       return None
   elif r1 > s1:
-    if (i1 > r1) or (i1 < s1):
+    if (point.x > r1) or (point.x < s1):
       return None
   if r2 < s2:
-    if (i2 < r2) or (i2 > s2):
+    if (point.y < r2) or (point.y > s2):
       return None
   elif r2 > s2:
-    if (i2 > r2) or (i2 < s2):
+    if (point.y > r2) or (point.y < s2):
       return None
 
-  return i1, i2
+  return point
 
 def intersection(p1: float,
         p2: float,
@@ -513,7 +515,8 @@ def intersection(p1: float,
         s1: float,
         s2: float,
         segments: bool = True) -> tuple:
-  return intersection_c(p1, p2, q1, q2, r1, r2, s1, s2, segments)
+  point = intersection_c(p1, p2, q1, q2, r1, r2, s1, s2, segments)
+  return (point.x, point.y)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -581,7 +584,7 @@ cdef list hits_c(list t, list y, list paths):
         point = intersection_c(t[i], y[i], t[i - 1], y[i - 1], path_t[ii],
                            path_y[ii], path_t[ii - 1], path_y[ii - 1], True)
         if point is not None:
-          intersections.append(point)
+          intersections.append((point.x, point.y))
   return intersections
 
 def hits(t: list, y: list, paths: list[list[tuple]]) -> list[tuple]:
@@ -661,7 +664,8 @@ cdef np.ndarray[np.float64_t, ndim=2] hits_np_c(np.ndarray[np.float64_t, ndim=1]
           if i_intersection >= n_intersections:
             intersections = np.concatenate((intersections, np.zeros((n_t, 2))), axis=0)
             n_intersections += n_t
-          intersections[i_intersection] = point
+          intersections[i_intersection, 0] = point.x
+          intersections[i_intersection, 1] = point.y
           i_intersection += 1
   return intersections[:i_intersection]
 

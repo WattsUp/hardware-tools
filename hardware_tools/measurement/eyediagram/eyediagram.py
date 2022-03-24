@@ -8,7 +8,7 @@ import base64
 import datetime
 from enum import Enum
 import io
-import multiprocessing
+import multiprocessing  # TODO (WattsUp) remove multiprocessing due to the negative gains
 from typing import Callable, Union
 
 import colorama
@@ -18,8 +18,14 @@ import numpy as np
 import skimage.draw
 
 from hardware_tools import strformat
-from hardware_tools.math import image, lines, stats
+from hardware_tools.math import image, stats
 from hardware_tools.measurement.mask import Mask
+
+try:
+  from hardware_tools.measurement.eyediagram import _eyediagram
+except ImportError:
+  print(f"The cython version of {__name__} is not available")
+  from hardware_tools.measurement.eyediagram import _eyediagram_fb as _eyediagram
 
 colorama.init(autoreset=True)
 
@@ -643,7 +649,7 @@ class EyeDiagram(ABC):
         levels
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output = self._collect_runners(_runner_y_slice, args_list, n_threads,
+    output = self._collect_runners(_eyediagram.y_slice, args_list, n_threads,
                                    print_progress, indent + 2)
 
     curves = {}
@@ -668,6 +674,60 @@ class EyeDiagram(ABC):
 
       curves[key] = np.array([t, ber])
     return curves
+
+  def _sample_mask(self,
+                   n_threads: int = 1,
+                   print_progress: bool = True,
+                   indent: int = 0) -> dict:
+    """Measure mask parameters
+
+    Args:
+      n_threads: number of thread to execute across
+      print_progress: True will print statements along the way, False will not.
+      indent: Indent all print statements that much
+
+    Returns:
+      Dictionary of values:
+        offender_count: Number of symbols that hit the mask
+        margin: Largest mask margin with zero hits [-1.0, 1.0]
+    """
+    values = {"offender_count": 0, "margin": 1.0}
+    if self._mask is None:
+      return values
+
+    mask_paths = []
+    mask_margins = []
+    for i in range(1000, -1001, -1):
+      mask_paths.append(self._mask.adjust(i / 1000).paths)
+      mask_margins.append(i / 1000)
+
+    # yapf: disable
+    args_list = [[
+        self._waveforms[i][1],
+        self._centers_t[i],
+        self._centers_i[i],
+        self._t_delta,
+        self._t_sym,
+        self._y_zero,
+        self._y_ua,
+        mask_paths,
+        mask_margins
+    ] for i in range(self._waveforms.shape[0])]
+    # yapf: enable
+    output_mask = self._collect_runners(_eyediagram.sample_mask, args_list,
+                                        n_threads, print_progress, indent + 2)
+
+    self._offenders = []
+    self._hits = []
+    margin = 1.0
+    offender_count = 0
+    for o in output_mask:
+      self._offenders.append(o["offenders"])
+      offender_count += len(o["offenders"])
+      self._hits.extend(o["hits"])
+      margin = min(margin, o["margin"])
+
+    return {"margin": margin, "offender_count": offender_count}
 
   def _draw_grid(self, image_grid: np.ndarray) -> None:
     """Draw reference grid
@@ -746,7 +806,7 @@ class EyeDiagram(ABC):
         self._config.point_cloud
     ] for i in range(self._waveforms.shape[0])]
     # yapf: enable
-    output = self._collect_runners(_runner_stack, args_list, n_threads,
+    output = self._collect_runners(_eyediagram.stack, args_list, n_threads,
                                    print_progress, indent + 2)
 
     self._raw_heatmap = np.zeros((self._resolution, self._resolution),
@@ -940,63 +1000,6 @@ class EyeDiagram(ABC):
     return self._clock_edges
 
 
-def _runner_stack(waveform_y: np.ndarray, centers_t: list[float],
-                  centers_i: list[int], t_delta: float, t_sym: float,
-                  min_y: float, max_y: float, resolution: int,
-                  point_cloud: bool) -> np.ndarray:
-  """Stack waveforms and counting overlaps in a heat map
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    min_y: Lower vertical value for bottom of grid
-    max_y: Upper vertical value for top of grid.
-      Grid units = (y - min_y) / (max_y - min_y)
-    resolution: Resolution of square eye diagram image, 2UI x 2UA
-    point_cloud: True will not linearly interpolate, False will
-
-  Returns:
-    2D grid of heat map counts
-  """
-  i_width = int((t_sym / t_delta) + 0.5) + 2
-  t_width_ui = (i_width * t_delta / t_sym)
-
-  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, i_width * 2 + 1)
-
-  waveform_y = (waveform_y - min_y) / (max_y - min_y)
-
-  grid = np.zeros((resolution, resolution), dtype=np.int32)
-
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
-    c_t = centers_t[i] / t_sym
-
-    t = (t0 + c_t)
-    y = waveform_y[c_i - i_width:c_i + i_width + 1]
-
-    td = (((t + 0.5) / 2) * resolution).astype(np.int32)
-    yd = (y * resolution).astype(np.int32)
-    if point_cloud:
-      lines.draw_points(td, yd, grid)
-    else:
-      lines.draw(td, yd, grid)
-
-  if point_cloud:
-    # Normalize density such that each column has the same number of counts
-    # Since point cloud lacks the interpolation
-    n = len(centers_t)
-    grid = grid.astype(np.float64)
-    for i in range(resolution):
-      grid[i] *= (n / max(1, np.sum(grid[i])))
-    grid = grid.astype(np.int32)
-
-  return grid
-
-
 def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
                          centers_i: list[int], t_delta: float, t_sym: float,
                          min_y: float, max_y: float, resolution: int,
@@ -1053,113 +1056,3 @@ def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
       img[rr, cc, 3] = val + (1 - val) * img[rr, cc, 3]
 
   return img
-
-
-# TODO make cython out of these runners
-# Combine these operations to save slicing?
-def _runner_sample_mask(waveform_y: np.ndarray, centers_t: list[float],
-                        centers_i: list[int], t_delta: float, t_sym: float,
-                        y_zero: float, y_ua: float, mask: Mask) -> dict:
-  """Measure mask parameters
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_zero: Amplitude of a logical 0
-    y_ua: Normalized amplitude
-    mask: Mask to test to
-
-  Returns:
-    Dictionary of values:
-      offenders: List of bit indices that hit the mask
-      hits: List of mask collision coordinates [[UI, UA],...]
-      margin: Largest mask margin with zero hits [-1.0, 1.0]
-  """
-  values = {"offenders": [], "hits": [], "margin": 1.0}
-  if mask is None:
-    return values
-  i_width = int((t_sym / t_delta) + 0.5) + 2
-  t_width_ui = (i_width * t_delta / t_sym)
-
-  n = i_width * 2 + 1
-  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
-
-  waveform_y = (waveform_y - y_zero) / y_ua
-
-  mask_adj = mask.adjust(values["margin"])
-
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
-    c_t = centers_t[i] / t_sym
-
-    t = t0 + c_t
-    y = waveform_y[c_i - i_width:c_i + i_width + 1]
-
-    while values["margin"] > -1.0 and lines.is_hitting_np(t, y, mask_adj.paths):
-      values["margin"] -= 0.001
-      mask_adj = mask.adjust(values["margin"])
-
-    if values["margin"] > 0.0:
-      continue  # There won't be hits until the margin is negative
-
-    hits = lines.hits_np(t, y, mask.paths)
-    if hits.size > 0:
-      values["offenders"].append(i)
-      values["hits"].extend(hits.tolist())
-
-  return values
-
-
-def _runner_y_slice(waveform_y: np.ndarray, centers_t: list[float],
-                    centers_i: list[int], t_delta: float, t_sym: float,
-                    y_zero: float, y_ua: float,
-                    y_slices: list[float]) -> list[list[float]]:
-  """Slice waveform at a level and record position of intersections
-
-  Args:
-    waveform_y: Waveform data array [y0, y1,..., yn]
-    centers_t: List of symbol centers in time for sub t_delta alignment.
-      Grid spans [-0.5*t_sym, 1.5*t_sym] + center_t
-    centers_i: List of symbol centers indices
-    t_delta: Time between samples
-    t_sym: Duration of one symbol
-    y_zero: Amplitude of a logical 0
-    y_ua: Normalized amplitude
-    y_slices: Amplitudes of slices for hits (normally threshold level)
-
-  Returns:
-    list per y_slice level containing
-    list of intersections in time
-  """
-  i_width = int((t_sym / t_delta) + 0.5) + 2
-  t_width_ui = (i_width * t_delta / t_sym)
-
-  n = i_width * 2 + 1
-  t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, n)
-
-  waveform_y = (waveform_y - y_zero) / y_ua
-
-  slices = []
-  paths = []
-  n_slices = len(y_slices)
-  for y_slice in y_slices:
-    slices.append([])
-    paths.append([(0.0, y_slice), (1.0, y_slice)])
-
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
-    c_t = centers_t[i] / t_sym
-
-    t = t0 + c_t
-    y = waveform_y[c_i - i_width:c_i + i_width + 1]
-
-    for ii in range(n_slices):
-      hits = lines.hits_np(t, y, [paths[ii]])
-      if hits.size > 0:
-        slices[ii].extend(hits[:, 0].tolist())
-
-  return slices
