@@ -1,4 +1,6 @@
 # hardware-tools
+[![Unit Test](https://github.com/WattsUp/hardware-tools/actions/workflows/test.yml/badge.svg)](https://github.com/WattsUp/hardware-tools/actions/workflows/test.yml) [![Pylint](https://github.com/WattsUp/hardware-tools/actions/workflows/lint.yml/badge.svg)](https://github.com/WattsUp/hardware-tools/actions/workflows/lint.yml) [![Coverage Badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/WattsUp/36d9705addcd44fb0fccec1d23dc1338/raw/hardware-tools__heads_master.json)](https://github.com/WattsUp/hardware-tools/actions/workflows/coverage.yml)
+
 A library for automating hardware development and testing
 
 ----
@@ -19,7 +21,7 @@ List of dependencies for package to run.
 ### Optional
 * Test extensions, installed via `pip install hardware_tools[test]`
   * time-machine
-  * AutoDict
+  * hardware-tools
 
 ### Virtual Environment
 If using hardware-tools in a virtual environment, do not place it within this repo directory. Set it outside due to an issue compiling the extensions with cython since it tries to compile the code inside the virtual environment as well.

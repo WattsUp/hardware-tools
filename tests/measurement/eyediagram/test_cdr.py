@@ -77,6 +77,15 @@ class TestCDRExt(base.TestBase):
                       t_sym=t_sym,
                       max_iter=0)
 
+    # Fixed data to force successful finer step route
+    n = 100e3
+    edges = clock.edges(t_sym=t_sym, n=n)
+    result = module.minimize_tie_disjoints(edges, t_sym=t_sym, tol=tol)
+    self.assertEqualWithinError(t_sym, result, 0.01)
+    ties = np.mod(edges - edges[0] + result / 2, result)
+    disjoints = (np.abs(np.diff(ties)) > result / 2).sum()
+    self.assertLessEqual(disjoints, tol)
+
   def test_minimize_tie_disjoints(self):
     self._test_minimize_tie_disjoints(_cdr_fb)
     self._test_minimize_tie_disjoints(_cdr)
