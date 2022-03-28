@@ -1,102 +1,145 @@
-import pyvisa
+"""Equipment base class to interface to physical testing hardware
+"""
+
+from abc import ABC, abstractmethod
 import time
+from typing import Any
 
-# TODO [Future] add more scopes and other instrument types
+import pyvisa
 
-class Equipment:
+# TODO (WattsUp) [Future] add more scopes and other instrument types
+
+
+class Equipment(ABC):
+  """Equipment base class to interface to physical testing hardware
+
+  Properties:
+    settings: List of settings recognized to change
+    commands: List of commands recognized to execute
+  """
 
   settings = []
-
   commands = []
 
-  def __init__(self, name: str, addr: str) -> None:
-    '''!@brief Create a new abstract Equipment object
+  def __init__(self, address: str, name: str = "") -> None:
+    """Initialize Equipment by connecting to it
 
-    @param name The name of the Equipment
-    @param addr The address of the Equipment (VISA resource string)
-    '''
-    self.name = name
-    self.addr = addr
+    Args:
+      address: Address to the Equipment (VISA resource string)
+      name: Name of the Equipment
+    """
+    self._address = address
+    self._name = name
 
     rm = pyvisa.ResourceManager()
-    self.instrument = rm.open_resource(addr)
-    # TODO add TCP socket connection type
+    self._instrument = rm.open_resource(address)
 
-  def __str__(self) -> str:
-    '''!@brief Get a string representation of the Equipment
+  def __del__(self) -> None:
+    try:
+      self._instrument.close()
+    except AttributeError:  # pragma: no cover
+      pass
 
-    @return str
-    '''
-    return f'{self.name} @ {self.addr}'
+  def __repr__(self) -> str:
+    return f"{self._name} @ {self._address}"
 
-  def send(self, cmd: str) -> None:
-    '''!@brief Send a command to the Equipment
+  def send(self, command: str) -> None:
+    """Send a command to the Equipment
 
-    @param cmd Command string to write
-    '''
-    self.instrument.write(cmd)
+    Args:
+      command: Command string to write
+    """
+    self._instrument.write(command)
 
-  def ask(self, cmd: str) -> str:
-    '''!@brief Send a command to the Equipment and receive a reply
+  def ask(self, command: str) -> str:
+    """Send a command to the Equipment and receive a reply
 
-    @param cmd Command string to write
-    @return str Reply
-    '''
-    return self.instrument.query(cmd).strip()
+    Args:
+      command: Command string to write
 
-  def receive(self) -> bytes:
-    '''!@brief Receive raw data from the Equipment
+    Returns:
+      Reply string
+    """
+    return self._instrument.query(command).strip()
 
-    @return bytes Reply
-    '''
-    return self.instrument.read_raw()
+  def ask_and_wait(self,
+                   command: str,
+                   states: list[str],
+                   timeout: float = 1,
+                   additional_command: str = None) -> str:
+    """Send a command to the Equipment and wait until reply is desired
 
-  def configure(self, setting: str, value) -> object:
-    '''!@brief Configure a setting to a new value
+    Args:
+      command: Command string to write (passed to self.ask)
+      states: Desired states. Returns if reply matches any element
+      timeout: Time in seconds to wait until giving up
+      additional_command: Additional command string to send before each ask
 
-    @param setting The setting to change (see self.settings)
-    @param value The value to change to
-    @return object Setting change validation (most likely a float)
-    '''
-    raise Exception('configure called on base Equipment')
+    Returns:
+      Last reply received
 
-  def command(self, command: str, timeout: float = 1,
-              silent: bool = True) -> None:
-    '''!@brief Perform a command sequence
-
-    @param command The command to perform (see self.commands)
-    @param timeout Time in seconds to wait until giving up
-    @param silent True will not print anything except errors
-    '''
-    raise Exception('command called on base Equipment')
-
-  def waitForReply(
-    self, cmd: str, states: list[str], timeout: float = 1, repeatSend: str = None) -> str:
-    '''!@brief Send a command to the Equipment and wait repeat until reply is desired
-
-    @param cmd Command string to self.ask
-    @param states Desired states. Returns if reply matches any element
-    @param timeout Time in seconds to wait until giving up
-    @param repeatSend Additional command string to send before each ask
-    @return str Last reply
-    '''
+    Raises:
+      TimeoutError if timeout was exceeded
+    """
     interval = 0.05
     timeout = int(timeout / interval)
 
-    seenStates = []
-    if repeatSend:
-      self.send(repeatSend)
-    state = self.ask(cmd)
-    seenStates.append(state)
+    seen = []
+    if additional_command is not None:
+      self.send(additional_command)
+    state = self.ask(command)
+    seen.append(state)
     while (state not in states and timeout >= 0):
       time.sleep(interval)
-      if repeatSend:
-        self.send(repeatSend)
-      state = self.ask(cmd)
-      seenStates.append(state)
+      if additional_command is not None:
+        self.send(additional_command)
+      state = self.ask(command)
+      seen.append(state)
       timeout -= 1
-    # print(f'Waited {len(seenStates) * interval:.2f}s')
     if timeout < 0:
-      raise Exception(
-        f'{self.name}@{self.addr} failed to wait for \'{cmd}\' = \'{states}\' = \'{seenStates}\'')
+      raise TimeoutError(
+          f"{self} failed to wait for '{command}' = '{states}' = '{seen}'")
     return state
+
+  def receive(self) -> bytes:
+    """Receive raw data from the Equipment
+
+    Returns:
+      Reply as bytes
+    """
+    return self._instrument.read_raw()
+
+  @abstractmethod
+  def configure(self, setting: str, value: Any) -> Any:
+    """Configure a setting to a new value
+
+    Args:
+      setting: The setting to change (see self.settings)
+      value: The value to change to
+
+    Returns:
+      Setting change validation
+
+    Raises:
+      KeyError if setting is improper
+
+      ValueError if value is improper
+    """
+    pass  # pragma: no cover
+
+  @abstractmethod
+  def command(self,
+              command: str,
+              timeout: float = 1,
+              silent: bool = True) -> None:
+    """Perform a command sequence
+
+    Args:
+      command: The command to perform (see self.commands)
+      timeout: Time in seconds to wait until giving up
+      silent: True will not print anything except errors
+
+    Raises:
+      TimeoutError if timeout was exceeded
+    """
+    pass  # pragma: no cover

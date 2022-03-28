@@ -1,0 +1,5 @@
+# For documentation of these options see
+# https://github.com/google/yapf/blob/HEAD/README.rst
+[style]
+based_on_style = google
+indent_width = 2

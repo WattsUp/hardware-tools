@@ -1,10 +1,15 @@
-from . import version
+"""hardware-tools
 
-__version__ = version.versionFull
+A library for automating hardware development and testing
+"""
 
-__all__ = ['equipment', 'measurement', 'math']
+from hardware_tools import version
 
-from . import equipment
-from . import measurement
+__version__ = version.version_full
 
-from . import math
+__all__ = ["equipment", "measurement", "math"]
+
+from hardware_tools import equipment
+# from hardware_tools import measurement
+
+from hardware_tools import math
