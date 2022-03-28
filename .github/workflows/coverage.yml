@@ -29,9 +29,16 @@ jobs:
         continue-on-error: true
         run: |
           python -m coverage run &> testing.log
-          python -m coverage json
+          if python -m coverage json ; then
+            echo "COLOR=green" >> $GITHUB_ENV
+          else
+            echo "COLOR=red" >> $GITHUB_ENV
+          fi
+
+
           CMD="import json; print(json.load(open('coverage.json'))['totals']['percent_covered_display'] + '%')"
           echo "COVERAGE=$(python -c "$CMD")" >> $GITHUB_ENV
+
           REF=${{ github.ref }}
           echo "github.ref: $REF"
           IFS='/' read -ra PATHS <<< "$REF"
@@ -54,5 +61,5 @@ jobs:
           filename: hardware-tools__${{ env.BRANCH }}.json
           label: Test Coverage
           message: ${{ env.COVERAGE }}
-          color: green
+          color: ${{ env.COLOR }}
           namedLogo: Coverage
