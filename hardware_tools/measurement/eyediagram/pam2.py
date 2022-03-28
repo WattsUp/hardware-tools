@@ -199,7 +199,6 @@ class PAM2(eyediagram.EyeDiagram):
       raise ValueError("config must be of type PAM2Config")
 
   def _step1_levels(self,
-                    n_threads: int = 1,
                     print_progress: bool = True,
                     indent: int = 0,
                     debug_plots: str = None) -> None:
@@ -283,7 +282,6 @@ class PAM2(eyediagram.EyeDiagram):
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   def _step2_clock(self,
-                   n_threads: int = 1,
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
@@ -292,19 +290,10 @@ class PAM2(eyediagram.EyeDiagram):
         self._clock_edges = []
         self._ties = []
         # Get edges from _clocks given clock_polarity
-        # yapf: disable
-        args_list = [[
-            self._clocks[i][0],
-            self._clocks[i][1],
-            self._y_rising,
-            self._y_half,
-            self._y_falling
-        ] for i in range(self._waveforms.shape[0])]
-        # yapf: enable
-        output = self._collect_runners(lines.edges_np, args_list, n_threads,
-                                       print_progress, indent + 2)
-        for o in output:
-          e = _filter_edge_polarity(o, self._config.clock_polarity)
+        for i in range(self._waveforms.shape[0]):
+          e = lines.edges_np(self._clocks[i][0], self._clocks[i][1],
+                             self._y_rising, self._y_half, self._y_falling)
+          e = _filter_edge_polarity(e, self._config.clock_polarity)
           self._clock_edges.append(e.tolist())
           self._ties.append([])
       elif not self._low_snr:
@@ -313,26 +302,17 @@ class PAM2(eyediagram.EyeDiagram):
         # Run CDR to generate edges
         if self._config.cdr is None:
           self._config.cdr = cdr.CDR(self._config.fallback_period)
-        # yapf: disable
-        args_list = [[
-            self._waveforms[i][0],
-            self._waveforms[i][1],
-            self._y_rising,
-            self._y_half,
-            self._y_falling,
-            copy.deepcopy(self._config.cdr),
-            self._config.clock_polarity
-        ] for i in range(self._waveforms.shape[0])]
-        # yapf: enable
-        output = self._collect_runners(_runner_cdr, args_list, n_threads,
-                                       print_progress, indent + 2)
+
         self._clock_edges = []
         self._ties = []
-        for o in output:
+        for i in range(self._waveforms.shape[0]):
+          o = _runner_cdr(self._waveforms[i][0], self._waveforms[i][1],
+                          self._y_rising, self._y_half, self._y_falling,
+                          copy.deepcopy(self._config.cdr),
+                          self._config.clock_polarity)
           self._clock_edges.append(o[0].tolist())
           self._ties.append(o[1].tolist())
-    super()._step2_clock(n_threads=n_threads,
-                         print_progress=print_progress,
+    super()._step2_clock(print_progress=print_progress,
                          indent=indent,
                          debug_plots=debug_plots)
 
@@ -347,31 +327,34 @@ class PAM2(eyediagram.EyeDiagram):
     image_grid[::5, self._uia_to_image(self._config.edge_upper), 3] = 1.0
 
   def _step4_measure(self,
-                     n_threads: int = 1,
                      print_progress: bool = True,
                      indent: int = 0,
                      debug_plots: str = None) -> None:
     m = MeasuresPAM2()
-
     t_sym = self._t_sym
+
+    if self._config.skip_measures:
+      m.n_sym = 0
+      for i in range(self._waveforms.shape[0]):
+        m.n_sym += len(self._centers_i[i])
+      m.n_samples = int(m.n_sym * t_sym / self._t_delta)
+      m.transition_dist = {
+          "000": 0,
+          "001": 0,
+          "010": 0,
+          "011": 0,
+          "100": 0,
+          "101": 0,
+          "110": 0,
+          "111": 0,
+      }
+      self._measures = m
+      self._offenders = [[]] * self._waveforms.shape[0]
+      self._hits = [[]] * self._waveforms.shape[0]
+      return
 
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform vertically")
-
-    # yapf: disable
-    args_list = [[
-        self._waveforms[i][1],
-        self._centers_t[i],
-        self._centers_i[i],
-        self._t_delta,
-        t_sym,
-        self._y_half,
-        self._config.level_width,
-        self._config.cross_width
-    ] for i in range(self._waveforms.shape[0])]
-    # yapf: enable
-    output_vert = self._collect_runners(_pam2.sample_vertical, args_list,
-                                        n_threads, print_progress, indent + 2)
 
     s_y_0 = []
     s_y_1 = []
@@ -390,14 +373,18 @@ class PAM2(eyediagram.EyeDiagram):
     }
     edge_dir = []
     for i in range(self._waveforms.shape[0]):
-      s_y_0.extend(output_vert[i]["y_0"])
-      s_y_1.extend(output_vert[i]["y_1"])
-      s_y_cross.extend(output_vert[i]["y_cross"])
-      s_y_0_cross.extend(output_vert[i]["y_0_cross"])
-      s_y_1_cross.extend(output_vert[i]["y_1_cross"])
+      o = _pam2.sample_vertical(self._waveforms[i][1], self._centers_t[i],
+                                self._centers_i[i], self._t_delta, t_sym,
+                                self._y_half, self._config.level_width,
+                                self._config.cross_width)
+      s_y_0.extend(o["y_0"])
+      s_y_1.extend(o["y_1"])
+      s_y_cross.extend(o["y_cross"])
+      s_y_0_cross.extend(o["y_0_cross"])
+      s_y_1_cross.extend(o["y_1_cross"])
       for t in transitions:
-        transitions[t] += output_vert[i]["transitions"][t]
-      edge_dir.append(output_vert[i]["edge_dir"])
+        transitions[t] += o["transitions"][t]
+      edge_dir.append(o["edge_dir"])
     s_y_0 = np.fromiter(s_y_0, np.float64)
     s_y_1 = np.fromiter(s_y_1, np.float64)
     s_y_cross = np.fromiter(s_y_cross, np.float64)
@@ -446,7 +433,8 @@ class PAM2(eyediagram.EyeDiagram):
       a_0 = np.percentile(s_y_1, 0.05,
                           method="median_unbiased") - np.percentile(
                               s_y_0, 99.95, method="median_unbiased")
-      m.vecp = np.log10(m.oma_cross / a_0) * 10
+      vecp_linear = m.oma_cross / a_0
+      m.vecp = np.log10(vecp_linear) * 10
 
     # Update levels if not manual
     if self._config.y_0 is None:
@@ -459,25 +447,6 @@ class PAM2(eyediagram.EyeDiagram):
 
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform horizontally")
-    # yapf: disable
-    args_list = [[
-        self._waveforms[i][1],
-        self._centers_t[i],
-        self._centers_i[i],
-        edge_dir[i],
-        self._t_delta,
-        t_sym,
-        self._y_zero,
-        self._y_ua,
-        m.y_cross.value,
-        self._config.time_height,
-        self._config.edge_lower,
-        self._config.edge_upper
-    ] for i in range(self._waveforms.shape[0])]
-    # yapf: enable
-    # output_horz? TODO
-    output_horz = self._collect_runners(_pam2.sample_horizontal, args_list,
-                                        n_threads, print_progress, indent + 2)
 
     s_t_rise_lower = []
     s_t_rise_upper = []
@@ -488,14 +457,19 @@ class PAM2(eyediagram.EyeDiagram):
     s_t_cross_left = []
     s_t_cross_right = []
     for i in range(self._waveforms.shape[0]):
-      s_t_rise_lower.extend(output_horz[i]["t_rise_lower"])
-      s_t_rise_upper.extend(output_horz[i]["t_rise_upper"])
-      s_t_rise_half.extend(output_horz[i]["t_rise_half"])
-      s_t_fall_lower.extend(output_horz[i]["t_fall_lower"])
-      s_t_fall_upper.extend(output_horz[i]["t_fall_upper"])
-      s_t_fall_half.extend(output_horz[i]["t_fall_half"])
-      s_t_cross_left.extend(output_horz[i]["t_cross_left"])
-      s_t_cross_right.extend(output_horz[i]["t_cross_right"])
+      o = _pam2.sample_horizontal(
+          self._waveforms[i][1], self._centers_t[i], self._centers_i[i],
+          edge_dir[i], self._t_delta, t_sym, self._y_zero, self._y_ua,
+          m.y_cross.value, self._config.time_height, self._config.edge_lower,
+          self._config.edge_upper)
+      s_t_rise_lower.extend(o["t_rise_lower"])
+      s_t_rise_upper.extend(o["t_rise_upper"])
+      s_t_rise_half.extend(o["t_rise_half"])
+      s_t_fall_lower.extend(o["t_fall_lower"])
+      s_t_fall_upper.extend(o["t_fall_upper"])
+      s_t_fall_half.extend(o["t_fall_half"])
+      s_t_cross_left.extend(o["t_cross_left"])
+      s_t_cross_right.extend(o["t_cross_right"])
     s_t_rise_lower = np.fromiter(s_t_rise_lower, np.float64)
     s_t_rise_upper = np.fromiter(s_t_rise_upper, np.float64)
     s_t_rise_half = np.fromiter(s_t_rise_half, np.float64)
@@ -565,9 +539,7 @@ class PAM2(eyediagram.EyeDiagram):
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform mask")
 
-    output_mask = self._sample_mask(n_threads=n_threads,
-                                    print_progress=print_progress,
-                                    indent=indent)
+    output_mask = self._sample_mask()
 
     if self._mask is None:
       margin = np.nan
@@ -582,11 +554,7 @@ class PAM2(eyediagram.EyeDiagram):
     if print_progress:
       print(f"{'':>{indent}}Generating bathtub curves")
 
-    m.bathtub_curves = self._generate_bathtub_curves(
-        {"Eye 0": 0.5},
-        n_threads=n_threads,
-        print_progress=print_progress,
-        indent=indent)
+    m.bathtub_curves = self._generate_bathtub_curves({"Eye 0": 0.5})
 
     self._measures = m
 

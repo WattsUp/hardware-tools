@@ -64,19 +64,17 @@ def minimize_tie_disjoints(data_edges: np.ndarray,
   n_comp = int(1e6)
 
   # Hope first round works
-  n = max(100000, len(edges))
-  t_span = np.linspace(t_min, t_max, n_comp // n)
+  t_span = np.linspace(t_min, t_max, max(20, n_comp // len(edges)))
   scores = _calculate_tie_scores(edges, t_span)
   if scores[0][1] < tol:
     return scores[0][0]
 
   # from matplotlib import pyplot
-  # x = scores[:,0]
-  # y = scores[:,1]
+  # x = scores[:, 0]
+  # y = scores[:, 1]
   # pyplot.scatter(x, y)
   # pyplot.axvline(x=t_min, color="g")
   # pyplot.axvline(x=t_max, color="g")
-  # pyplot.title(f"n {n}")
   # pyplot.show()
   # return
 
@@ -84,9 +82,9 @@ def minimize_tie_disjoints(data_edges: np.ndarray,
     raise ArithmeticError("Failed to find any t_sym with few disjoints")
 
   # Do a finer step, fewer edges to catch a zero
-  for n in [10000, 1000, 100]:
+  for n in [100000, 10000, 1000, 100]:
     edges_short = edges[:n]
-    t_span = np.linspace(t_min, t_max, n_comp // n)
+    t_span = np.linspace(t_min, t_max, max(20, n_comp // n))
     scores = _calculate_tie_scores(edges_short, t_span).T
     lower = scores[:, scores[1] < 1]
     if lower.shape[1] != 0:
@@ -145,6 +143,10 @@ def detrend_ties(data_edges: np.ndarray, t_sym: float) -> float:
       offset = -offset
     ties += offset * t_sym
     bits += -offset
+
+  # from matplotlib import pyplot
+  # pyplot.plot(bits, ties)
+  # pyplot.show()
 
   ssxm, ssxym, _, _ = np.cov(bits, ties, bias=1).flat
   slope = ssxym / ssxm

@@ -306,6 +306,7 @@ class MockMDO3054(mock_pyvisa.Resource):
                    f'XUNIT "{x_unit}";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
                    f'YUNIT "{y_unit}";YMULT {y_mult:.4E};'
                    f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
+                   "BYT_OR MSB;BYT_NR 1;BN_FMT RI;"
                    f":CURVE #{len(n_bytes)}{n_bytes}")
       real_data = real_data.encode(encoding="ascii") + waveform + b"\n"
 
@@ -382,7 +383,7 @@ class MockMDO3054(mock_pyvisa.Resource):
     raise KeyError(f"Unknown query {command}")
 
 
-class TestEquipmentTektronixMSO4000(base.TestBase):
+class TestMSO4000(base.TestBase):
   """Test Equipment Tektronix MSO4000
   """
 

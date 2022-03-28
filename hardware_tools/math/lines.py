@@ -9,6 +9,7 @@ import numpy as np
 
 try:
   from hardware_tools.math._lines import *  # pylint: disable=wildcard-import
+  # raise ImportError
 except ImportError:
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.math._lines_fb import *  # pylint: disable=wildcard-import, unused-wildcard-import

@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from hardware_tools.equipment import scope
+from hardware_tools.equipment.tektronix import common
 
 _rng = np.random.default_rng()
 
@@ -378,60 +379,11 @@ class MSO4000(scope.Scope):
     self.send("HEADER 1")
     self._instrument.write("WAVFRM?")
     data = self._instrument.read_raw()
-    data = data.split(b";:CURVE ")
+    with open("temp.isf", "wb") as file:
+      file.write(data)
     self.send("HEADER 0")
 
-    waveform_format = data[0].decode(encoding="ascii")
-    curve = data[1]
-
-    interpret_info = [
-        i.split(" ", maxsplit=1) for i in waveform_format[11:].split(";")
-    ]
-    interpret_info = {i[0]: i[1] for i in interpret_info}
-    # for k, v in interpret_info.items():
-    #   print(f"{k}: {v}")
-
-    points = int(interpret_info["NR_PT"])
-    x_incr = float(interpret_info["XINCR"])
-    x_zero = float(interpret_info["XZERO"])
-    x_unit = interpret_info["XUNIT"].replace('"', "")
-
-    info_dict = {
-        "config_string": interpret_info["WFID"],
-        "x_unit": x_unit,
-        "y_unit": "ADC Counts",
-        "x_incr": x_incr,
-        "y_incr": 1
-    }
-
-    header_len = 2 + int(chr(curve[1]), 16)
-    wave = curve[header_len:header_len + points]
-    wave = np.frombuffer(wave, dtype=">b").astype(np.float64)
-    x = x_zero + x_incr * np.arange(points).astype(np.float64)
-    # float32 is not accurate enough for 1e6 points (only ~7digits of precision)
-
-    info_dict["clippingTop"] = wave.max() >= 127
-    info_dict["clippingBottom"] = wave.min() <= -127
-
-    if add_noise:
-      wave += _rng.uniform(-0.5, 0.5, points)
-      # Don"t add noise to clipping values
-      wave[np.where(wave >= 126.5)] = 127
-      wave[np.where(wave < -126.5)] = -127
-
-    if raw:
-      return (np.stack([x, wave]), info_dict)
-
-    y_mult = float(interpret_info["YMULT"])
-    y_zero = float(interpret_info["YZERO"])
-    y_off = float(interpret_info["YOFF"])
-    y_unit = interpret_info["YUNIT"].replace('"', "")
-    y = (wave - y_off) * y_mult + y_zero
-
-    info_dict["y_unit"] = y_unit
-    info_dict["y_incr"] = y_mult
-
-    return (np.stack([x, y]), info_dict)
+    return common.parse_wfm(data, raw=raw, add_noise=add_noise)
 
 
 class MDO4000(MSO4000):

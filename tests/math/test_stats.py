@@ -268,3 +268,23 @@ class TestStats(base.TestBase):
     r_stddev = a.stddev / (a.value * np.log(10))
     self.assertEqualWithinSampleError(np.log10(a.value), r.value, n)
     self.assertEqualWithinSampleError(r_stddev, r.stddev, n)
+
+    self.assertFalse(a.isnan())
+    a = stats.UncertainValue(0.0, np.nan)
+    self.assertTrue(a.isnan())
+    a = stats.UncertainValue(np.nan, 0.0)
+    self.assertTrue(a.isnan())
+
+    r = np.log(a)
+    self.assertTrue(r.isnan())
+
+    r = np.log10(a)
+    self.assertTrue(r.isnan())
+
+    a = stats.UncertainValue.samples(-samples_a)
+
+    r = np.log(a)
+    self.assertTrue(r.isnan())
+
+    r = np.log10(a)
+    self.assertTrue(r.isnan())

@@ -8,8 +8,9 @@ import base64
 import datetime
 from enum import Enum
 import io
-import multiprocessing  # TODO (WattsUp) remove multiprocessing due to the negative gains
-from typing import Callable, Union
+import json
+import os
+from typing import Any, Union
 
 import colorama
 from colorama import Fore
@@ -34,6 +35,28 @@ class ClockPolarity(Enum):
   RISING = 1  # Sample on clock's rising edge
   FALLING = 2  # Sample on clock's falling edge
   BOTH = 3  # Sample on both edges
+
+
+class MeasuresJSONEncoder(json.JSONEncoder):
+  """JSON Encoder for Measures
+  """
+
+  def default(self, o: Any) -> Any:
+    if isinstance(o, stats.UncertainValue):
+      return {
+          "__type__": stats.UncertainValue.__qualname__,
+          "value": o.value,
+          "stddev": o.stddev
+      }
+    elif isinstance(o, bytes):
+      return o.decode(encoding="utf-8")
+    elif isinstance(o, np.integer):
+      return int(o)
+    elif isinstance(o, np.floating):
+      return float(o)
+    elif isinstance(o, np.ndarray):
+      return o.tolist()
+    return super().default(o)
 
 
 class Measures(ABC):
@@ -101,7 +124,9 @@ class Measures(ABC):
     self._np_image_hits = np_hits
     self._np_image_margin = np_margin
 
-  def save_images(self, basename: str = "eyediagram") -> None:
+  def save_images(self,
+                  basename: os.PathLike = "eyediagram",
+                  stack: bool = False) -> None:
     """Save images to PNG file
 
     Args:
@@ -110,13 +135,42 @@ class Measures(ABC):
         image_grid will be saved to "{basename}.grid.png"
         image_mask will be saved to "{basename}.mask.png"
         image_hits will be saved to "{basename}.hits.png"
-        image_margin will be saved to "{basename}.margin.png"
+        image_margin will be saved to "{basename}.mask_margin.png"
+      stack: True will stack grid, clean, mask, and hits and save to
+        Default mask: "{basename}.png"
+        Margin mask: "{basename}.margin.png"
     """
     image.np_to_file(self._np_image_clean, f"{basename}.clean.png")
     image.np_to_file(self._np_image_grid, f"{basename}.grid.png")
     image.np_to_file(self._np_image_mask, f"{basename}.mask.png")
     image.np_to_file(self._np_image_hits, f"{basename}.hits.png")
-    image.np_to_file(self._np_image_margin, f"{basename}.margin.png")
+    image.np_to_file(self._np_image_margin, f"{basename}.mask_margin.png")
+    if stack:
+      img = image.layer_rgba(self._np_image_grid, self._np_image_clean)
+      img = image.layer_rgba(img, self._np_image_mask)
+      img = image.layer_rgba(img, self._np_image_hits)
+      image.np_to_file(img, f"{basename}.png")
+
+      img = image.layer_rgba(self._np_image_grid, self._np_image_clean)
+      img = image.layer_rgba(img, self._np_image_margin)
+      image.np_to_file(img, f"{basename}.margin.png")
+
+  def save_json(self,
+                filename: os.PathLike = "eyediagram.json",
+                exclude_images: bool = False,
+                **kwargs) -> None:
+    """Save images to PNG file
+
+    Args:
+      filename: File name for json file
+      exclude_images: True will not include the base64 encoded images
+      Additional arguments passed to json.dump
+    """
+    with open(filename, "w", encoding="utf-8") as file:
+      json.dump(self.to_dict(exclude_images=exclude_images),
+                file,
+                cls=MeasuresJSONEncoder,
+                **kwargs)
 
   @property
   def image_clean(self) -> bytes:
@@ -148,10 +202,11 @@ class Measures(ABC):
       return None
     return image.np_to_base64(self._np_image_margin)
 
-  def to_dict(self) -> dict:
+  def to_dict(self, exclude_images: bool = False) -> dict:
     """Convert Measures to dictionary of values
 
-    Compatible with default JSONEncoder
+    Args:
+      exclude_images: True will not include the base64 encoded images
 
     Returns:
       dictionary of metrics and images (base64 encoded PNGs)
@@ -160,6 +215,8 @@ class Measures(ABC):
     d = {}
     for key in properties:
       if key.startswith("_"):
+        continue
+      if exclude_images and key.startswith("image"):
         continue
       if hasattr(self.__class__, key):
         attr = getattr(self.__class__, key)
@@ -170,6 +227,63 @@ class Measures(ABC):
         item = getattr(self, key)
       d[key] = item
     return d
+
+  def pretty_print(self) -> None:
+    """Print measures beautifully
+    """
+    properties = dir(self)
+    properties_filtered = []
+    max_length = 0
+    for key in properties:
+      if key.startswith("_"):
+        continue
+      if hasattr(self.__class__, key):
+        attr = getattr(self.__class__, key)
+        if not isinstance(attr, property):
+          continue
+        properties_filtered.append(key)
+        max_length = max(max_length, len(key))
+      else:
+        properties_filtered.append(key)
+        max_length = max(max_length, len(key))
+    format_specifiers = {
+        float: "10.3G",
+        np.floating: "10.3G",
+        int: "10",
+        np.integer: "10",
+        stats.UncertainValue: "10.3G"
+    }
+    for key in properties_filtered:
+      print(f"{key:{max_length}}: ", end="")
+      if key.startswith("image"):
+        print("[Image]")
+        continue
+      item = getattr(self, key)
+      if isinstance(item, dict):
+        print("")
+        kk_max = max([len(kk) for kk in item])
+        for kk, vv in item.items():
+          print(f"  {kk:{kk_max}}: ", end="")
+          if isinstance(vv, np.ndarray):
+            print(f"[np.ndarray, shape={vv.shape}, dtype={vv.dtype}]")
+          else:
+            matched = False
+            for t, f in format_specifiers.items():
+              if isinstance(vv, t):
+                print(f"{vv:{f}}")
+                matched = True
+                break
+            if not matched:
+              print(f"[Unknown, type={type(vv).__qualname__}]")
+      else:
+        matched = False
+        for t, f in format_specifiers.items():
+          if isinstance(item, t):
+            print(f"{item:{f}}")
+            matched = True
+            break
+        if not matched:
+          print(f"[Unknown, type={type(item).__qualname__}]")
 
 
 class Config():
@@ -187,6 +301,7 @@ class Config():
     fallback_period: float, if CDR cannot run (low SNR) fallback period to
       generate constant clock
 
+    skip_measures: bool, True will not measure anything
     level_width: float, width of histogram for y levels, UI
     cross_width: float, width of histogram for y cross levels, UI
     time_hight: float, height of histogram for edge times, UA
@@ -216,6 +331,7 @@ class Config():
     # Step 3
 
     # Step 4
+    self.skip_measures = False
     self.level_width = 0.2
     self.cross_width = 0.1
     self.time_height = 0.05
@@ -281,8 +397,6 @@ class EyeDiagram(ABC):
       ValueError if waveforms or clocks is wrong shape
     """
     super().__init__()
-    # TODO (WattsUp) look into different multithreading due to
-    # "waiting for lock"
     if len(waveforms.shape) == 2:
       waveforms = np.array([waveforms])
     elif len(waveforms.shape) != 3:
@@ -315,6 +429,7 @@ class EyeDiagram(ABC):
     self._t_unit = t_unit
     self._y_unit = y_unit
     self._mask = mask
+    self._mask_converted = None
 
     self._resolution = resolution
     self._raw_heatmap = np.zeros((resolution, resolution), dtype=np.int32)
@@ -338,14 +453,12 @@ class EyeDiagram(ABC):
       self._config = config
 
   def calculate(self,
-                n_threads: int = 0,
                 print_progress: bool = True,
                 indent: int = 0,
                 debug_plots: str = None) -> Measures:
     """Perform eye diagram calculation
 
     Args:
-      n_threads: number of thread to execute across, 0=all, 1=single, or n
       print_progress: True will print statements along the way, False will not.
       indent: Indent all print statements that much
       debug_plots: base filename to save debug plots to. None will not save any
@@ -355,51 +468,41 @@ class EyeDiagram(ABC):
       Measures object containing resultant metrics, specific to line encoding
     """
     start = datetime.datetime.now()
-    if n_threads < 1:
-      n_threads = min(multiprocessing.cpu_count(), self._waveforms.shape[0])
-    else:
-      n_threads = min(n_threads, multiprocessing.cpu_count(),
-                      self._waveforms.shape[0])
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.CYAN}"
-            f"Starting eye diagram calculation with {n_threads} threads")
+            f"Starting eye diagram calculation")
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
             "Step 1: Finding threshold levels")
-    self._step1_levels(n_threads=n_threads,
-                       print_progress=print_progress,
+    self._step1_levels(print_progress=print_progress,
                        indent=indent + 2,
                        debug_plots=debug_plots)
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
             "Step 2: Determining receiver clock")
-    self._step2_clock(n_threads=n_threads,
-                      print_progress=print_progress,
+    self._step2_clock(print_progress=print_progress,
                       indent=indent + 2,
                       debug_plots=debug_plots)
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
             "Step 3: Aligning symbol sampling points")
-    self._step3_sample(n_threads=n_threads,
-                       print_progress=print_progress,
+    self._step3_sample(print_progress=print_progress,
                        indent=indent + 2,
                        debug_plots=debug_plots)
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
             "Step 4: Measuring waveform")
-    self._step4_measure(n_threads=n_threads,
-                        print_progress=print_progress,
+    self._step4_measure(print_progress=print_progress,
                         indent=indent + 2,
                         debug_plots=debug_plots)
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
             "Step 5: Stacking waveforms")
-    self._step5_stack(n_threads=n_threads,
-                      print_progress=print_progress,
+    self._step5_stack(print_progress=print_progress,
                       indent=indent + 2,
                       debug_plots=debug_plots)
 
@@ -412,7 +515,6 @@ class EyeDiagram(ABC):
 
   @abstractmethod
   def _step1_levels(self,
-                    n_threads: int = 1,
                     print_progress: bool = True,
                     indent: int = 0,
                     debug_plots: str = None) -> None:
@@ -421,7 +523,6 @@ class EyeDiagram(ABC):
     Dependent on line encoding
 
     Args:
-      n_threads: number of thread to execute across
       print_progress: True will print statements along the way, False will not.
       indent: Indent all print statements that much
       debug_plots: base filename to save debug plots to. None will not save any
@@ -432,7 +533,6 @@ class EyeDiagram(ABC):
     self._y_ua = 0.0  # pragma: no cover
 
   def _step2_clock(self,
-                   n_threads: int = 1,
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
@@ -442,13 +542,11 @@ class EyeDiagram(ABC):
     This method will use config.fallback_period if self._clock_edges is None
 
     Args:
-      n_threads: number of thread to execute across
       print_progress: True will print statements along the way, False will not.
       indent: Indent all print statements that much
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    _ = n_threads
     if self._clock_edges is None:
       self._clock_edges = []
       self._ties = []
@@ -508,20 +606,17 @@ class EyeDiagram(ABC):
       print(f"{'':>{indent}}Saved image to {debug_plots}")
 
   def _step3_sample(self,
-                    n_threads: int = 1,
                     print_progress: bool = True,
                     indent: int = 0,
                     debug_plots: str = None) -> None:
     """Calculation step 3: symbol sample point
 
     Args:
-      n_threads: number of thread to execute across
       print_progress: True will print statements along the way, False will not.
       indent: Indent all print statements that much
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    _ = n_threads
     self._centers_i = []
     self._centers_t = []
 
@@ -545,8 +640,6 @@ class EyeDiagram(ABC):
 
       self._centers_i.append(centers_i)
       self._centers_t.append(centers_t)
-      if print_progress:
-        print(f"{'':>{indent}}Ran waveform #{i}")
 
     if print_progress:
       print(f"{'':>{indent}}Completed sampling")
@@ -597,7 +690,6 @@ class EyeDiagram(ABC):
 
   @abstractmethod
   def _step4_measure(self,
-                     n_threads: int = 1,
                      print_progress: bool = True,
                      indent: int = 0,
                      debug_plots: str = None) -> None:
@@ -606,7 +698,6 @@ class EyeDiagram(ABC):
     Dependent on line encoding
 
     Args:
-      n_threads: number of thread to execute across
       print_progress: True will print statements along the way, False will not.
       indent: Indent all print statements that much
       debug_plots: base filename to save debug plots to. None will not save any
@@ -617,18 +708,11 @@ class EyeDiagram(ABC):
     self._offenders = [[]]  # pragma: no cover list[list[indices]]
     self._hits = [[]]  # pragma: no cover list[[t_UI, y_UA]]
 
-  def _generate_bathtub_curves(self,
-                               y_slices: dict,
-                               n_threads: int = 1,
-                               print_progress: bool = True,
-                               indent: int = 0) -> dict:
+  def _generate_bathtub_curves(self, y_slices: dict) -> dict:
     """Generate bathtub BER curves
 
     Args:
       y_slices: levels to slice at, UA
-      n_threads: number of thread to execute across
-      print_progress: True will print statements along the way, False will not.
-      indent: Indent all print statements that much
 
     Returns:
       dict of curves, same keys as y_slices
@@ -637,20 +721,12 @@ class EyeDiagram(ABC):
         slice_level_1:...}
     """
     levels = list(y_slices.values())
-    # yapf: disable
-    args_list = [[
-        self._waveforms[i][1],
-        self._centers_t[i],
-        self._centers_i[i],
-        self._t_delta,
-        self._t_sym,
-        self._y_zero,
-        self._y_ua,
-        levels
-    ] for i in range(self._waveforms.shape[0])]
-    # yapf: enable
-    output = self._collect_runners(_eyediagram.y_slice, args_list, n_threads,
-                                   print_progress, indent + 2)
+    output = []
+    for i in range(self._waveforms.shape[0]):
+      o = _eyediagram.y_slice(self._waveforms[i][1], self._centers_t[i],
+                              self._centers_i[i], self._t_delta, self._t_sym,
+                              self._y_zero, self._y_ua, levels)
+      output.append(o)
 
     curves = {}
     for i, key in enumerate(y_slices):
@@ -675,16 +751,8 @@ class EyeDiagram(ABC):
       curves[key] = np.array([t, ber])
     return curves
 
-  def _sample_mask(self,
-                   n_threads: int = 1,
-                   print_progress: bool = True,
-                   indent: int = 0) -> dict:
+  def _sample_mask(self) -> dict:
     """Measure mask parameters
-
-    Args:
-      n_threads: number of thread to execute across
-      print_progress: True will print statements along the way, False will not.
-      indent: Indent all print statements that much
 
     Returns:
       Dictionary of values:
@@ -695,33 +763,24 @@ class EyeDiagram(ABC):
     if self._mask is None:
       return values
 
+    self._mask_converted = self._mask.convert_mixed_units(
+        self._y_ua, self._t_sym)
+
     mask_paths = []
     mask_margins = []
     for i in range(1000, -1001, -1):
-      mask_paths.append(self._mask.adjust(i / 1000).paths)
+      mask_paths.append(self._mask_converted.adjust(i / 1000).paths)
       mask_margins.append(i / 1000)
-
-    # yapf: disable
-    args_list = [[
-        self._waveforms[i][1],
-        self._centers_t[i],
-        self._centers_i[i],
-        self._t_delta,
-        self._t_sym,
-        self._y_zero,
-        self._y_ua,
-        mask_paths,
-        mask_margins
-    ] for i in range(self._waveforms.shape[0])]
-    # yapf: enable
-    output_mask = self._collect_runners(_eyediagram.sample_mask, args_list,
-                                        n_threads, print_progress, indent + 2)
 
     self._offenders = []
     self._hits = []
     margin = 1.0
     offender_count = 0
-    for o in output_mask:
+    for i in range(self._waveforms.shape[0]):
+      o = _eyediagram.sample_mask(self._waveforms[i][1], self._centers_t[i],
+                                  self._centers_i[i], self._t_delta,
+                                  self._t_sym, self._y_zero, self._y_ua,
+                                  mask_paths, mask_margins)
       self._offenders.append(o["offenders"])
       offender_count += len(o["offenders"])
       self._hits.extend(o["hits"])
@@ -770,14 +829,12 @@ class EyeDiagram(ABC):
     return []
 
   def _step5_stack(self,
-                   n_threads: int = 1,
                    print_progress: bool = True,
                    indent: int = 0,
                    debug_plots: str = None) -> None:
     """Calculation step 5: stack waveforms
 
     Args:
-      n_threads: number of thread to execute across
       print_progress: True will print statements along the way, False will not.
       indent: Indent all print statements that much
       debug_plots: base filename to save debug plots to. None will not save any
@@ -793,30 +850,22 @@ class EyeDiagram(ABC):
     if print_progress:
       print(f"{'':>{indent}}Starting stacking")
 
-    # yapf: disable
-    args_list = [[
-        self._waveforms[i][1],
-        self._centers_t[i],
-        self._centers_i[i],
-        self._t_delta,
-        self._t_sym,
-        min_y,
-        max_y,
-        self._resolution,
-        self._config.point_cloud
-    ] for i in range(self._waveforms.shape[0])]
-    # yapf: enable
-    output = self._collect_runners(_eyediagram.stack, args_list, n_threads,
-                                   print_progress, indent + 2)
-
     self._raw_heatmap = np.zeros((self._resolution, self._resolution),
                                  dtype=np.int32)
-    for o in output:
-      self._raw_heatmap += o
+    for i in range(self._waveforms.shape[0]):
+      _eyediagram.stack(self._waveforms[i][1], self._centers_t[i],
+                        self._centers_i[i], self._t_delta, self._t_sym, min_y,
+                        max_y, self._resolution, self._raw_heatmap,
+                        self._config.point_cloud)
+
+    # Normalize density such that each column has the same number of counts
+    n = self._measures.n_sym
+    self._raw_heatmap = self._raw_heatmap.astype(np.float32)
+    for i in range(self._resolution):
+      self._raw_heatmap[i] *= (n / max(1, np.sum(self._raw_heatmap[i])))
 
     # [x, y] coordinates to image coordinates
     self._raw_heatmap = np.rot90(self._raw_heatmap)
-    self._raw_heatmap = self._raw_heatmap.astype(np.float32)
 
     if print_progress:
       print(f"{'':>{indent}}Generating images")
@@ -839,14 +888,14 @@ class EyeDiagram(ABC):
     # Draw a grid for reference levels
     self._draw_grid(image_grid)
 
-    if self._mask:
-      for path in self._mask.paths:
+    if self._mask_converted:
+      for path in self._mask_converted.paths:
         x = [self._uia_to_image(p[0], return_list=False) for p in path]
         y = [self._uia_to_image(p[1], return_list=False) for p in path]
         rr, cc = skimage.draw.polygon(x, y, shape=image_mask.shape)
         image_mask[rr, cc] = [1.0, 0.0, 1.0, 0.5]  # Magenta a=0.5
 
-      for path in self._mask.adjust(self._measures.mask_margin).paths:
+      for path in self._mask_converted.adjust(self._measures.mask_margin).paths:
         x = [self._uia_to_image(p[0], return_list=False) for p in path]
         y = [self._uia_to_image(p[1], return_list=False) for p in path]
         rr, cc = skimage.draw.polygon(x, y, shape=image_margin.shape)
@@ -870,22 +919,11 @@ class EyeDiagram(ABC):
           image_hits[rr, cc, 3] = 1
 
       # Plot subset of offenders
-      # yapf: disable
-      args_list = [[
-          self._waveforms[i][1],
-          self._centers_t[i],
-          self._centers_i[i],
-          self._t_delta,
-          self._t_sym,
-          min_y,
-          max_y,
-          self._resolution,
-          self._offenders[i][:2]
-      ] for i in range(self._waveforms.shape[0])]
-      # yapf: enable
-      output = self._collect_runners(_runner_draw_symbols, args_list, n_threads,
-                                     print_progress, indent + 2)
-      for o in output:
+      for i in range(self._waveforms.shape[0]):
+        o = _runner_draw_symbols(self._waveforms[i][1], self._centers_t[i],
+                                 self._centers_i[i], self._t_delta, self._t_sym,
+                                 min_y, max_y, self._resolution,
+                                 self._offenders[i][:2])
         image_hits = image.layer_rgba(image_hits, o)
 
     # [x, y] coordinates to image coordinates
@@ -904,31 +942,6 @@ class EyeDiagram(ABC):
       debug_plots += ".step5.png"
       image.np_to_file(image_clean, debug_plots)
       print(f"{'':>{indent}}Saved image to {debug_plots}")
-
-  @staticmethod
-  def _collect_runners(method: Callable,
-                       args_list: list,
-                       n_threads: int = 1,
-                       print_progress: bool = True,
-                       indent: int = 0) -> list:
-    if n_threads <= 1:
-      output = []
-      for i in range(len(args_list)):
-        output.append(method(*args_list[i]))
-        if print_progress:
-          print(f"{'':>{indent}}Ran waveform #{i}")
-    else:
-      with multiprocessing.Pool(n_threads) as p:
-        results = []
-        for i in range(len(args_list)):
-          r = p.apply_async(method, args=args_list[i])
-          results.append((i, r))
-        output = []
-        for i, r in results:
-          output.append(r.get())
-          if print_progress:
-            print(f"{'':>{indent}}Ran waveform #{i}")
-    return output
 
   def get_raw_heatmap(self,
                       as_string: bool = False) -> Union[np.ndarray, bytes]:

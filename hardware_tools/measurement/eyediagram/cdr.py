@@ -28,7 +28,7 @@ class CDR:
     self._t_sym_initial_error = 0.01
     self._avg_sym_min = 0.9
     self._avg_sym_max = 5
-    self._max_correctable_disjoints = 10
+    self._max_correctable_disjoints = 100
     self._fixed_period = fixed_period
 
   def run(self, data_edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

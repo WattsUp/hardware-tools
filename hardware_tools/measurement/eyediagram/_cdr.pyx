@@ -88,8 +88,7 @@ cdef np.float64_t minimize_tie_disjoints_c(np.ndarray[np.float64_t, ndim=1] data
   cdef int n_comp = int(1e6)
 
   # Hope first round works
-  cdef int n = max(100000, len(edges))
-  scores = _calculate_tie_scores_c(edges, t_min, t_max, (n_comp // n))
+  scores = _calculate_tie_scores_c(edges, t_min, t_max, max(20, n_comp // len(edges)))
   if scores[0][1] < tol:
     return scores[0][0]
 
@@ -97,10 +96,17 @@ cdef np.float64_t minimize_tie_disjoints_c(np.ndarray[np.float64_t, ndim=1] data
     return np.nan
 
   # Do a finer step, fewer edges to catch a zero
-  n = 10000
+  cdef n = 100000
   cdef np.ndarray[np.float64_t, ndim=1] edges_short = edges[:n]
-  scores = _calculate_tie_scores_c(edges_short, t_min, t_max, (n_comp // n)).T
+  scores = _calculate_tie_scores_c(edges_short, t_min, t_max, max(20, n_comp // n)).T
   cdef np.ndarray[np.float64_t, ndim=2] lower = scores[:, scores[1] < 1]
+
+  if lower.shape[1] == 0:
+    # Do a finer step, fewer edges to catch a zero
+    n = 10000
+    edges_short = edges[:n]
+    scores = _calculate_tie_scores_c(edges_short, t_min, t_max, (n_comp // n)).T
+    lower = scores[:, scores[1] < 1]
 
   if lower.shape[1] == 0:
     # Do a finer step, fewer edges to catch a zero

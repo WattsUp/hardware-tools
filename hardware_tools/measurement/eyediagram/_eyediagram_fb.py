@@ -59,7 +59,7 @@ def y_slice(waveform_y: np.ndarray, centers_t: list[float],
 
 def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
           t_delta: float, t_sym: float, min_y: float, max_y: float,
-          resolution: int, point_cloud: bool) -> np.ndarray:
+          resolution: int, grid: np.ndarray, point_cloud: bool) -> None:
   """Stack waveforms and counting overlaps in a heat map
 
   Args:
@@ -73,10 +73,8 @@ def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
     max_y: Upper vertical value for top of grid.
       Grid units = (y - min_y) / (max_y - min_y)
     resolution: Resolution of square eye diagram image, 2UI x 2UA
+    grid: Grid to stack onto
     point_cloud: True will not linearly interpolate, False will
-
-  Returns:
-    2D grid of heat map counts
   """
   i_width = int((t_sym / t_delta) + 0.5) + 2
   t_width_ui = (i_width * t_delta / t_sym)
@@ -84,8 +82,6 @@ def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
   t0 = np.linspace(0.5 - t_width_ui, 0.5 + t_width_ui, i_width * 2 + 1)
 
   waveform_y = (waveform_y - min_y) / (max_y - min_y)
-
-  grid = np.zeros((resolution, resolution), dtype=np.int32)
 
   for i in range(len(centers_t)):
     c_i = centers_i[i]
@@ -100,17 +96,6 @@ def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
       lines.draw_points(td, yd, grid)
     else:
       lines.draw(td, yd, grid)
-
-  if point_cloud:
-    # Normalize density such that each column has the same number of counts
-    # Since point cloud lacks the interpolation
-    n = len(centers_t)
-    grid = grid.astype(np.float64)
-    for i in range(resolution):
-      grid[i] *= (n / max(1, np.sum(grid[i])))
-    grid = grid.astype(np.int32)
-
-  return grid
 
 
 def sample_mask(waveform_y: np.ndarray, centers_t: list[float],

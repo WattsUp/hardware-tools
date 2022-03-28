@@ -259,11 +259,18 @@ class UncertainValue:
       return self.value > b
 
   def log(self) -> UncertainValue:
+    if np.isnan(self.value) or self.value <= 0.0:
+      return UncertainValue(np.nan, np.nan)
     v = np.log(self.value)
     s = np.abs(self.stddev / self.value)
     return UncertainValue(v, s)
 
   def log10(self) -> UncertainValue:
+    if np.isnan(self.value) or self.value <= 0.0:
+      return UncertainValue(np.nan, np.nan)
     v = np.log10(self.value)
     s = np.abs(self.stddev / (self.value * np.log(10)))
     return UncertainValue(v, s)
+
+  def isnan(self) -> bool:
+    return np.isnan(self.value) or np.isnan(self.stddev)

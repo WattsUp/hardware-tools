@@ -186,7 +186,7 @@ def y_slice(waveform_y: np.ndarray, centers_t: list[float],
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef np.ndarray[np.float64_t, ndim=2] stack_c(
+cdef void stack_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
     list centers_t,
     list centers_i,
@@ -195,6 +195,7 @@ cdef np.ndarray[np.float64_t, ndim=2] stack_c(
     np.float64_t min_y,
     np.float64_t max_y,
     int resolution,
+    np.ndarray[np.int32_t, ndim=2] grid,
     bint point_cloud):
   """Stack waveforms and counting overlaps in a heat map
 
@@ -209,6 +210,7 @@ cdef np.ndarray[np.float64_t, ndim=2] stack_c(
     max_y: Upper vertical value for top of grid.
       Grid units = (y - min_y) / (max_y - min_y)
     resolution: Resolution of square eye diagram image, 2UI x 2UA
+    grid: Grid to stack onto
     point_cloud: True will not linearly interpolate, False will
 
   Returns:
@@ -228,9 +230,6 @@ cdef np.ndarray[np.float64_t, ndim=2] stack_c(
   waveform_y = (waveform_y - min_y) / (max_y - min_y)
   cdef np.ndarray[np.int32_t, ndim=1] waveform_yd = (waveform_y * resolution).astype(np.int32)
 
-  cdef np.ndarray[np.int32_t, ndim=2] grid = np.zeros((resolution, resolution), dtype=np.int32)
-  cdef np.ndarray[np.float64_t, ndim=2] grid_f = np.zeros((resolution, resolution))
-
   cdef Py_ssize_t i, ii, c_i
   cdef np.float64_t c_t
 
@@ -247,19 +246,8 @@ cdef np.ndarray[np.float64_t, ndim=2] stack_c(
     else:
       _lines.draw_c(td, yd, grid)
 
-  if point_cloud:
-    # Normalize density such that each column has the same number of counts
-    # Since point cloud lacks the interpolation
-    n = len(centers_t)
-    grid_f = grid.astype(np.float64)
-    for i in range(resolution):
-      grid_f[i] *= (n / max(1, np.sum(grid_f[i])))
-    grid = grid_f.astype(np.int32)
-
-  return grid
-
 def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
           t_delta: float, t_sym: float, min_y: float, max_y: float,
-          resolution: int, point_cloud: bool) -> np.ndarray:
-  return stack_c(waveform_y, centers_t, centers_i, t_delta, t_sym, min_y, max_y,
-      resolution, point_cloud)
+          resolution: int, grid: np.ndarray, point_cloud: bool) -> None:
+  stack_c(waveform_y, centers_t, centers_i, t_delta, t_sym, min_y, max_y,
+      resolution, grid, point_cloud)

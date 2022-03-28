@@ -462,48 +462,22 @@ cdef Point intersection_c(np.float64_t p1,
   Returns:
     Intersection point coordinates, None if not intersecting or parallel
   """
-  # Get intersection point of lines [not segments]
-  cdef LineParams l1 = line_params_c(p1, p2, q1, q2)
-  cdef LineParams l2 = line_params_c(r1, r2, s1, s2)
-  cdef np.float64_t det = l1.d2 * l2.d1 - l1.d1 * l2.d2
-  if det == 0:
+  cdef np.float64_t d = (p1 - q1) * (r2 - s2) - (p2 - q2) * (r1 - s1)
+  if d == 0:
     return None
-  cdef np.float64_t det1 = l2.d1 * l1.det - l2.det * l1.d1
-  cdef np.float64_t det2 = l1.d2 * l2.det - l1.det * l2.d2
+  cdef np.float64_t t_n = (p1 - r1) * (r2 - s2) - (p2 - r2) * (r1 - s1)
+  cdef np.float64_t u_n = (p1 - r1) * (p2 - q2) - (p2 - r2) * (p1 - q1)
+  if segments:
+    if d > 0:
+      if t_n < 0 or u_n < 0 or t_n > d or u_n > d:
+        return None
+    else:
+      if t_n > 0 or u_n > 0 or t_n < d  or u_n < d:
+        return None
   cdef Point point = Point()
-  point.x = det1 / det
-  point.y = det2 / det
-
-  if not segments:
-    return point
-
-  # Check if point lies on the segments via bounds checking
-  if p1 < q1:
-    if (point.x < p1) or (point.x > q1):
-      return None
-  elif p1 > q1:
-    if (point.x > p1) or (point.x < q1):
-      return None
-  if p2 < q2:
-    if (point.y < p2) or (point.y > q2):
-      return None
-  elif p2 > q2:
-    if (point.y > p2) or (point.y < q2):
-      return None
-
-  if r1 < s1:
-    if (point.x < r1) or (point.x > s1):
-      return None
-  elif r1 > s1:
-    if (point.x > r1) or (point.x < s1):
-      return None
-  if r2 < s2:
-    if (point.y < r2) or (point.y > s2):
-      return None
-  elif r2 > s2:
-    if (point.y > r2) or (point.y < s2):
-      return None
-
+  t_n = t_n / d
+  point.x = p1 + t_n * (q1 - p1)
+  point.y = p2 + t_n * (q2 - p2)
   return point
 
 def intersection(p1: float,
@@ -516,12 +490,16 @@ def intersection(p1: float,
         s2: float,
         segments: bool = True) -> tuple:
   point = intersection_c(p1, p2, q1, q2, r1, r2, s1, s2, segments)
+  if point is None:
+    return None
   return (point.x, point.y)
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cdef list hits_c(list t, list y, list paths):
   """Get all intersections between waveform and paths (mask lines)
+
+  Might double count corners due to floating point rounding
 
   Args:
     t: Waveform time array [t0, t1, ..., tn]
@@ -596,6 +574,8 @@ cdef np.ndarray[np.float64_t, ndim=2] hits_np_c(np.ndarray[np.float64_t, ndim=1]
                         np.ndarray[np.float64_t, ndim=1] y,
                         list paths):
   """Get all intersections between waveform and paths (mask lines)
+
+  Might double count corners due to floating point rounding
 
   Args:
     t: Waveform time array [t0, t1, ..., tn]

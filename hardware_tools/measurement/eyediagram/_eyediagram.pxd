@@ -24,7 +24,7 @@ cdef list y_slice_c(
     np.float64_t y_ua,
     list y_slices)
 
-cdef np.ndarray[np.float64_t, ndim=2] stack_c(
+cdef void stack_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
     list centers_t,
     list centers_i,
@@ -33,4 +33,5 @@ cdef np.ndarray[np.float64_t, ndim=2] stack_c(
     np.float64_t min_y,
     np.float64_t max_y,
     int resolution,
+    np.ndarray[np.int32_t, ndim=2] grid,
     bint point_cloud)

@@ -10,8 +10,8 @@ from typing import Union
 
 def metric_prefix(value: float,
                   unit: str = "",
-                  specifier: str = "6.1f",
-                  specifier_small: str = "6.3f",
+                  specifier: str = "8.2f",
+                  specifier_small: str = "8.3f",
                   threshold: float = 2,
                   prefixes: dict = None) -> str:
   """Format a value using metric prefixes to constrain string length
