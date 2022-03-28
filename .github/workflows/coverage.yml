@@ -6,11 +6,6 @@ on:
       - master
     paths-ignore:
       - "**.md"
-  pull_request:
-    branches:
-      - master
-    paths-ignore:
-      - "**.md"
 
 jobs:
   coverage:
@@ -33,7 +28,7 @@ jobs:
       - name: Test
         continue-on-error: true
         run: |
-          python -m coverage run
+          python -m coverage run &> testing.log
           python -m coverage json
           CMD="import json; print(json.load(open('coverage.json'))['totals']['percent_covered_display'] + '%')"
           echo "COVERAGE=$(python -c "$CMD")" >> $GITHUB_ENV
@@ -49,6 +44,7 @@ jobs:
           name: testing.${{ matrix.python-version }}
           path: |
             testing.log
+            test_log.json
             coverage.json
       - name: Create badge
         uses: schneegans/dynamic-badges-action@v1.0.0
