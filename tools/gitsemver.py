@@ -20,6 +20,7 @@ class Version:
   Class works for just generic semantic versions and the additional information
   from the git repository.
   Attributes:
+    raw: raw string passed to constructor (raw git tag)
     major: integer major number (incremented on non-backwards compatible change)
     minor: integer minor number (incremented on backwards compatible change)
     patch: integer patch number (incremented on bug fix)
@@ -42,6 +43,7 @@ class Version:
       modified: True indicated repository has been modified
       sha: SHA string of the current repository state
     """
+    self.raw = string
     self.ahead = ahead
     self.modified = modified
     self.sha = sha

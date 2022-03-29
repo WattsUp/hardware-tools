@@ -11,8 +11,7 @@ import setuptools
 import setuptools.command.build_py
 import setuptools.command.develop
 
-from tools import gitsemver
-
+module_name = "hardware-tools"
 module_folder = "hardware_tools"
 
 with open("README.md", encoding="utf-8") as file:
@@ -23,11 +22,18 @@ required = [
     "Pillow", "scikit-image"
 ]
 
-version = gitsemver.get_version()
-with open(f"{module_folder}/version.py", "w", encoding="utf-8") as file:
-  file.write('"""Module version information\n"""\n\n')
-  file.write(f'version = "{version}"\n')
-  file.write(f'version_full = "{version.full_str()}"\n')
+try:
+  from tools import gitsemver
+  version = gitsemver.get_version()
+  with open(f"{module_folder}/version.py", "w", encoding="utf-8") as file:
+    file.write('"""Module version information\n"""\n\n')
+    file.write(f'version = "{version}"\n')
+    file.write(f'version_full = "{version.full_str()}"\n')
+    file.write(f'tag = "{version.raw}"\n')
+except ImportError:
+  import re
+  with open(f"{module_folder}/version.py", "r", encoding="utf-8") as file:
+    version = re.search(r'version = "(.*)"', file.read())[1]
 
 cwd = os.path.dirname(os.path.abspath(__file__))
 
@@ -68,7 +74,7 @@ class Develop(setuptools.command.develop.develop):
 
 
 setuptools.setup(
-    name="hardware-tools",
+    name=module_name,
     version=str(version),
     description="A library for automating hardware development and testing",
     long_description=longDescription,
@@ -96,6 +102,7 @@ setuptools.setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
     ],
     python_requires=">=3.7",
     include_package_data=True,
