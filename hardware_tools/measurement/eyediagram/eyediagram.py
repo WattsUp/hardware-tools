@@ -748,6 +748,8 @@ class EyeDiagram(ABC):
       t = np.concatenate([[0.0], t_left, t_right, [1.0]])
       ber = np.concatenate([[1], ber_left, ber_right, [1]])
 
+      # TODO (WattsUp) Add extrapolation, tails should be gaussian (RJ)
+
       curves[key] = np.array([t, ber])
     return curves
 
