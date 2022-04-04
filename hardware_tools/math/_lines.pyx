@@ -1,6 +1,8 @@
 """Lines helper functions, see math.lines
 """
 
+from typing import List, Tuple
+
 import numpy as np
 cimport numpy as np
 cimport cython
@@ -302,7 +304,7 @@ def crossing(list axis_return,
                  int i,
                  float value,
                  bint step_forward = False,
-                 int n = 0) -> tuple:
+                 int n = 0) -> Tuple[float]:
   n = len(axis_search) if n == 0 else n
   return crossing_c(axis_return, axis_search, i, value, step_forward, n)
 
@@ -357,7 +359,7 @@ def edges(
       list y,
       float y_rise,
       float y_half,
-      float y_fall) -> tuple[list, list]:
+      float y_fall) -> Tuple[list, list]:
   return edges_c(t, y, y_rise, y_half, y_fall)
 
 @cython.boundscheck(False)
@@ -411,7 +413,7 @@ def edges_np(
       np.ndarray[np.float64_t, ndim=1] y,
       float y_rise,
       float y_half,
-      float y_fall) -> tuple[np.ndarray, np.ndarray]:
+      float y_fall) -> Tuple[np.ndarray, np.ndarray]:
   return edges_np_c(t, y, y_rise, y_half, y_fall)
 
 @cython.boundscheck(False)
@@ -426,7 +428,7 @@ cdef LineParams line_params_c(np.float64_t a1, np.float64_t a2, np.float64_t b1,
     b2: Coordinate of second point
 
   Returns:
-    list[d2, d1, det([a, b])]
+    List[d2, d1, det([a, b])]
   """
   cdef LineParams params = LineParams()
   params.d2 = a2 - b2
@@ -488,7 +490,7 @@ def intersection(p1: float,
         r2: float,
         s1: float,
         s2: float,
-        segments: bool = True) -> tuple:
+        segments: bool = True) -> Tuple(float):
   point = intersection_c(p1, p2, q1, q2, r1, r2, s1, s2, segments)
   if point is None:
     return None
@@ -565,7 +567,7 @@ cdef list hits_c(list t, list y, list paths):
           intersections.append((point.x, point.y))
   return intersections
 
-def hits(t: list, y: list, paths: list[list[tuple]]) -> list[tuple]:
+def hits(t: list, y: list, paths: List[List[tuple]]) -> List[tuple]:
   return hits_c(t, y, paths)
 
 @cython.boundscheck(False)
@@ -722,7 +724,7 @@ cdef bint is_hitting_c(list t, list y, list paths):
           return True
   return False
 
-def is_hitting(t: list, y: list, paths: list[list[tuple]]) -> bool:
+def is_hitting(t: list, y: list, paths: List[List[tuple]]) -> bool:
   return is_hitting_c(t, y, paths)
 
 @cython.boundscheck(False)

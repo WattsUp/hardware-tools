@@ -5,6 +5,8 @@ Intersections, edges, drawing, etc.
 
 from __future__ import annotations
 
+from typing import List
+
 import numpy as np
 
 try:
@@ -188,7 +190,7 @@ class Line2D:
       Intersection point, None if lines are parallel
     """
 
-    def line_params(p: Point2D, q: Point2D) -> list[float]:
+    def line_params(p: Point2D, q: Point2D) -> List[float]:
       """Convert pair of points to line parameters
 
       Args:
@@ -196,7 +198,7 @@ class Line2D:
         q: Second point
 
       Returns:
-        list[dy, dx, det([p, q])]
+        List[dy, dx, det([p, q])]
       """
       dy = p.y - q.y
       dx = q.x - p.x

@@ -2,11 +2,13 @@
 Fallback version for no cython
 """
 
+from typing import List
+
 import numpy as np
 
 
-def sample_vertical(waveform_y: np.ndarray, centers_t: list[float],
-                    centers_i: list[int], t_delta: float, t_sym: float,
+def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
+                    centers_i: List[int], t_delta: float, t_sym: float,
                     y_half: float, level_width: float,
                     cross_width: float) -> dict:
   """Measure vertical parameters
@@ -135,8 +137,8 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: list[float],
   return values
 
 
-def sample_horizontal(waveform_y: np.ndarray, centers_t: list[float],
-                      centers_i: list[int], edge_dir: list[bool],
+def sample_horizontal(waveform_y: np.ndarray, centers_t: List[float],
+                      centers_i: List[int], edge_dir: List[bool],
                       t_delta: float, t_sym: float, y_zero: float, y_ua: float,
                       y_cross: float, hist_height: float, edge_lower: float,
                       edge_upper: float) -> dict:

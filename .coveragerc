@@ -24,3 +24,5 @@ exclude_lines =
 ignore_errors = True
 precision = 2
 show_missing = True
+fail_under = 100
+

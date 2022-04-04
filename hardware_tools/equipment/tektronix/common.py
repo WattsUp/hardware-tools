@@ -1,6 +1,8 @@
 """Common functions among Tektronix scopes
 """
 
+from typing import Tuple
+
 import numpy as np
 
 _rng = np.random.default_rng()
@@ -8,7 +10,7 @@ _rng = np.random.default_rng()
 
 def parse_wfm(data: bytes,
               raw: bool = False,
-              add_noise: bool = False) -> tuple[np.ndarray, dict]:
+              add_noise: bool = False) -> Tuple[np.ndarray, dict]:
   """Parse wfm file format
 
   Args:

@@ -10,7 +10,7 @@ from enum import Enum
 import io
 import json
 import os
-from typing import Any, Union
+from typing import Any, List, Union
 
 import colorama
 from colorama import Fore
@@ -368,7 +368,7 @@ class EyeDiagram(ABC):
   def __init__(self,
                waveforms: np.ndarray,
                clocks: np.ndarray = None,
-               clock_edges: list[list[float]] = None,
+               clock_edges: List[List[float]] = None,
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
@@ -705,8 +705,8 @@ class EyeDiagram(ABC):
     """
     # Derrived classes set these parameters
     self._measures = Measures()  # pragma: no cover
-    self._offenders = [[]]  # pragma: no cover list[list[indices]]
-    self._hits = [[]]  # pragma: no cover list[[t_UI, y_UA]]
+    self._offenders = [[]]  # pragma: no cover List[List[indices]]
+    self._hits = [[]]  # pragma: no cover List[[t_UI, y_UA]]
 
   def _generate_bathtub_curves(self, y_slices: dict) -> dict:
     """Generate bathtub BER curves
@@ -747,6 +747,8 @@ class EyeDiagram(ABC):
 
       t = np.concatenate([[0.0], t_left, t_right, [1.0]])
       ber = np.concatenate([[1], ber_left, ber_right, [1]])
+
+      # TODO (WattsUp) Add extrapolation, tails should be gaussian (RJ)
 
       curves[key] = np.array([t, ber])
     return curves
@@ -809,7 +811,7 @@ class EyeDiagram(ABC):
 
   def _uia_to_image(self,
                     u: float,
-                    return_list: bool = True) -> Union[list[int], int]:
+                    return_list: bool = True) -> Union[List[int], int]:
     """Convert UI/UA coordinates to image coordinates
 
     Args:
@@ -984,7 +986,7 @@ class EyeDiagram(ABC):
       raise RuntimeError("EyeDiagram must be calculated first")
     return self._measures
 
-  def get_clock_edges(self) -> list[list[float]]:
+  def get_clock_edges(self) -> List[List[float]]:
     """Get clock edges found/used during calculation
 
     Primarily used to pass into EyeDiagram construction such as with/without
@@ -1013,10 +1015,10 @@ class EyeDiagram(ABC):
     return self._clock_edges
 
 
-def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: list[float],
-                         centers_i: list[int], t_delta: float, t_sym: float,
+def _runner_draw_symbols(waveform_y: np.ndarray, centers_t: List[float],
+                         centers_i: List[int], t_delta: float, t_sym: float,
                          min_y: float, max_y: float, resolution: int,
-                         sym_indices: list[int]) -> np.ndarray:
+                         sym_indices: List[int]) -> np.ndarray:
   """Stack waveforms and counting overlaps in a heat map
 
   Args:

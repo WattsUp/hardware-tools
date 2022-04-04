@@ -5,14 +5,14 @@ Binning, Uncertain Value, etc.
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Tuple
 
 import numpy as np
 
 
 def bin_linear(y: np.ndarray,
                bin_count: int = 100,
-               density: bool = None) -> tuple[np.ndarray, np.ndarray]:
+               density: bool = None) -> Tuple[np.ndarray, np.ndarray]:
   """Bin values with equal width bins
 
   Args:
@@ -37,7 +37,7 @@ def bin_linear(y: np.ndarray,
   return np.histogram(y, edges, density=density)
 
 
-def bin_exact(y: Iterable) -> tuple[list, list]:
+def bin_exact(y: Iterable) -> Tuple[list, list]:
   """Bin values with exact indices
 
   Args:
@@ -57,7 +57,7 @@ def bin_exact(y: Iterable) -> tuple[list, list]:
   return counts, bins
 
 
-def bin_exact_np(y: Iterable) -> tuple[np.ndarray, np.ndarray]:
+def bin_exact_np(y: Iterable) -> Tuple[np.ndarray, np.ndarray]:
   """Bin values with exact indices
 
   Args:
@@ -79,7 +79,7 @@ def bin_exact_np(y: Iterable) -> tuple[np.ndarray, np.ndarray]:
 
 def bin_exponential(y: Iterable,
                     bin_count: int = 100,
-                    density: bool = None) -> tuple[np.array, np.array]:
+                    density: bool = None) -> Tuple[np.array, np.array]:
   """Bin values with equal exponential width bins
 
   Args:

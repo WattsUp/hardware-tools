@@ -1,13 +1,15 @@
 """Utility functions to ease equipment connection
 """
 
+from typing import List
+
 import pyvisa
 
 from hardware_tools.equipment.equipment import Equipment
 from hardware_tools.equipment import tektronix
 
 
-def get_available() -> list[str]:
+def get_available() -> List[str]:
   """Get a list of available equipment addresses
 
   Returns:

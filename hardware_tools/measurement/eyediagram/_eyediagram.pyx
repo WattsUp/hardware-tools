@@ -1,6 +1,8 @@
 """Eye Diagram helper functions, see measurement.eyediagram.eyediagram
 """
 
+from typing import List
+
 import numpy as np
 
 cimport numpy as np
@@ -97,8 +99,8 @@ cdef dict sample_mask_c(
   values["margin"] = mask_margins[i_margin]
   return values
 
-def sample_mask(waveform_y: np.ndarray, centers_t: list[float],
-                centers_i: list[int], t_delta: float, t_sym: float,
+def sample_mask(waveform_y: np.ndarray, centers_t: List[float],
+                centers_i: List[int], t_delta: float, t_sym: float,
                 y_zero: float, y_ua: float, mask_paths: list,
                 mask_margins: list) -> dict:
   return sample_mask_c(waveform_y, centers_t, centers_i, t_delta, t_sym, y_zero,
@@ -176,9 +178,9 @@ cdef list y_slice_c(
   
   return slices
 
-def y_slice(waveform_y: np.ndarray, centers_t: list[float],
-            centers_i: list[int], t_delta: float, t_sym: float, y_zero: float,
-            y_ua: float, y_slices: list[float]) -> list[list[float]]:
+def y_slice(waveform_y: np.ndarray, centers_t: List[float],
+            centers_i: List[int], t_delta: float, t_sym: float, y_zero: float,
+            y_ua: float, y_slices: List[float]) -> List[List[float]]:
   return y_slice_c(waveform_y, centers_t, centers_i, t_delta, t_sym, y_zero,
       y_ua, y_slices)
 
@@ -246,7 +248,7 @@ cdef void stack_c(
     else:
       _lines.draw_c(td, yd, grid)
 
-def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
+def stack(waveform_y: np.ndarray, centers_t: List[float], centers_i: List[int],
           t_delta: float, t_sym: float, min_y: float, max_y: float,
           resolution: int, grid: np.ndarray, point_cloud: bool) -> None:
   stack_c(waveform_y, centers_t, centers_i, t_delta, t_sym, min_y, max_y,

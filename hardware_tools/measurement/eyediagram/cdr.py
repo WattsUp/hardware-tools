@@ -1,6 +1,8 @@
 """Clock Data Recovery worker
 """
 
+from typing import Tuple
+
 import numpy as np
 
 try:
@@ -31,7 +33,7 @@ class CDR:
     self._max_correctable_disjoints = 100
     self._fixed_period = fixed_period
 
-  def run(self, data_edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+  def run(self, data_edges: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Run CDR to generate clock edges from data edges
 
     The number of clock edges may be less than expected due to delay in locking
