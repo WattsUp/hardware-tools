@@ -5,12 +5,60 @@ on:
     types: [published]
 
 jobs:
-  deploy:
+  wheels:
+    runs-on: ${{ matrix.build-platform[0] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build-platform:
+          - [ubuntu-20.04, manylinux_x86_64]
+          - [windows-2019, win_amd64]
+          - [windows-2019, win32]
+        python-version: ["cp37", "cp38", "cp39", "cp310"]
+
+    env:
+      IS_32_BIT: ${{ matrix.build-platform[1] == 'win32' }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Configure mingw for 32-bit builds
+        run: |
+          # Force 32-bit mingw
+          choco uninstall mingw
+          choco install -y mingw --forcex86 --force --version=7.3.0
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw32\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          refreshenv
+        if: ${{ env.IS_32_BIT == 'true' }}
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.3.1
+        env:
+          CIBW_BUILD: ${{ matrix.python-version }}-${{ matrix.build-platform[1] }}
+
+      - name: Publish package
+        uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+          print_hash: true
+          packages_dir: wheelhouse
+  sdist:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10"]
+        python-version: ["3.9"]
 
     steps:
       - uses: actions/checkout@v2
@@ -23,7 +71,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install build
       - name: Build package
-        run: python -m build
+        run: python -m build -s
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
         with:
