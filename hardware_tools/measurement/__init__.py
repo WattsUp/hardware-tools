@@ -1,6 +1,6 @@
 """Collection of measurement programs
 """
 
-__all__ = ["eyediagram"]
+__all__ = ["mask", "eyediagram"]
 
-# from hardware_tools.measurement import eyediagram
+from hardware_tools.measurement import mask

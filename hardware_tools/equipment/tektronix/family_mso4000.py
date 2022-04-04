@@ -6,7 +6,7 @@ MDO3000
 """
 
 import time
-from typing import Any
+from typing import Any, Tuple
 
 import numpy as np
 
@@ -364,7 +364,7 @@ class MSO4000(scope.Scope):
   def read_waveform(self,
                     channel: str,
                     raw: bool = False,
-                    add_noise: bool = False) -> tuple[np.ndarray, dict]:
+                    add_noise: bool = False) -> Tuple[np.ndarray, dict]:
     channel = channel.upper()
     if channel not in self.channels:
       raise KeyError(f"{self} cannot read channel '{channel}'")
@@ -379,8 +379,6 @@ class MSO4000(scope.Scope):
     self.send("HEADER 1")
     self._instrument.write("WAVFRM?")
     data = self._instrument.read_raw()
-    with open("temp.isf", "wb") as file:
-      file.write(data)
     self.send("HEADER 0")
 
     return common.parse_wfm(data, raw=raw, add_noise=add_noise)

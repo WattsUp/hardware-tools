@@ -3,7 +3,7 @@
 
 from abc import ABC, abstractmethod
 import time
-from typing import Any
+from typing import Any, Iterable
 
 import pyvisa
 
@@ -64,7 +64,7 @@ class Equipment(ABC):
 
   def ask_and_wait(self,
                    command: str,
-                   states: list[str],
+                   states: Iterable[str],
                    timeout: float = 1,
                    additional_command: str = None) -> str:
     """Send a command to the Equipment and wait until reply is desired

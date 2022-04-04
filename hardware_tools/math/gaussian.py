@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import List, Union
 
 import numpy as np
 from scipy import optimize, special
@@ -61,7 +61,7 @@ class GaussianMix:
     components: list of gaussian functions
   """
 
-  def __init__(self, components: list[Gaussian]) -> None:
+  def __init__(self, components: List[Gaussian]) -> None:
     """Initialize Gaussian
 
     y = sum(A / (sqrt(2pi*stddev^2)) * exp(-((x - mu) / stddev)^2 / 2))

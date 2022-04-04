@@ -2,6 +2,8 @@
 Fallback version for no cython
 """
 
+from typing import List, Tuple
+
 import numpy as np
 
 
@@ -92,7 +94,7 @@ def crossing(axis_return: list,
              i: int,
              value: float,
              step_forward: bool = False,
-             n: int = 0) -> tuple[float, int]:
+             n: int = 0) -> Tuple[float, int]:
   """Get crossing value in the axis_return by searching and interpolating
   axis_search
 
@@ -134,7 +136,7 @@ def crossing(axis_return: list,
 
 
 def edges(t: list, y: list, y_rise: float, y_half: float,
-          y_fall: float) -> tuple[list, list]:
+          y_fall: float) -> Tuple[list, list]:
   """Get rising and falling edges of a waveform with hysteresis
 
   Args:
@@ -168,7 +170,7 @@ def edges(t: list, y: list, y_rise: float, y_half: float,
 
 
 def edges_np(t: np.ndarray, y: np.ndarray, y_rise: float, y_half: float,
-             y_fall: float) -> tuple[np.ndarray, np.ndarray]:
+             y_fall: float) -> Tuple[np.ndarray, np.ndarray]:
   """Get rising and falling edges of a waveform with hysteresis
 
   Converts numpy array to list for faster processing then casts results into
@@ -220,7 +222,7 @@ def intersection(p1: float,
                  r2: float,
                  s1: float,
                  s2: float,
-                 segments: bool = True) -> tuple:
+                 segments: bool = True) -> Tuple[float]:
   """Get the intersection point between lines pq and rs
 
   Args:
@@ -256,7 +258,7 @@ def intersection(p1: float,
   return i1, i2
 
 
-def hits(t: list, y: list, paths: list[list[tuple]]) -> list[tuple]:
+def hits(t: list, y: list, paths: List[List[tuple]]) -> List[tuple]:
   """Get all intersections between waveform and paths (mask lines)
 
   Might double count corners due to floating point rounding
@@ -296,7 +298,7 @@ def hits(t: list, y: list, paths: list[list[tuple]]) -> list[tuple]:
 
 
 def hits_np(t: np.ndarray, y: np.ndarray,
-            paths: list[list[tuple]]) -> np.ndarray:
+            paths: List[List[tuple]]) -> np.ndarray:
   """Get all intersections between waveform and paths (mask lines)
 
   Converts numpy array to list for faster processing then casts results into
@@ -313,7 +315,7 @@ def hits_np(t: np.ndarray, y: np.ndarray,
   return np.array(hits(t.tolist(), y.tolist(), paths))
 
 
-def is_hitting(t: list, y: list, paths: list[list[tuple]]) -> bool:
+def is_hitting(t: list, y: list, paths: List[List[tuple]]) -> bool:
   """Check for any intersections between waveform and paths (mask lines)
 
   Args:
@@ -350,7 +352,7 @@ def is_hitting(t: list, y: list, paths: list[list[tuple]]) -> bool:
 
 
 def is_hitting_np(t: np.ndarray, y: np.ndarray,
-                  paths: list[list[tuple]]) -> bool:
+                  paths: List[List[tuple]]) -> bool:
   """Check for any intersections between waveform and paths (mask lines)
 
   Converts numpy array to list for faster processing then casts results into

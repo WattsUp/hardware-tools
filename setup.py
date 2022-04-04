@@ -6,6 +6,8 @@ Typical usage:
   python setup.py test
 """
 
+from typing import List, Tuple
+
 import os
 import setuptools
 import setuptools.command.build_py
@@ -55,7 +57,7 @@ def is_package_dir(dir_path: str) -> bool:
   return False
 
 
-def package(filename: str) -> tuple[str]:
+def package(filename: str) -> Tuple[str]:
   """Get package of file
 
   Args:
@@ -84,7 +86,7 @@ def fully_qualified_name(filename: str) -> str:
   return ".".join(package(filename) + (module,))
 
 
-def find_extensions(path: str = ".") -> list[setuptools.Extension]:
+def find_extensions(path: str = ".") -> List[setuptools.Extension]:
   """Find extension in folder, Cython or C
 
   Returns:

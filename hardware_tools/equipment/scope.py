@@ -2,7 +2,7 @@
 """
 
 from abc import abstractmethod
-from typing import Any
+from typing import Any, Tuple
 
 import numpy as np
 
@@ -80,7 +80,7 @@ class Scope(equipment.Equipment):
   def read_waveform(self,
                     channel: str,
                     raw: bool = False,
-                    add_noise: bool = False) -> tuple[np.ndarray, dict]:
+                    add_noise: bool = False) -> Tuple[np.ndarray, dict]:
     """Read waveform from the Scope
 
     Stop the scope before reading multiple channels to ensure concurrent

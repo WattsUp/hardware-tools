@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import List
+
 import pyvisa
 
 resources = {}
@@ -62,5 +64,5 @@ class ResourceManager:
       return resources[address]
     return Resource(address)
 
-  def list_resources(self) -> list[str]:
+  def list_resources(self) -> List[str]:
     return available

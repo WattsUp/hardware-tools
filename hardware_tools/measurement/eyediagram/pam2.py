@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+from typing import List, Tuple
 
 import colorama
 from colorama import Fore
@@ -155,7 +156,7 @@ class PAM2(eyediagram.EyeDiagram):
   def __init__(self,
                waveforms: np.ndarray,
                clocks: np.ndarray = None,
-               clock_edges: list[list[float]] = None,
+               clock_edges: List[List[float]] = None,
                t_unit: str = "",
                y_unit: str = "",
                mask: Mask = None,
@@ -820,7 +821,7 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
 def _runner_cdr(
     waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
     y_half: float, y_fall: float, cdr_obj: cdr.CDR,
-    polarity: eyediagram.ClockPolarity) -> tuple[np.ndarray, np.ndarray]:
+    polarity: eyediagram.ClockPolarity) -> Tuple[np.ndarray, np.ndarray]:
   """Recover a clock from the data signal
 
   Args:

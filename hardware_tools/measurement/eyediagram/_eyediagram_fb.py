@@ -2,14 +2,16 @@
 Fallback version for no cython
 """
 
+from typing import List
+
 import numpy as np
 
 from hardware_tools.math import lines
 
 
-def y_slice(waveform_y: np.ndarray, centers_t: list[float],
-            centers_i: list[int], t_delta: float, t_sym: float, y_zero: float,
-            y_ua: float, y_slices: list[float]) -> list[list[float]]:
+def y_slice(waveform_y: np.ndarray, centers_t: List[float],
+            centers_i: List[int], t_delta: float, t_sym: float, y_zero: float,
+            y_ua: float, y_slices: List[float]) -> List[List[float]]:
   """Slice waveform at a level and record position of intersections
 
   Args:
@@ -57,7 +59,7 @@ def y_slice(waveform_y: np.ndarray, centers_t: list[float],
   return slices
 
 
-def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
+def stack(waveform_y: np.ndarray, centers_t: List[float], centers_i: List[int],
           t_delta: float, t_sym: float, min_y: float, max_y: float,
           resolution: int, grid: np.ndarray, point_cloud: bool) -> None:
   """Stack waveforms and counting overlaps in a heat map
@@ -98,8 +100,8 @@ def stack(waveform_y: np.ndarray, centers_t: list[float], centers_i: list[int],
       lines.draw(td, yd, grid)
 
 
-def sample_mask(waveform_y: np.ndarray, centers_t: list[float],
-                centers_i: list[int], t_delta: float, t_sym: float,
+def sample_mask(waveform_y: np.ndarray, centers_t: List[float],
+                centers_i: List[int], t_delta: float, t_sym: float,
                 y_zero: float, y_ua: float, mask_paths: list,
                 mask_margins: list) -> dict:
   """Measure mask parameters
