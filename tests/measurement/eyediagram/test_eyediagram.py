@@ -109,7 +109,7 @@ class TestEyeDiagramExt(base.TestBase):
   """Test _EyeDiagram methods
   """
 
-  def _test_y_slice(self, module):
+  def _test_y_slice(self, module: _eyediagram_fb):
     result = module.y_slice(y_filtered, centers_t, centers_i, t_delta, t_bit, 0,
                             v_signal, [0.5])
     self.assertEqual(len(result), 1)
@@ -142,7 +142,7 @@ class TestEyeDiagramExt(base.TestBase):
     self.assertListEqual(result_slow, result_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_sample_mask(self, module):
+  def _test_sample_mask(self, module: _eyediagram_fb):
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
     m_converted = m.convert_mixed_units(v_signal, t_bit)
     mask_paths = []
@@ -190,7 +190,7 @@ class TestEyeDiagramExt(base.TestBase):
     self.assertListEqual(result_slow["offenders"], result_fast["offenders"])
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_stack(self, module):
+  def _test_stack(self, module: _eyediagram_fb):
     resolution = 100
     grid = np.zeros((resolution, resolution), dtype=np.int32)
 

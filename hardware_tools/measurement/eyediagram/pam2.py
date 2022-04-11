@@ -6,8 +6,6 @@ from __future__ import annotations
 import copy
 from typing import List, Tuple
 
-import colorama
-from colorama import Fore
 import numpy as np
 from matplotlib import pyplot
 
@@ -15,14 +13,13 @@ from hardware_tools import strformat
 from hardware_tools.math import gaussian, lines, stats
 from hardware_tools.measurement.mask import Mask
 from hardware_tools.measurement.eyediagram import cdr, eyediagram
+from hardware_tools.measurement.eyediagram.eyediagram import ClockPolarity
 
 try:
   from hardware_tools.measurement.eyediagram import _pam2
 except ImportError:
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.measurement.eyediagram import _pam2_fb as _pam2
-
-colorama.init(autoreset=True)
 
 
 class MeasuresPAM2(eyediagram.Measures):
@@ -49,6 +46,7 @@ class MeasuresPAM2(eyediagram.Measures):
     y_1: Mean value of logical 1
     y_cross: Mean value of crossing point, with symbol transition
     y_cross_r: Ratio [0, 1] = (y_cross - y_0) / amp
+    y_avg: Average amplitude
 
     y_0_cross: Mean value of logical 0 at crossing point
     y_1_cross: Mean value of logical 1 at crossing point
@@ -72,12 +70,13 @@ class MeasuresPAM2(eyediagram.Measures):
     width: Eye width = (t_cross2 - 3 * t_cross2.stddev)
       - (t_cross1 - 3 * t_cross1.stddev)
     width_r: Ratio [0, 1] = width / t_sym
-    dcd: Duty-cycle-distortion [-1, 1] = (t_1 - t_0) / (2 * t_sym)
+    dcd: Duty-cycle-distortion [-t_sym, t_sym] = (t_1 - t_0) / 2
+    dcd_r: Duty-cycle-distortion ratio [-1, 1] = dcd / t_sym
     jitter_pp: Full width of time histogram at crossing point
     jitter_rms: Standard deviation of time histogram at crossing point
 
     ## The following properties are only applicable to optical signals ##
-    extinction_ratio: Ratio [0, 1] = y_1 / y_0
+    extinction_ratio: Ratio [0, 1] = (y_1 - noise_floor) / (y_0 - nf)
     oma_cross: Optical Modulation Amplitude = y_1 - y_0 at crossing point
     vecp: Vertical Eye Closure Penalty in dB = 10 * log(oma_cross / a_0)
       where a_0 = (y_1, 0.05% histogram) - (y_0, 99.95% histogram)
@@ -86,40 +85,43 @@ class MeasuresPAM2(eyediagram.Measures):
   def __init__(self) -> None:
     super().__init__()
     # PAM2 specific measures
-    self.y_0 = None
-    self.y_1 = None
-    self.y_cross = None
-    self.y_cross_r = None
+    self.y_0: stats.UncertainValue = None
+    self.y_1: stats.UncertainValue = None
+    self.y_cross: stats.UncertainValue = None
+    self.y_cross_r: stats.UncertainValue = None
+    self.y_avg: stats.UncertainValue = None
 
-    self.y_0_cross = None
-    self.y_1_cross = None
+    self.y_0_cross: stats.UncertainValue = None
+    self.y_1_cross: stats.UncertainValue = None
 
-    self.amp = None
-    self.height = None
-    self.height_r = None
-    self.snr = None
+    self.amp: stats.UncertainValue = None
+    self.height: stats.UncertainValue = None
+    self.height_r: stats.UncertainValue = None
+    self.snr: stats.UncertainValue = None
 
-    self.t_sym = None
-    self.t_0 = None
-    self.t_1 = None
-    self.t_rise = None
-    self.t_fall = None
-    self.t_rise_start = None
-    self.t_fall_start = None
-    self.t_cross = None
+    self.t_sym: stats.UncertainValue = None
+    self.t_0: stats.UncertainValue = None
+    self.t_1: stats.UncertainValue = None
+    self.t_rise: stats.UncertainValue = None
+    self.t_fall: stats.UncertainValue = None
+    self.t_rise_start: stats.UncertainValue = None
+    self.t_fall_start: stats.UncertainValue = None
+    self.t_cross: stats.UncertainValue = None
 
-    self.f_sym = None
+    self.f_sym: stats.UncertainValue = None
 
-    self.width = None
-    self.width_r = None
-    self.dcd = None
-    self.jitter_pp = None
-    self.jitter_rms = None
+    self.width: stats.UncertainValue = None
+    self.width_r: stats.UncertainValue = None
+    self.dcd: stats.UncertainValue = None
+    self.dcd_r: stats.UncertainValue = None
+    self.jitter_pp: float = None
+    self.jitter_rms: float = None
 
-    self.extinction_ratio = None
+    self.extinction_ratio: stats.UncertainValue = None
     # self.tdec = None TODO figure how to measure this and why
-    self.oma_cross = None
-    self.vecp = None
+    # IEEE 802.3 Clause 95.8.5.2
+    self.oma_cross: stats.UncertainValue = None
+    self.vecp: stats.UncertainValue = None
 
 
 class PAM2Config(eyediagram.Config):
@@ -268,7 +270,7 @@ class PAM2(eyediagram.EyeDiagram):
       ax = pyplot.gca()
 
       def tick_formatter_y(y, _):
-        return strformat.metric_prefix(y, self._y_unit)
+        return strformat.metric_prefix(y, self._y_unit, specifier=".0f")
 
       formatter_y = pyplot.FuncFormatter(tick_formatter_y)
       ax.xaxis.set_major_formatter(formatter_y)
@@ -362,6 +364,7 @@ class PAM2(eyediagram.EyeDiagram):
     s_y_cross = []
     s_y_0_cross = []
     s_y_1_cross = []
+    s_y_avg = []
     transitions = {
         "000": 0,
         "001": 0,
@@ -383,6 +386,7 @@ class PAM2(eyediagram.EyeDiagram):
       s_y_cross.extend(o["y_cross"])
       s_y_0_cross.extend(o["y_0_cross"])
       s_y_1_cross.extend(o["y_1_cross"])
+      s_y_avg.extend(o["y_avg"])
       for t in transitions:
         transitions[t] += o["transitions"][t]
       edge_dir.append(o["edge_dir"])
@@ -391,17 +395,7 @@ class PAM2(eyediagram.EyeDiagram):
     s_y_cross = np.fromiter(s_y_cross, np.float64)
     s_y_0_cross = np.fromiter(s_y_0_cross, np.float64)
     s_y_1_cross = np.fromiter(s_y_1_cross, np.float64)
-
-    if s_y_0.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}y_0 does not have any samples")
-    if s_y_1.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}y_1 does not have any samples")
-    if s_y_cross.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}y_cross does not have any samples")
-    if s_y_0_cross.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}y_0_cross does not have any samples")
-    if s_y_1_cross.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}y_1_cross does not have any samples")
+    s_y_avg = np.fromiter(s_y_avg, np.float64)
 
     m.n_sym = 0
     for i in range(self._waveforms.shape[0]):
@@ -413,6 +407,7 @@ class PAM2(eyediagram.EyeDiagram):
     m.y_cross = stats.UncertainValue.samples(s_y_cross)
     m.y_0_cross = stats.UncertainValue.samples(s_y_0_cross)
     m.y_1_cross = stats.UncertainValue.samples(s_y_1_cross)
+    m.y_avg = stats.UncertainValue.samples(s_y_avg)
     m.transition_dist = transitions
 
     # Computed measures
@@ -480,23 +475,6 @@ class PAM2(eyediagram.EyeDiagram):
     s_t_cross_left = np.fromiter(s_t_cross_left, np.float64)
     s_t_cross_right = np.fromiter(s_t_cross_right, np.float64)
 
-    if s_t_rise_lower.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_rise_lower does not have any samples")
-    if s_t_rise_upper.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_rise_upper does not have any samples")
-    if s_t_rise_half.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_rise_half does not have any samples")
-    if s_t_fall_lower.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_fall_lower does not have any samples")
-    if s_t_fall_upper.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_fall_upper does not have any samples")
-    if s_t_fall_half.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_fall_half does not have any samples")
-    if s_t_cross_left.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_cross_left does not have any samples")
-    if s_t_cross_right.size < 1:
-      print(f"{'':>{indent}}{Fore.RED}t_cross_right does not have any samples")
-
     s_t_rise_lower = s_t_rise_lower * t_sym
     s_t_rise_upper = s_t_rise_upper * t_sym
     s_t_rise_half = s_t_rise_half * t_sym
@@ -530,7 +508,8 @@ class PAM2(eyediagram.EyeDiagram):
     m.width = (t_cross_right - 3 * t_cross_right.stddev) - (
         t_cross_left + 3 * t_cross_left.stddev)
     m.width_r = m.width / m.t_sym
-    m.dcd = (m.t_1 - m.t_0) / (m.t_sym * 2)
+    m.dcd = (m.t_1 - m.t_0) / 2
+    m.dcd_r = m.dcd / m.t_sym
     if s_t_cross_left.size < 1:
       m.jitter_pp = np.nan
     else:
@@ -566,12 +545,12 @@ class PAM2(eyediagram.EyeDiagram):
       debug_plots += ".step4.png"
 
       def tick_formatter_t(t, _):
-        return strformat.metric_prefix(t, self._t_unit)
+        return strformat.metric_prefix(t, self._t_unit, specifier=".0f")
 
       formatter_t = pyplot.FuncFormatter(tick_formatter_t)
 
       def tick_formatter_y(y, _):
-        return strformat.metric_prefix(y, self._y_unit)
+        return strformat.metric_prefix(y, self._y_unit, specifier=".0f")
 
       formatter_y = pyplot.FuncFormatter(tick_formatter_y)
       _, subplots = pyplot.subplots(2, 1)
@@ -748,7 +727,7 @@ class PAM2(eyediagram.EyeDiagram):
 
 
 def _filter_edge_polarity(edges: tuple[np.ndarray],
-                          polarity: eyediagram.ClockPolarity) -> np.ndarray:
+                          polarity: ClockPolarity) -> np.ndarray:
   """Filter edges to fit polarity restrictions and return
 
   ClockPolarity.BOTH concatenates then sorts rising and falling edges
@@ -760,9 +739,9 @@ def _filter_edge_polarity(edges: tuple[np.ndarray],
   Returns:
     Single dimensional array of edges
   """
-  if polarity is eyediagram.ClockPolarity.RISING:
+  if polarity is ClockPolarity.RISING:
     return edges[0]
-  elif polarity is eyediagram.ClockPolarity.FALLING:
+  elif polarity is ClockPolarity.FALLING:
     return edges[1]
   return np.sort(np.concatenate(edges))
 
@@ -818,10 +797,9 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
   }
 
 
-def _runner_cdr(
-    waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
-    y_half: float, y_fall: float, cdr_obj: cdr.CDR,
-    polarity: eyediagram.ClockPolarity) -> Tuple[np.ndarray, np.ndarray]:
+def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
+                y_half: float, y_fall: float, cdr_obj: cdr.CDR,
+                polarity: ClockPolarity) -> Tuple[np.ndarray, np.ndarray]:
   """Recover a clock from the data signal
 
   Args:

@@ -574,7 +574,7 @@ class EyeDiagram(ABC):
       debug_plots += ".step2.png"
 
       def tick_formatter_t(t, _):
-        return strformat.metric_prefix(t, self._t_unit)
+        return strformat.metric_prefix(t, self._t_unit, specifier=".0f")
 
       formatter_t = pyplot.FuncFormatter(tick_formatter_t)
 
@@ -648,10 +648,10 @@ class EyeDiagram(ABC):
       debug_plots += ".step3.png"
 
       def tick_formatter_t(t, _):
-        return strformat.metric_prefix(t, self._t_unit)
+        return strformat.metric_prefix(t, self._t_unit, specifier=".0f")
 
       def tick_formatter_y(y, _):
-        return strformat.metric_prefix(y, self._y_unit)
+        return strformat.metric_prefix(y, self._y_unit, specifier=".0f")
 
       formatter_t = pyplot.FuncFormatter(tick_formatter_t)
       formatter_y = pyplot.FuncFormatter(tick_formatter_y)
