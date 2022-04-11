@@ -65,7 +65,7 @@ class TestPAM2Ext(base.TestBase):
   """Test PAM2 methods
   """
 
-  def _test_sample_vertical(self, module):
+  def _test_sample_vertical(self, module: _pam2_fb):
     result = module.sample_vertical(y_filtered, centers_t, centers_i, t_delta,
                                     t_bit, v_signal / 2, 0.2, 0.1)
 
@@ -80,6 +80,8 @@ class TestPAM2Ext(base.TestBase):
       if k in target:
         v_mean = np.mean(v)
         self.assertEqualWithinError(target[k], v_mean, 0.05)
+    self.assertEqualWithinError(y_filtered.mean(), np.mean(result["y_avg"]),
+                                0.01)
 
     for k, v in result["transitions"].items():
       # Generated bit pattern lacks even number of 000
@@ -109,7 +111,7 @@ class TestPAM2Ext(base.TestBase):
     self.assertListEqual(result_slow["edge_dir"], result_fast["edge_dir"])
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_sample_horizontal(self, module):
+  def _test_sample_horizontal(self, module: _pam2_fb):
     result = module.sample_horizontal(y_filtered, centers_t, centers_i,
                                       edge_dir, t_delta, t_bit, 0.0, v_signal,
                                       v_signal / 2, 0.05, 0.2, 0.8)
@@ -312,19 +314,6 @@ class TestPAM2(base.TestBase):
     fake_stdout = fake_stdout.getvalue()
     self.assertNotIn("Completed PAM2 measuring", fake_stdout)
     self.assertIn("Saved image to", fake_stdout)
-    self.assertIn("y_0 does not", fake_stdout)
-    self.assertIn("y_1 does not", fake_stdout)
-    self.assertIn("y_cross does not", fake_stdout)
-    self.assertIn("y_0_cross does not", fake_stdout)
-    self.assertIn("y_1_cross does not", fake_stdout)
-    self.assertIn("t_rise_lower does not", fake_stdout)
-    self.assertIn("t_rise_upper does not", fake_stdout)
-    self.assertIn("t_rise_half does not", fake_stdout)
-    self.assertIn("t_fall_lower does not", fake_stdout)
-    self.assertIn("t_fall_upper does not", fake_stdout)
-    self.assertIn("t_fall_half does not", fake_stdout)
-    self.assertIn("t_cross_left does not", fake_stdout)
-    self.assertIn("t_cross_right does not", fake_stdout)
 
     target = {
         "n_sym": 0,
@@ -413,7 +402,6 @@ class TestPAM2(base.TestBase):
     self.assertIn("Measuring waveform horizontally", fake_stdout)
     self.assertIn("Measuring waveform mask", fake_stdout)
     self.assertIn("Completed PAM2 measuring", fake_stdout)
-    self.assertNotIn("does not have any samples", fake_stdout)
     self.assertIn("Step 5: Stacking waveforms", fake_stdout)
     self.assertIn("Starting stacking", fake_stdout)
     self.assertIn("Completed stacking", fake_stdout)
@@ -487,6 +475,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     y_1 = self._RNG.uniform(-1, 1)
     y_cross = self._RNG.uniform(-1, 1)
     y_cross_r = self._RNG.uniform(-1, 1)
+    y_avg = self._RNG.uniform(-1, 1)
 
     y_0_cross = self._RNG.uniform(-1, 1)
     y_1_cross = self._RNG.uniform(-1, 1)
@@ -510,6 +499,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     width = self._RNG.uniform(-1, 1)
     width_r = self._RNG.uniform(-1, 1)
     dcd = self._RNG.uniform(-1, 1)
+    dcd_r = self._RNG.uniform(-1, 1)
     jitter_pp = self._RNG.uniform(-1, 1)
     jitter_rms = self._RNG.uniform(-1, 1)
 
@@ -530,6 +520,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     m.y_1 = y_1
     m.y_cross = y_cross
     m.y_cross_r = y_cross_r
+    m.y_avg = y_avg
 
     m.y_0_cross = y_0_cross
     m.y_1_cross = y_1_cross
@@ -553,6 +544,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     m.width = width
     m.width_r = width_r
     m.dcd = dcd
+    m.dcd_r = dcd_r
     m.jitter_pp = jitter_pp
     m.jitter_rms = jitter_rms
 
@@ -571,6 +563,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
         "y_1": y_1,
         "y_cross": y_cross,
         "y_cross_r": y_cross_r,
+        "y_avg": y_avg,
         "y_0_cross": y_0_cross,
         "y_1_cross": y_1_cross,
         "amp": amp,
@@ -589,6 +582,7 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
         "width": width,
         "width_r": width_r,
         "dcd": dcd,
+        "dcd_r": dcd_r,
         "jitter_pp": jitter_pp,
         "jitter_rms": jitter_rms,
         "extinction_ratio": extinction_ratio,

@@ -47,7 +47,7 @@ class TestCDRExt(base.TestBase):
     edges = np.unique(np.append(edges, glitches))
     return edges
 
-  def _test_minimize_tie_disjoints(self, module):
+  def _test_minimize_tie_disjoints(self, module: _cdr_fb):
     t_sym = 0.5e-9
     n = 10e3
     edges = self._generate_edges(t_sym, n)
@@ -109,7 +109,7 @@ class TestCDRExt(base.TestBase):
     self.assertEqualWithinError(result_slow, result_fast, 1e-15)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_detrend_ties(self, module):
+  def _test_detrend_ties(self, module: _cdr_fb):
     t_sym = 0.5e-9
     n = 10e3
     edges = self._generate_edges(t_sym, n)

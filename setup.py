@@ -24,6 +24,7 @@ required = [
     "scikit-image"
 ]
 
+# TODO (WattsUp) Allow source install to fetch semver every time
 try:
   from tools import gitsemver
   version = gitsemver.get_version()

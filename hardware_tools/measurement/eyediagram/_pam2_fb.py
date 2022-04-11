@@ -31,6 +31,7 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
       y_cross: List of samples within the y_cross window, edge
       y_0_cross: List of samples within the y_cross window, logical 0
       y_1_cross: List of samples within the y_cross window, logical 1
+      y_avg: List of samples within [0, 1]UI
       transitions: Dictionary of collected transitions, see MeasuresPAM2
       edge_dir: List of edge directions, True=rising, False=falling, None=none
   """
@@ -63,6 +64,7 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
       "y_cross": [],
       "y_0_cross": [],
       "y_1_cross": [],
+      "y_avg": [],
       "transitions": {
           "000": 0,
           "001": 0,
@@ -106,6 +108,9 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
 
       if t_sym_cross_min <= t <= t_sym_cross_max:
         samples_sym_cross.append(y)
+
+      if 0 <= t <= 1:
+        values["y_avg"].append(y)
 
     sym_a = np.mean(samples_a) > y_half
     sym_b = np.mean(samples_b) > y_half

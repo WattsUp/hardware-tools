@@ -105,7 +105,7 @@ class TestDraw(base.TestBase):
   """Test line drawing methods
   """
 
-  def _test_draw(self, module):
+  def _test_draw(self, module: _lines_fb):
     shape = self._RNG.integers(10, 100, 2)
     grid = np.zeros(shape=shape, dtype=np.int32)
 
@@ -154,7 +154,7 @@ class TestDraw(base.TestBase):
     self.log_speed(elapsed_slow, elapsed_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_draw_points(self, module):
+  def _test_draw_points(self, module: _lines_fb):
     shape = self._RNG.integers(10, 100, 2)
     grid = np.zeros(shape=shape, dtype=np.int32)
 
@@ -208,7 +208,7 @@ class TestEdges(base.TestBase):
   """Test line edges methods
   """
 
-  def _test_crossing(self, module):
+  def _test_crossing(self, module: _lines_fb):
     axis_return = [0, 1, 2, 3, 4]
     axis_search = [10, 20, -10, 50, -50]
 
@@ -252,7 +252,7 @@ class TestEdges(base.TestBase):
     self.log_speed(elapsed_slow, elapsed_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_edges(self, module):
+  def _test_edges(self, module: _lines_fb):
     t = np.linspace(0, 10, 1000)
     y = np.cos(t * 2 * np.pi)
     t = t.tolist()
@@ -286,7 +286,7 @@ class TestEdges(base.TestBase):
     self.log_speed(elapsed_slow, elapsed_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_edges_np(self, module):
+  def _test_edges_np(self, module: _lines_fb):
     t = np.linspace(0, 10, 1000)
     y = np.cos(t * 2 * np.pi)
 
@@ -320,7 +320,7 @@ class TestIntersections(base.TestBase):
   """Test line intersection methods
   """
 
-  def _test_intersections(self, module):
+  def _test_intersections(self, module: _lines_fb):
     x0 = self._RNG.uniform(-1000, 1000)
     y0 = self._RNG.uniform(-1000, 1000)
     x1 = self._RNG.uniform(-1000, 1000)
@@ -405,7 +405,7 @@ class TestIntersections(base.TestBase):
     self.log_speed(elapsed_slow, elapsed_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_is_hitting(self, module):
+  def _test_is_hitting(self, module: _lines_fb):
     t = np.linspace(0, 10, 1000)
     y = np.cos(t * 2 * np.pi)
     t = t.tolist()
@@ -441,7 +441,7 @@ class TestIntersections(base.TestBase):
     self.log_speed(elapsed_slow, elapsed_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_hits(self, module):
+  def _test_hits(self, module: _lines_fb):
     t = np.linspace(0, 10, 1000)
     y = np.cos(t * 2 * np.pi)
     t = t.tolist()
@@ -488,7 +488,7 @@ class TestIntersections(base.TestBase):
     self.assertEqual(len(result_slow), len(result_fast))
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_is_hitting_np(self, module):
+  def _test_is_hitting_np(self, module: _lines_fb):
     t = np.linspace(0, 10, 1000)
     y = np.cos(t * 2 * np.pi)
 
@@ -520,7 +520,7 @@ class TestIntersections(base.TestBase):
     self.log_speed(elapsed_slow, elapsed_fast)
     self.assertLess(elapsed_fast, elapsed_slow)
 
-  def _test_hits_np(self, module):
+  def _test_hits_np(self, module: _lines_fb):
     t = np.linspace(0, 10, 1000)
     y = np.cos(t * 2 * np.pi)
 
