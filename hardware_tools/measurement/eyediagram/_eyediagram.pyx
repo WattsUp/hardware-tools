@@ -86,7 +86,8 @@ cdef dict sample_mask_c(
 
     while i_margin < n_masks and _lines.is_hitting_np_c(t, y, mask_margin):
       i_margin += 1
-      mask_margin = mask_paths[i_margin]
+      if i_margin < n_masks:
+        mask_margin = mask_paths[i_margin]
 
     if i_margin < i_zero:
       continue  # There won't be hits until the margin is negative
@@ -96,7 +97,7 @@ cdef dict sample_mask_c(
       values["offenders"].append(i)
       values["hits"].extend(hits.tolist())
 
-  values["margin"] = mask_margins[i_margin]
+  values["margin"] = mask_margins[min(n_masks - 1, i_margin)]
   return values
 
 def sample_mask(waveform_y: np.ndarray, centers_t: List[float],

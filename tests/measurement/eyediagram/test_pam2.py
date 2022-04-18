@@ -181,7 +181,10 @@ class TestPAM2(base.TestBase):
 
     noise = np.array([t[:n], self._RNG.uniform(-v_signal, 2 * v_signal, n)])
 
-    c = pam2.PAM2Config(y_0=0, y_1=v_signal, levels_n_max=None)
+    v_half = v_signal * 0.3
+    v_rising = v_signal * 0.35
+    v_falling = v_signal * 0.25
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, y_th=v_half, levels_n_max=None)
     eye = pam2.PAM2(noise, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=path)  # pylint: disable=protected-access
@@ -191,9 +194,6 @@ class TestPAM2(base.TestBase):
     self.assertIn("Saved image to", fake_stdout)
     self.assertEqualWithinError(0, eye._y_zero / v_signal, 0.01)  # pylint: disable=protected-access
     self.assertEqualWithinError(v_signal, eye._y_ua, 0.01)  # pylint: disable=protected-access
-    v_half = v_signal * 0.5
-    v_rising = v_signal * 0.55
-    v_falling = v_signal * 0.45
     self.assertEqualWithinError(v_half, eye._y_half, 0.01)  # pylint: disable=protected-access
     self.assertEqualWithinError(v_rising, eye._y_rising, 0.01)  # pylint: disable=protected-access
     self.assertEqualWithinError(v_falling, eye._y_falling, 0.01)  # pylint: disable=protected-access
@@ -302,7 +302,7 @@ class TestPAM2(base.TestBase):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
 
-    c = pam2.PAM2Config(y_0=0, y_1=v_signal)
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, y_th=v_signal / 2)
     eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -342,7 +342,10 @@ class TestPAM2(base.TestBase):
         elif not isinstance(v, dict):
           self.assertTrue(np.isnan(v))
 
-    c = pam2.PAM2Config(y_0=0, y_1=v_signal, skip_measures=True)
+    c = pam2.PAM2Config(y_0=0,
+                        y_1=v_signal,
+                        y_th=v_signal / 2,
+                        skip_measures=True)
     eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -438,6 +441,60 @@ class TestPAM2(base.TestBase):
     for k, v in m.to_dict().items():
       self.assertIsNotNone(v, msg=f"Key={k}")
     m.save_images(path)
+
+  def test_get_bitstream(self):
+    waveforms = np.array([t, y])
+    clocks = np.array([t, clock])
+
+    c = pam2.PAM2Config(y_0=0, y_1=v_signal, y_th=v_signal / 2)
+    eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
+    self.assertRaises(RuntimeError, eye.get_bit_stream)
+    with mock.patch("sys.stdout", new=io.StringIO()) as _:
+      eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
+      eye._step2_clock(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
+      eye._step3_sample(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
+      eye._step4_measure(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
+      eye._calculated = True  # pylint: disable=protected-access
+
+    result = eye.get_bit_stream()
+    self.assertIsInstance(result, list)
+    self.assertEqual(len(result), 1)
+    result = result[0]
+    self.assertIsInstance(result, list)
+    # Approx since eye will trim a few on either side
+    self.assertGreaterEqual(len(result), n_bits - 5)
+    self.assertLessEqual(len(result), n_bits)
+    bits_str = "".join([f"{i}" for i in bits])
+    result_str = "".join([f"{i}" for i in result])
+    self.assertIn(result_str, bits_str)
+
+    bits_nrzm = []
+    state = bits[0]
+    for bit in bits:
+      if bit == state:
+        bits_nrzm.append(0)
+      else:
+        bits_nrzm.append(1)
+        state = bit
+    result = eye.get_bit_stream(nrzm=True)
+    self.assertIsInstance(result, list)
+    self.assertEqual(len(result), 1)
+    result = result[0]
+    self.assertIsInstance(result, list)
+    # Approx since eye will trim a few on either side
+    self.assertGreaterEqual(len(result), n_bits - 5)
+    self.assertLessEqual(len(result), n_bits)
+    bits_str = "".join([f"{i}" for i in bits_nrzm])
+    result_str = "".join([f"{i}" for i in result])
+    self.assertIn(result_str, bits_str)
+
+    eye._edge_dir = [[]]  # pylint: disable=protected-access
+    result = eye.get_bit_stream()
+    self.assertIsInstance(result, list)
+    self.assertEqual(len(result), 1)
+    result = result[0]
+    self.assertIsInstance(result, list)
+    self.assertEqual(len(result), 0)
 
 
 class TestEyeDiagramMeasuresPAM2(base.TestBase):

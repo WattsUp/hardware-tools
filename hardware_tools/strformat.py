@@ -7,6 +7,8 @@ import datetime
 import time
 from typing import Union
 
+import numpy as np
+
 
 def metric_prefix(value: float,
                   unit: str = "",
@@ -30,6 +32,8 @@ def metric_prefix(value: float,
     "±xxx.x PU" where P is metric prefix and U is unit. Precision (xxx.x) is
     determined by specifier.
   """
+  if np.isinf(value) or np.isnan(value):
+    return f"{value:{specifier}}  {unit}"
   if prefixes is None:
     prefixes = {
         "T": 1e12,
@@ -77,7 +81,7 @@ def time_str(duration: float, sub: bool = True, hours: bool = True) -> str:
 def elapsed_str(start: Union[float, datetime.datetime],
                 end: datetime.datetime = None,
                 sub: bool = True,
-                hours: bool = True) -> str:
+                hours: bool = False) -> str:
   """Calculate elapsed time since start and format using time_str
 
   Params:
