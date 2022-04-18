@@ -394,7 +394,7 @@ class PAM2(eyediagram.EyeDiagram):
       s_y_avg.extend(o["y_avg"])
       for t in transitions:
         transitions[t] += o["transitions"][t]
-      self._edge_dir.append(o["edge_dir"])
+      self._edge_dir.append(np.fromiter(o["edge_dir"], np.int8))
     s_y_0 = np.fromiter(s_y_0, np.float64)
     s_y_1 = np.fromiter(s_y_1, np.float64)
     s_y_cross = np.fromiter(s_y_cross, np.float64)
@@ -749,17 +749,17 @@ class PAM2(eyediagram.EyeDiagram):
     all_bits = []
     for edge_dir in self._edge_dir:
       if nrzm:
-        all_bits.append([(0 if b is None else 1) for b in edge_dir])
+        all_bits.append([abs(b) for b in edge_dir])
       else:
-        edges = [b for b in edge_dir if b is not None]
+        edges = [b for b in edge_dir if b != 0]
         state = 1
-        if len(edges) == 0 or edges[0]:
+        if len(edges) == 0 or edges[0] == 1:
           state = 0
         bits = []
         for i in range(len(edge_dir)):
-          if edge_dir[i]:
+          if edge_dir[i] == 1:
             state = 1
-          elif edge_dir[i] is not None:
+          elif edge_dir[i] == -1:
             state = 0
           bits.append(state)
         all_bits.append(bits)

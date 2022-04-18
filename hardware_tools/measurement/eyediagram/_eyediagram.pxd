@@ -5,8 +5,8 @@ cimport numpy as np
 
 cdef dict sample_mask_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_zero,
@@ -16,8 +16,8 @@ cdef dict sample_mask_c(
 
 cdef list y_slice_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_zero,
@@ -26,8 +26,8 @@ cdef list y_slice_c(
 
 cdef void stack_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t min_y,

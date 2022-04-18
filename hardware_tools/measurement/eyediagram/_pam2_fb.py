@@ -118,9 +118,9 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
 
     if sym_a != sym_b:
       values["y_cross"].extend(samples_cross)
-      values["edge_dir"].append(sym_b)
+      values["edge_dir"].append(1 if sym_b else -1)
     else:
-      values["edge_dir"].append(None)
+      values["edge_dir"].append(0)
       if sym_b:
         values["y_1_cross"].extend(samples_sym_cross)
       else:
@@ -223,12 +223,12 @@ def sample_horizontal(waveform_y: np.ndarray, centers_t: List[float],
         else:
           pass  # pragma: no cover, just a glitch
 
-    if edge_dir[i] is None:
+    if edge_dir[i] == 0:
       continue
     y_front = waveform_y[c_i - i_width:c_i + 1]
     y_center = waveform_y[c_i - i_width + center_offset:c_i + center_offset + 1]
 
-    if edge_dir[i]:
+    if edge_dir[i] == 1:
       # Rising edge starts at minimum on [-0.5, 0.5]
       ii = np.argmin(y_front)
       # Stop at maximum on [0.0, 1.0]
@@ -243,19 +243,19 @@ def sample_horizontal(waveform_y: np.ndarray, centers_t: List[float],
       y = waveform_y[c_i - i_width + ii]
 
       if y_lower_min <= y <= y_lower_max:
-        if edge_dir[i]:
+        if edge_dir[i] == 1:
           values["t_rise_lower"].append(t)
         else:
           values["t_fall_lower"].append(t)
 
       if y_upper_min <= y <= y_upper_max:
-        if edge_dir[i]:
+        if edge_dir[i] == 1:
           values["t_rise_upper"].append(t)
         else:
           values["t_fall_upper"].append(t)
 
       if y_half_min <= y <= y_half_max:
-        if edge_dir[i]:
+        if edge_dir[i] == 1:
           values["t_rise_half"].append(t)
         else:
           values["t_fall_half"].append(t)

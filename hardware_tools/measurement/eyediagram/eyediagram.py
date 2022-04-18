@@ -639,8 +639,8 @@ class EyeDiagram(ABC):
         centers_t.append(-center_t)
         centers_i.append(center_i)
 
-      self._centers_i.append(centers_i)
-      self._centers_t.append(centers_t)
+      self._centers_i.append(np.fromiter(centers_i, np.int32))
+      self._centers_t.append(np.fromiter(centers_t, np.float64))
 
     if print_progress:
       print(f"{'':>{indent}}Completed sampling")

@@ -42,7 +42,6 @@ t_delta = 1 / f_scope
 i_width = int((t_bit / t_delta) + 0.5) + 2
 max_i = n_scope
 
-# TODO (WattsUp) see if centers_t and centers_i being np arrays is faster
 centers_i = []
 centers_t = []
 t_zero = t[0]
@@ -56,6 +55,8 @@ for b in _clock_edges:
     continue
   centers_t.append(-center_t)
   centers_i.append(center_i)
+centers_i = np.fromiter(centers_i, np.int32)
+centers_t = np.fromiter(centers_t, np.float64)
 
 
 class Derrived(eyediagram.EyeDiagram):
@@ -158,6 +159,13 @@ class TestEyeDiagramExt(base.TestBase):
     self.assertGreaterEqual(len(result["hits"]), 1)
     self.assertIsInstance(result["hits"][0], list)
     self.assertEqual(len(result["hits"][0]), 2)
+
+    # Force going to end of masks for OOB bugfix
+    mask_paths = [m_converted.paths] * 3
+    mask_margins = [1.0, 0.0, -1.0]
+    result = module.sample_mask(y_filtered, centers_t, centers_i, t_delta,
+                                t_bit, 0, v_signal, mask_paths, mask_margins)
+    self.assertEqual(result["margin"], mask_margins[-1])
 
   def test_sample_mask(self):
     self._test_sample_mask(_eyediagram_fb)

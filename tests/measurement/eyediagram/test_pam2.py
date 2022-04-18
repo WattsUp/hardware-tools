@@ -57,8 +57,11 @@ for b in clock_edges:
     continue
   centers_t.append(-center_t)
   centers_i.append(center_i)
+centers_i = np.fromiter(centers_i, np.int32)
+centers_t = np.fromiter(centers_t, np.float64)
 edge_dir = _pam2_fb.sample_vertical(y_filtered, centers_t, centers_i, t_delta,
                                     t_bit, v_signal / 2, 0.2, 0.1)["edge_dir"]
+edge_dir = np.fromiter(edge_dir, np.int8)
 
 
 class TestPAM2Ext(base.TestBase):

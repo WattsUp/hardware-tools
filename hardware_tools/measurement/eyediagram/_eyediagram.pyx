@@ -16,8 +16,8 @@ np.import_array()
 @cython.wraparound(False)
 cdef dict sample_mask_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_zero,
@@ -70,7 +70,7 @@ cdef dict sample_mask_c(
   cdef list mask_zero = mask_paths[i_zero]
   cdef list mask_margin = mask_paths[i_margin]
 
-  for i in range(len(centers_t)):
+  for i in range(centers_t.shape[0]):
     c_i = centers_i[i] - i_width
     c_t = centers_t[i] / t_sym
 
@@ -100,8 +100,8 @@ cdef dict sample_mask_c(
   values["margin"] = mask_margins[min(n_masks - 1, i_margin)]
   return values
 
-def sample_mask(waveform_y: np.ndarray, centers_t: List[float],
-                centers_i: List[int], t_delta: float, t_sym: float,
+def sample_mask(waveform_y: np.ndarray, centers_t: np.ndarray,
+                centers_i: np.ndarray, t_delta: float, t_sym: float,
                 y_zero: float, y_ua: float, mask_paths: list,
                 mask_margins: list) -> dict:
   return sample_mask_c(waveform_y, centers_t, centers_i, t_delta, t_sym, y_zero,
@@ -111,8 +111,8 @@ def sample_mask(waveform_y: np.ndarray, centers_t: List[float],
 @cython.wraparound(False)
 cdef list y_slice_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_zero,
@@ -158,7 +158,7 @@ cdef list y_slice_c(
   cdef Py_ssize_t i, ii, c_i
   cdef np.float64_t c_t
 
-  for i in range(len(centers_t)):
+  for i in range(centers_t.shape[0]):
     c_i = centers_i[i] - i_width
     c_t = centers_t[i] / t_sym
 
@@ -179,8 +179,8 @@ cdef list y_slice_c(
   
   return slices
 
-def y_slice(waveform_y: np.ndarray, centers_t: List[float],
-            centers_i: List[int], t_delta: float, t_sym: float, y_zero: float,
+def y_slice(waveform_y: np.ndarray, centers_t: np.ndarray,
+            centers_i: np.ndarray, t_delta: float, t_sym: float, y_zero: float,
             y_ua: float, y_slices: List[float]) -> List[List[float]]:
   return y_slice_c(waveform_y, centers_t, centers_i, t_delta, t_sym, y_zero,
       y_ua, y_slices)
@@ -191,8 +191,8 @@ def y_slice(waveform_y: np.ndarray, centers_t: List[float],
 @cython.wraparound(False)
 cdef void stack_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t min_y,
@@ -236,7 +236,7 @@ cdef void stack_c(
   cdef Py_ssize_t i, ii, c_i
   cdef np.float64_t c_t
 
-  for i in range(len(centers_t)):
+  for i in range(centers_t.shape[0]):
     c_i = centers_i[i] - i_width
     c_t = (centers_t[i] / t_sym / 2) * resolution
 
@@ -249,7 +249,7 @@ cdef void stack_c(
     else:
       _lines.draw_c(td, yd, grid)
 
-def stack(waveform_y: np.ndarray, centers_t: List[float], centers_i: List[int],
+def stack(waveform_y: np.ndarray, centers_t: np.ndarray, centers_i: np.ndarray,
           t_delta: float, t_sym: float, min_y: float, max_y: float,
           resolution: int, grid: np.ndarray, point_cloud: bool) -> None:
   stack_c(waveform_y, centers_t, centers_i, t_delta, t_sym, min_y, max_y,

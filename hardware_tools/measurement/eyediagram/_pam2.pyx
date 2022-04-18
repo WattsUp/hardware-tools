@@ -14,8 +14,8 @@ np.import_array()
 @cython.wraparound(False)
 cdef dict sample_vertical_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_half,
@@ -43,7 +43,7 @@ cdef dict sample_vertical_c(
       y_1_cross: List of samples within the y_cross window, logical 1
       y_avg: List of samples within [0, 1]UI
       transitions: Dictionary of collected transitions, see MeasuresPAM2
-      edge_dir: List of edge directions, True=rising, False=falling, None=none
+      edge_dir: List of edge directions, 1=rising, -1=falling, 0=none
   """
   cdef Py_ssize_t i_width = int((t_sym / t_delta) + 0.5) + 2
   cdef np.float64_t t_width_ui = (i_width * t_delta / t_sym)
@@ -96,8 +96,8 @@ cdef dict sample_vertical_c(
   cdef list samples_sym = []
   cdef list samples_cross = []
   cdef list samples_sym_cross = []
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
+  for i in range(centers_t.shape[0]):
+    c_i = centers_i[i] - i_width
     c_t = centers_t[i] / t_sym
 
     sym_a = 0
@@ -112,7 +112,7 @@ cdef dict sample_vertical_c(
     samples_sym_cross = []
     for ii in range(n):
       t = t0[ii] + c_t
-      y = waveform_y[c_i - i_width + ii]
+      y = waveform_y[c_i + ii]
 
       if t_a_min <= t <= t_a_max:
         sym_a += y
@@ -142,9 +142,9 @@ cdef dict sample_vertical_c(
 
     if sym_a != sym_b:
       values["y_cross"].extend(samples_cross)
-      values["edge_dir"].append(sym_b)
+      values["edge_dir"].append(1 if sym_b else -1)
     else:
-      values["edge_dir"].append(None)
+      values["edge_dir"].append(0)
       if sym_b:
         values["y_1_cross"].extend(samples_sym_cross)
       else:
@@ -165,8 +165,8 @@ cdef dict sample_vertical_c(
 
   return values
 
-def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
-                    centers_i: List[int], t_delta: float, t_sym: float,
+def sample_vertical(waveform_y: np.ndarray, centers_t: np.ndarray,
+                    centers_i: np.ndarray, t_delta: float, t_sym: float,
                     y_half: float, level_width: float,
                     cross_width: float) -> dict:
   return sample_vertical_c(waveform_y, centers_t, centers_i, t_delta, t_sym,
@@ -176,9 +176,9 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
 @cython.wraparound(False)
 cdef dict sample_horizontal_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
-    list edge_dir,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
+    np.ndarray[np.int8_t, ndim=1] edge_dir,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_zero,
@@ -249,14 +249,16 @@ cdef dict sample_horizontal_c(
 
   cdef Py_ssize_t i, ii, c_i
   cdef np.float64_t c_t, t, y
+  cdef np.int8_t e
 
-  for i in range(len(centers_t)):
-    c_i = centers_i[i]
+  for i in range(centers_t.shape[0]):
+    c_i = centers_i[i] - i_width
     c_t = centers_t[i] / t_sym
+    e = edge_dir[i]
 
     for ii in range(n):
       t = t0[ii] + c_t
-      y = waveform_y[c_i - i_width + ii]
+      y = waveform_y[c_i + ii]
 
       if y_cross_min <= y <= y_cross_max:
         if -0.5 <= t <= 0.5:
@@ -266,31 +268,31 @@ cdef dict sample_horizontal_c(
         else:
           pass  # pragma: no cover, just a glitch
       
-      if edge_dir[i] is None or t > 0.5:
+      if e == 0 or t > 0.5:
         continue
 
       if y_lower_min <= y <= y_lower_max:
-        if edge_dir[i]:
+        if e == 1:
           values["t_rise_lower"].append(t)
         else:
           values["t_fall_lower"].append(t)
 
       if y_upper_min <= y <= y_upper_max:
-        if edge_dir[i]:
+        if e == 1:
           values["t_rise_upper"].append(t)
         else:
           values["t_fall_upper"].append(t)
 
       if y_half_min <= y <= y_half_max:
-        if edge_dir[i]:
+        if e == 1:
           values["t_rise_half"].append(t)
         else:
           values["t_fall_half"].append(t)
 
   return values
 
-def sample_horizontal(waveform_y: np.ndarray, centers_t: List[float],
-                      centers_i: List[int], edge_dir: List[bool],
+def sample_horizontal(waveform_y: np.ndarray, centers_t: np.ndarray,
+                      centers_i: np.ndarray, edge_dir: np.ndarray,
                       t_delta: float, t_sym: float, y_zero: float, y_ua: float,
                       y_cross: float, hist_height: float, edge_lower: float,
                       edge_upper: float) -> dict:
