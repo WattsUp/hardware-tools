@@ -130,13 +130,15 @@ class PAM2Config(eyediagram.Config):
   Properties:
     y_0: float, manual level for logical zero
     y_1: float, manual level for logical one
+    y_th: float, manual decision level between 0/1
   """
 
   def __init__(self, **kwargs) -> None:
     super().__init__()
     # Step 1
-    self.y_0 = None
-    self.y_1 = None
+    self.y_0: float = None
+    self.y_1: float = None
+    self.y_th: float = None
 
     # Step 2
 
@@ -200,6 +202,7 @@ class PAM2(eyediagram.EyeDiagram):
       self._config = config
     else:
       raise ValueError("config must be of type PAM2Config")
+    self._edge_dir: list = None
 
   def _step1_levels(self,
                     print_progress: bool = True,
@@ -235,6 +238,8 @@ class PAM2(eyediagram.EyeDiagram):
     self._y_ua = (y_1 - y_0).value
 
     self._y_half = ((y_1 + y_0) / 2).value
+    if self._config.y_th is not None:
+      self._y_half = self._config.y_th
     self._y_rising = (self._y_half + hys / 2)
     self._y_falling = (self._y_half - hys / 2)
 
@@ -375,7 +380,7 @@ class PAM2(eyediagram.EyeDiagram):
         "110": 0,
         "111": 0,
     }
-    edge_dir = []
+    self._edge_dir = []
     for i in range(self._waveforms.shape[0]):
       o = _pam2.sample_vertical(self._waveforms[i][1], self._centers_t[i],
                                 self._centers_i[i], self._t_delta, t_sym,
@@ -389,7 +394,7 @@ class PAM2(eyediagram.EyeDiagram):
       s_y_avg.extend(o["y_avg"])
       for t in transitions:
         transitions[t] += o["transitions"][t]
-      edge_dir.append(o["edge_dir"])
+      self._edge_dir.append(np.fromiter(o["edge_dir"], np.int8))
     s_y_0 = np.fromiter(s_y_0, np.float64)
     s_y_1 = np.fromiter(s_y_1, np.float64)
     s_y_cross = np.fromiter(s_y_cross, np.float64)
@@ -439,7 +444,8 @@ class PAM2(eyediagram.EyeDiagram):
       self._y_ua = m.amp.value
     else:
       self._y_ua = self._config.y_1 - self._y_zero
-    self._y_half = self._y_ua / 2 + self._y_zero
+    if self._config.y_th is None:
+      self._y_half = self._y_ua / 2 + self._y_zero
 
     if print_progress:
       print(f"{'':>{indent}}Measuring waveform horizontally")
@@ -455,7 +461,7 @@ class PAM2(eyediagram.EyeDiagram):
     for i in range(self._waveforms.shape[0]):
       o = _pam2.sample_horizontal(
           self._waveforms[i][1], self._centers_t[i], self._centers_i[i],
-          edge_dir[i], self._t_delta, t_sym, self._y_zero, self._y_ua,
+          self._edge_dir[i], self._t_delta, t_sym, self._y_zero, self._y_ua,
           m.y_cross.value, self._config.time_height, self._config.edge_lower,
           self._config.edge_upper)
       s_t_rise_lower.extend(o["t_rise_lower"])
@@ -724,6 +730,40 @@ class PAM2(eyediagram.EyeDiagram):
       pyplot.savefig(debug_plots, bbox_inches="tight")
       pyplot.close()
       print(f"{'':>{indent}}Saved image to {debug_plots}")
+
+  def get_bit_stream(self, nrzm: bool = False) -> List:
+    """Get bit stream from measured waveform
+
+    Args:
+      nrzm: True will decode as a NRZM waveform (0=constant, 1=toggle).
+        False will decode as NRZL (0=low, 1=high)
+
+    Returns:
+      List per waveform of list of bits (0 or 1)
+
+    Raises:
+      RuntimeError if EyeDiagram is not calculated first
+    """
+    if not self._calculated:
+      raise RuntimeError("EyeDiagram must be calculated first")
+    all_bits = []
+    for edge_dir in self._edge_dir:
+      if nrzm:
+        all_bits.append([abs(b) for b in edge_dir])
+      else:
+        edges = [b for b in edge_dir if b != 0]
+        state = 1
+        if len(edges) == 0 or edges[0] == 1:
+          state = 0
+        bits = []
+        for i in range(len(edge_dir)):
+          if edge_dir[i] == 1:
+            state = 1
+          elif edge_dir[i] == -1:
+            state = 0
+          bits.append(state)
+        all_bits.append(bits)
+    return all_bits
 
 
 def _filter_edge_polarity(edges: tuple[np.ndarray],

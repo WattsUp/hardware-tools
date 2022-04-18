@@ -158,5 +158,5 @@ def sample_mask(waveform_y: np.ndarray, centers_t: List[float],
       values["offenders"].append(i)
       values["hits"].extend(hits.tolist())
 
-  values["margin"] = mask_margins[i_margin]
+  values["margin"] = mask_margins[min(n_masks - 1, i_margin)]
   return values

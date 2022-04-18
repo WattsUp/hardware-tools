@@ -5,8 +5,8 @@ cimport numpy as np
 
 cdef dict sample_vertical_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_half,
@@ -15,9 +15,9 @@ cdef dict sample_vertical_c(
 
 cdef dict sample_horizontal_c(
     np.ndarray[np.float64_t, ndim=1] waveform_y,
-    list centers_t,
-    list centers_i,
-    list edge_dir,
+    np.ndarray[np.float64_t, ndim=1] centers_t,
+    np.ndarray[np.int32_t, ndim=1] centers_i,
+    np.ndarray[np.int8_t, ndim=1] edge_dir,
     np.float64_t t_delta,
     np.float64_t t_sym,
     np.float64_t y_zero,

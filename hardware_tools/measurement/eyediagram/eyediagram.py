@@ -20,6 +20,7 @@ import skimage.draw
 
 from hardware_tools import strformat
 from hardware_tools.math import image, stats
+from hardware_tools.measurement.eyediagram import cdr
 from hardware_tools.measurement.mask import Mask
 
 try:
@@ -90,19 +91,19 @@ class Measures(ABC):
     """
     super().__init__()
 
-    self.n_samples = None
-    self.n_sym = None
-    self.n_sym_bad = None
-    self.transition_dist = None
-    self.mask_margin = None
+    self.n_samples: int = None
+    self.n_sym: int = None
+    self.n_sym_bad: int = None
+    self.transition_dist: dict = None
+    self.mask_margin: float = None
 
-    self._np_image_clean = None
-    self._np_image_grid = None
-    self._np_image_mask = None
-    self._np_image_hits = None
-    self._np_image_margin = None
+    self._np_image_clean: np.ndarray = None
+    self._np_image_grid: np.ndarray = None
+    self._np_image_mask: np.ndarray = None
+    self._np_image_hits: np.ndarray = None
+    self._np_image_margin: np.ndarray = None
 
-    self.bathtub_curves = None
+    self.bathtub_curves: dict = None
 
   def set_images(self, np_clean: np.ndarray, np_grid: np.ndarray,
                  np_mask: np.ndarray, np_hits: np.ndarray,
@@ -319,28 +320,28 @@ class Config():
       All kwargs passed to self.consume
     """
     # Step 1
-    self.hysteresis = None
-    self.hysteresis_ua = 0.1
-    self.levels_n_max = 10e3
+    self.hysteresis: float = None
+    self.hysteresis_ua: float = 0.1
+    self.levels_n_max: float = 10e3
 
     # Step 2
-    self.clock_polarity = ClockPolarity.RISING
-    self.cdr = None
-    self.fallback_period = 100e-9
+    self.clock_polarity: ClockPolarity = ClockPolarity.RISING
+    self.cdr: cdr.CDR = None
+    self.fallback_period: float = 100e-9
 
     # Step 3
 
     # Step 4
-    self.skip_measures = False
-    self.level_width = 0.2
+    self.skip_measures: bool = False
+    self.level_width: float = 0.2
     self.cross_width = 0.1
-    self.time_height = 0.05
-    self.edge_lower = 0.2
-    self.edge_upper = 0.8
-    self.noise_floor = stats.UncertainValue(0, 0)
+    self.time_height: float = 0.05
+    self.edge_lower: float = 0.2
+    self.edge_upper: float = 0.8
+    self.noise_floor: stats.UncertainValue = stats.UncertainValue(0, 0)
 
     # Step 5
-    self.point_cloud = False
+    self.point_cloud: bool = False
 
     self.consume(kwargs)
 
@@ -429,21 +430,21 @@ class EyeDiagram(ABC):
     self._t_unit = t_unit
     self._y_unit = y_unit
     self._mask = mask
-    self._mask_converted = None
+    self._mask_converted: Mask = None
 
     self._resolution = resolution
     self._raw_heatmap = np.zeros((resolution, resolution), dtype=np.int32)
-    self._measures = None
+    self._measures: Measures = None
 
-    self._y_zero = None
-    self._y_ua = None
-    self._centers_t = None
-    self._centers_i = None
+    self._y_zero: float = None
+    self._y_ua: float = None
+    self._centers_t: list = None
+    self._centers_i: list = None
     self._t_delta = (self._waveforms[0, 0, -1] -
                      self._waveforms[0, 0, 0]) / (self._waveforms.shape[2] - 1)
-    self._t_sym = None
+    self._t_sym: float = None
     self._clock_edges = clock_edges
-    self._ties = None
+    self._ties: list = None
 
     self._calculated = False
 
@@ -471,7 +472,7 @@ class EyeDiagram(ABC):
 
     if print_progress:
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.CYAN}"
-            f"Starting eye diagram calculation")
+            "Starting eye diagram calculation")
       print(f"{'':>{indent}}{strformat.elapsed_str(start)} {Fore.YELLOW}"
             "Step 1: Finding threshold levels")
     self._step1_levels(print_progress=print_progress,
@@ -638,8 +639,8 @@ class EyeDiagram(ABC):
         centers_t.append(-center_t)
         centers_i.append(center_i)
 
-      self._centers_i.append(centers_i)
-      self._centers_t.append(centers_t)
+      self._centers_i.append(np.fromiter(centers_i, np.int32))
+      self._centers_t.append(np.fromiter(centers_t, np.float64))
 
     if print_progress:
       print(f"{'':>{indent}}Completed sampling")
@@ -860,11 +861,12 @@ class EyeDiagram(ABC):
                         max_y, self._resolution, self._raw_heatmap,
                         self._config.point_cloud)
 
-    # Normalize density such that each column has the same number of counts
     n = self._measures.n_sym
     self._raw_heatmap = self._raw_heatmap.astype(np.float32)
-    for i in range(self._resolution):
-      self._raw_heatmap[i] *= (n / max(1, np.sum(self._raw_heatmap[i])))
+    if self._config.point_cloud:
+      # Normalize density such that each column has the same number of counts
+      for i in range(self._resolution):
+        self._raw_heatmap[i] *= (n / max(1, np.sum(self._raw_heatmap[i])))
 
     # [x, y] coordinates to image coordinates
     self._raw_heatmap = np.rot90(self._raw_heatmap)
@@ -910,7 +912,8 @@ class EyeDiagram(ABC):
       for h in self._hits:
         x = self._uia_to_image(h[0], return_list=False)
         y = self._uia_to_image(h[1], return_list=False)
-        if not hit_drawn[x, y]:
+        if (0 <= x < self._resolution and 0 <= y < self._resolution and
+            not hit_drawn[x, y]):
           # Don't repeatably draw hits
           # Opacity < 1 or antialiasing would make a difference
           hit_drawn[x, y] = True
