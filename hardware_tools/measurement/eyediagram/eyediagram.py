@@ -6,7 +6,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import base64
 import datetime
-from enum import Enum
 import io
 import json
 import os
@@ -20,6 +19,7 @@ import skimage.draw
 
 from hardware_tools import strformat
 from hardware_tools.math import image, stats
+from hardware_tools.math.lines import EdgePolarity
 from hardware_tools.measurement.eyediagram import cdr
 from hardware_tools.measurement.mask import Mask
 
@@ -30,12 +30,6 @@ except ImportError:
   from hardware_tools.measurement.eyediagram import _eyediagram_fb as _eyediagram
 
 colorama.init(autoreset=True)
-
-
-class ClockPolarity(Enum):
-  RISING = 1  # Sample on clock's rising edge
-  FALLING = 2  # Sample on clock's falling edge
-  BOTH = 3  # Sample on both edges
 
 
 class MeasuresJSONEncoder(json.JSONEncoder):
@@ -297,7 +291,7 @@ class Config():
     hysteresis_ua: float,  units of normalized amplitude, lower priority
     levels_n_max: int, Maximum of points in levels histogram
 
-    clock_polarity: ClockPolarity, clock off rising, falling, or both edges
+    clock_polarity: EdgePolarity, clock off rising, falling, or both edges
     cdr: cdr.CDR, clock recovery algorithm, None will use cdr.CDR
     fallback_period: float, if CDR cannot run (low SNR) fallback period to
       generate constant clock
@@ -325,7 +319,7 @@ class Config():
     self.levels_n_max: float = 10e3
 
     # Step 2
-    self.clock_polarity: ClockPolarity = ClockPolarity.RISING
+    self.clock_polarity: EdgePolarity = EdgePolarity.RISING
     self.cdr: cdr.CDR = None
     self.fallback_period: float = 100e-9
 

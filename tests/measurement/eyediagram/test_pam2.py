@@ -245,7 +245,7 @@ class TestPAM2(base.TestBase):
     c = pam2.PAM2Config(y_0=0,
                         y_1=v_signal,
                         cdr=cdr.CDR(t_bit),
-                        clock_polarity=eyediagram.ClockPolarity.RISING)
+                        clock_polarity=pam2.EdgePolarity.RISING)
     eye = pam2.PAM2(waveforms, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -258,7 +258,7 @@ class TestPAM2(base.TestBase):
     c = pam2.PAM2Config(y_0=0,
                         y_1=v_signal,
                         fallback_period=t_bit,
-                        clock_polarity=eyediagram.ClockPolarity.RISING)
+                        clock_polarity=pam2.EdgePolarity.RISING)
     eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -272,7 +272,7 @@ class TestPAM2(base.TestBase):
     c = pam2.PAM2Config(y_0=0,
                         y_1=v_signal,
                         fallback_period=t_bit,
-                        clock_polarity=eyediagram.ClockPolarity.FALLING)
+                        clock_polarity=pam2.EdgePolarity.FALLING)
     eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -283,7 +283,7 @@ class TestPAM2(base.TestBase):
     c = pam2.PAM2Config(y_0=0,
                         y_1=v_signal,
                         fallback_period=t_bit,
-                        clock_polarity=eyediagram.ClockPolarity.BOTH)
+                        clock_polarity=pam2.EdgePolarity.BOTH)
     eye = pam2.PAM2(waveforms, clocks=clocks, config=c)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -384,7 +384,7 @@ class TestPAM2(base.TestBase):
 
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
     c = pam2.PAM2Config(fallback_period=t_sym,
-                        clock_polarity=eyediagram.ClockPolarity.BOTH,
+                        clock_polarity=pam2.EdgePolarity.BOTH,
                         noise_floor=stats.UncertainValue(
                             9.80964764e-08, 2.50442542e-07))
 

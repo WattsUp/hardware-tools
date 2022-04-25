@@ -5,6 +5,7 @@ Intersections, edges, drawing, etc.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import List
 
 import numpy as np
@@ -15,6 +16,18 @@ try:
 except ImportError:
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.math._lines_fb import *  # pylint: disable=wildcard-import, unused-wildcard-import
+
+
+class EdgePolarity(Enum):
+  """Edge Polarity enumeration
+
+  RISING: Rising edges transition from a lower to upper state
+  FALLING: Falling edges transition from an upper to lower state
+  BOTH: Both rising and falling edges
+  """
+  RISING = 1
+  FALLING = 2
+  BOTH = 3
 
 
 class Point2D:
