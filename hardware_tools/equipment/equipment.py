@@ -1,9 +1,9 @@
 """Equipment base class to interface to physical testing hardware
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 import time
-from typing import Any, Iterable
+from typing import Iterable
 
 import pyvisa
 
@@ -50,6 +50,11 @@ class Equipment(ABC):
       command: Command string to write
     """
     self._instrument.write(command)
+
+  def reset(self) -> None:
+    """Send reset command
+    """
+    self.send("*RST")
 
   def ask(self, command: str) -> str:
     """Send a command to the Equipment and receive a reply
@@ -108,38 +113,3 @@ class Equipment(ABC):
       Reply as bytes
     """
     return self._instrument.read_raw()
-
-  @abstractmethod
-  def configure(self, setting: str, value: Any) -> Any:
-    """Configure a setting to a new value
-
-    Args:
-      setting: The setting to change (see self.settings)
-      value: The value to change to
-
-    Returns:
-      Setting change validation
-
-    Raises:
-      KeyError if setting is improper
-
-      ValueError if value is improper
-    """
-    pass  # pragma: no cover
-
-  @abstractmethod
-  def command(self,
-              command: str,
-              timeout: float = 1,
-              silent: bool = True) -> None:
-    """Perform a command sequence
-
-    Args:
-      command: The command to perform (see self.commands)
-      timeout: Time in seconds to wait until giving up
-      silent: True will not print anything except errors
-
-    Raises:
-      TimeoutError if timeout was exceeded
-    """
-    pass  # pragma: no cover
