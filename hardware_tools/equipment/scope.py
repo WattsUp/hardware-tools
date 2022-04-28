@@ -67,6 +67,33 @@ class TriggerEdge(Trigger):
     self.dc_coupling = dc_coupling
 
 
+class TriggerEdgeTimeout(Trigger):
+  """Trigger on edge timeout (edge that stays transitioned for a period)
+  """
+
+  def __init__(self,
+               src: str,
+               level: float,
+               timeout: float,
+               slope: EdgePolarity = EdgePolarity.RISING,
+               holdoff: float = 20e-9) -> None:
+    """Create an edge coupling trigger
+
+    Args:
+      src: Source of trigger, CH1, CH2,...
+      level: Decision level for edge
+      timeout: Duration of edge timeout in seconds.
+        timeout=0.1, slope=RISING will trigger when src stays high for 0.1s
+      slope: Direction of edge, BOTH will trigger on either polarity
+      holdoff: Time after trigger than a new trigger cannot be generated
+    """
+    super().__init__(holdoff=holdoff)
+    self.src = src
+    self.level = level
+    self.timeout = timeout
+    self.slope = slope
+
+
 class TriggerPulse(Trigger):
   """Trigger on pulse
   """
@@ -77,7 +104,6 @@ class TriggerPulse(Trigger):
                width: Union[float, Tuple[float, float]],
                comparision: Comparison,
                positive: bool = True,
-               dc_coupling: bool = True,
                holdoff: float = 20e-9) -> None:
     """Create an edge coupling trigger
 
@@ -89,7 +115,6 @@ class TriggerPulse(Trigger):
         tolerance, usually ±5%. Use WITHIN/OUTSIDE for finer control
       positive: True will trigger of of positive polarity pulses. False will use
         negative polarity pulses
-      dc_coupling: True will DC couple the trigger source, False will AC couple
       holdoff: Time after trigger than a new trigger cannot be generated
     """
     super().__init__(holdoff=holdoff)
@@ -98,7 +123,6 @@ class TriggerPulse(Trigger):
     self.width = width
     self.comparision = comparision
     self.positive = positive
-    self.dc_coupling = dc_coupling
 
 
 class Channel(ABC):
@@ -168,7 +192,6 @@ class Channel(ABC):
         y_unit: str = Unit string for vertical axis
         x_incr: float = Step between horizontal axis values
         y_incr: float = Step between vertical axis values (LSB)
-        resolution: int = number of bits of conversion
     """
     pass  # pragma: no cover
 
@@ -255,10 +278,90 @@ class AnalogChannel(Channel):
     """
     pass  # pragma: no cover
 
-  def autoscale(self) -> None:
+  def autoscale(self, trigger_cmd: callable = None) -> None:
     """Autoscale channel
+
+    Args:
+      trigger_cmd: Function to call to cause trigger (such as start toggling),
+        None will wait 100ms
+
+    Raises:
+      TimeoutError if it cannot scale after 10 attempts
     """
-    pass  # TODO (WattsUp) move autoscale code here
+    # Autoscale with 1e6 points is balance between speed an accuracy
+    original_time_points = self._parent.time_points
+    self._parent.time_points = 1e6
+
+    n_div_vert = self._parent.n_div_vert
+
+    attempts = 10
+    while attempts > 0:
+      position = self.position
+      scale = self.scale
+
+      self._parent.single(trigger_cmd=trigger_cmd, force=True)
+      data: np.ndarray = self.read_waveform()[0][1]  # Vertical only
+      data = data / scale / n_div_vert  # Real units => -0.5 to 0.5
+      attempts -= 1
+
+      new_scale = scale
+      new_position = position
+
+      data_min = data.min()
+      data_max = data.max()
+      data_mid = (data_min + data_max) / 2
+      data_span = (data_max - data_min)
+
+      # print(f"{data_min:.2f}, {data_mid:.2f}, {data_max:.2f}, "
+      #       f"{data_span:.2f}, {position:.2f}, {scale}")
+
+      update = False
+      if data_max > 0.45:
+        # Too high
+        if data_span > 0.6:
+          new_scale = scale * 4
+        if data_span < 0.1:
+          new_scale = scale / 4
+        new_position = (position - n_div_vert * data_mid) * scale / new_scale
+        update = True
+      elif data_min < -0.45:
+        # Too low
+        if data_span > 0.6:
+          new_scale = scale * 4
+        if data_span < 0.1:
+          new_scale = scale / 4
+        new_position = (position - n_div_vert * data_mid) * scale / new_scale
+        update = True
+      elif data_span < 0.05:
+        # Too small
+        new_scale = scale / 2
+        new_position = (position - n_div_vert * data_mid) * scale / new_scale
+        update = True
+      # Covered by too high and too low
+      # elif data_span > 0.9:
+      #   # Too large
+      #   new_scale = scale * 2
+      #   new_position = (position - n_div_vert * data_mid) * scale / new_scale
+      else:
+        if data_span < 0.75 or data_span > 0.85:
+          new_scale = scale / (0.8 / data_span)
+          update = True
+
+        if data_mid > 0.1 or data_mid < -0.1 or new_scale != scale:
+          new_position = (position - n_div_vert * data_mid) * scale / new_scale
+          update = True
+
+      if update:
+        self.scale = new_scale
+        self.position = new_position
+      else:
+        break  # pragma: no cover complains this isn't reached
+
+    self._parent.time_points = original_time_points
+
+    if attempts == 0:
+      raise TimeoutError(
+          f"{self._parent} failed to autoscale channel '{self._alias}'")
 
 
 class DigitalChannel(Channel):
@@ -286,6 +389,7 @@ class Scope(equipment.Equipment):
   Properties:
     n_div_horz: int = number of horizontal divisions
     n_div_vert: int = number of vertical divisions
+    max_bandwidth: float = maximum analog bandwidth, Hz
     sample_rate: float = samples per second
     sample_mode: SampleMode enumeration
     sample_mode_n: int = number of acquisitions for sample modes AVERAGE and
@@ -297,11 +401,22 @@ class Scope(equipment.Equipment):
 
   n_div_horz: int = 1
   n_div_vert: int = 1
+  max_bandwidth: float = 0
 
   def __init__(self, address: str, name: str = "") -> None:
     super().__init__(address, name)
     self._channels = {}
     self._digitals = {}
+    self._init_channels()
+
+  @abstractmethod
+  def _init_channels(self) -> None:
+    """Initialize analog and digital channels
+
+    Primarily to add the appropriate number of channels to self._channels and
+    self._digitals
+    """
+    pass  # pragma: no cover
 
   def ch(self, index: int) -> AnalogChannel:
     """Get analog channel of scope

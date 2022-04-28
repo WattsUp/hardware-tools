@@ -1,11 +1,160 @@
 """Common functions among Tektronix scopes
 """
 
+import re
 from typing import Tuple
 
 import numpy as np
 
+from hardware_tools.equipment import utility
+from hardware_tools.math.lines import EdgePolarity
+from hardware_tools.math.stats import Comparison
+
 _rng = np.random.default_rng()
+
+
+def _comparison(v: str) -> Comparison:
+  """Convert a str to a Comparison
+
+  Args:
+    v: Value to convert
+
+  Returns:
+    Comparison or v if no match
+  """
+  d = {
+      "LESSthan": Comparison.LESS,
+      "MOREthan": Comparison.MORE,
+      "EQual": Comparison.EQUAL,
+      "UNEqual": Comparison.UNEQUAL,
+      "LESSEQual": Comparison.LESSEQUAL,
+      "MOREEQual": Comparison.MOREEQUAL,
+      "INrange": Comparison.WITHIN,
+      "OUTrange": Comparison.OUTSIDE
+  }
+  for kd, vd in d.items():
+    kd: str
+    kk_short = re.sub(r"[a-z]+$", "", kd)
+    if v.startswith(kk_short):
+      return vd
+  return v
+
+
+def _polarity(v: str) -> EdgePolarity:
+  """Convert a str to a EdgePolarity
+
+  Args:
+    v: Value to convert
+
+  Returns:
+    EdgePolarity or v if no match
+  """
+  d = {
+      "RISe": EdgePolarity.RISING,
+      "POSitive": EdgePolarity.RISING,
+      "STAYSHigh": EdgePolarity.RISING,
+      "FALL": EdgePolarity.FALLING,
+      "NEGative": EdgePolarity.FALLING,
+      "STAYSLow": EdgePolarity.FALLING,
+      "EITher": EdgePolarity.BOTH
+  }
+  for kd, vd in d.items():
+    kd: str
+    kk_short = re.sub(r"[a-z]+$", "", kd)
+    if v.startswith(kk_short):
+      return vd
+  return v
+
+
+def _threshold(v: str) -> float:
+  """Convert a str to a threshold
+
+  Args:
+    v: Value to convert
+
+  Returns:
+    -1.3 if ECL
+     1.4 if TTL
+     else float(v)
+  """
+  d = {"ECL": -1.3, "TTL": 1.4}
+  if v in d:
+    return d[v]
+  return float(v)
+
+
+TEK_TYPES = {
+    "TRIGger": {
+        "A": {
+            "BANDWidth": {
+                "RF": {
+                    "HIGH": float,
+                    "LOW": float
+                }
+            },
+            "EDGE": {
+                "COUPling": str.upper,
+                "SLOpe": _polarity,
+                "SOUrce": str.upper
+            },
+            "HOLDoff": {
+                "TIMe": float
+            },
+            "LEVel": {
+                "AUXin": _threshold,
+                "CH<1-4>": _threshold,
+                "D<0-15>": _threshold
+            },
+            "MODe": str.upper,
+            "PULse": {
+                "CLAss": str.upper
+            },
+            "PULSEWidth": {
+                "HIGHLimit": float,
+                "LOWLimit": float,
+                "POLarity": _polarity,
+                "SOUrce": str.upper,
+                "WHEn": _comparison,
+                "WIDth": float
+            },
+            "TIMEOut": {
+                "POLarity": _polarity,
+                "SOUrce": str.upper,
+                "TIMe": float
+            },
+            "TYPe": str.upper
+        }
+    },
+    "WFMOpre|WFMInpre|WFMPre": {
+        "BYT_Nr": int,
+        "BIT_Nr": int,
+        "ENCdg": str.upper,
+        "BN_Fmt": str.upper,
+        "BYT_Or": str.upper,
+        "WFId": lambda s: str.strip(s, '"'),
+        "NR_Pt": int,
+        "PT_Fmt": str.upper,
+        "XUNit": lambda s: str.strip(s, '"'),
+        "XINcr": float,
+        "XZEro": float,
+        "PT_Off": int,
+        "PT_ORder": str.upper,
+        "YUNit": lambda s: str.strip(s, '"'),
+        "YMUlt": float,
+        "YOFf": float,
+        "YZEro": float,
+        "VSCALE": float,
+        "HSCALE": float,
+        "VPOS": float,
+        "VOFFSET": float,
+        "HDELAY": float,
+        "DOMain": str.upper,
+        "WFMTYPe": str.upper,
+        "CENTERFREQuency": float,
+        "SPAN": float,
+        "REFLEvel": float
+    }
+}
 
 
 def parse_wfm(data: bytes,
@@ -43,103 +192,8 @@ def parse_wfm(data: bytes,
   waveform_format = data_list[0].decode(encoding="ascii")
   curve = data_list[1]
 
-  # If commentted out, they are not used
-  header_names = {
-      "BYT_NR": "BYT_NR",
-      "BYT_N": "BYT_NR",
-      # "BIT_NR": "BIT_NR",
-      # "BIT_N": "BIT_NR",
-      # "ENCDG": "ENCDG",
-      # "ENC": "ENCDG",
-      "BN_FMT": "BN_FMT",
-      "BN_F": "BN_FMT",
-      "BYT_OR": "BYT_OR",
-      "BYT_O": "BYT_OR",
-      "WFID": "WFID",
-      "WFI": "WFID",
-      "NR_PT": "NR_PT",
-      "NR_P": "NR_PT",
-      # "PT_FMT": "PT_FMT",
-      # "PT_F": "PT_FMT",
-      "XUNIT": "XUNIT",
-      "XUN": "XUNIT",
-      "XINCR": "XINCR",
-      "XIN": "XINCR",
-      "XZERO": "XZERO",
-      "XZE": "XZERO",
-      # "PT_OFF": "PT_OFF",
-      # "PT_O": "PT_OFF",
-      # "PT_ORDER": "PT_ORDER",
-      # "PT_OR": "PT_ORDER",
-      "YUNIT": "YUNIT",
-      "YUN": "YUNIT",
-      "YMULT": "YMULT",
-      "YMU": "YMULT",
-      "YOFF": "YOFF",
-      "YOF": "YOFF",
-      "YZERO": "YZERO",
-      "YZE": "YZERO",
-      # "VSCALE": "VSCALE",
-      # "HSCALE": "HSCALE",
-      # "VPOS": "VPOS",
-      # "VOFFSET": "VOFFSET",
-      # "HDELAY": "HDELAY",
-      # "DOMAIN": "DOMAIN",
-      # "DOM": "DOMAIN",
-      # "WFMTYPE": "WFMTYPE",
-      # "WFMTYP": "WFMTYPE",
-      # "CENTERFREQUENCY": "CENTERFREQUENCY",
-      # "CENTERFREQ": "CENTERFREQUENCY",
-      # "REFLEVEL": "REFLEVEL",
-      # "REFLE": "REFLEVEL",
-      # "SPAN": "SPAN"
-  }
-  header_types = {
-      "BYT_NR": int,
-      "BIT_NR": int,
-      "ENCDG": str,
-      "BN_FMT": str,
-      "BYT_OR": str,
-      "WFID": lambda s: str.strip(s, '"'),
-      "NR_PT": int,
-      "PT_FMT": str,
-      "XUNIT": lambda s: str.strip(s, '"'),
-      "XINCR": float,
-      "XZERO": float,
-      "PT_OFF": int,
-      "PT_ORDER": str,
-      "YUNIT": lambda s: str.strip(s, '"'),
-      "YMULT": float,
-      "YOFF": float,
-      "YZERO": float,
-      "VSCALE": float,
-      "HSCALE": float,
-      "VPOS": float,
-      "VOFFSET": float,
-      "HDELAY": float,
-      "DOMAIN": str,
-      "WFMTYPE": str,
-      "CENTERFREQUENCY": float,
-      "SPAN": float,
-      "REFLEVEL": float
-  }
-
-  header = {}
-  for i in waveform_format.strip(";").split(";"):
-    (k, v) = i.split(" ", maxsplit=1)
-    k = k.upper()
-    k = k.replace(":WFMOUTPRE:", "")
-    k = k.replace(":WFMO:", "")
-    k = k.replace(":WFMPRE:", "")
-    k = k.replace(":WFMP:", "")
-    if k not in header_names:
-      continue
-      # raise ValueError(f"Unrecognized header '{k}'")
-    k = header_names[k]
-    header[k] = header_types[k](v)
-
-  # for k, v in header.items():
-  #   print(f"{k}: {v}")
+  header = utility.parse_scpi(waveform_format, flat=False, types=TEK_TYPES)
+  header = header.popitem()[1]  # Remove outer "WFMOpre|WFMInpre|WFMPre"
 
   points = header["NR_PT"]
   x_incr = header["XINCR"]
