@@ -63,6 +63,19 @@ class TestEquipment(base.TestBase):
     self.assertEqual(1, len(instrument.queue_tx))
     self.assertEqual(command, instrument.queue_tx[0])
 
+  def test_reset(self):
+    name = "Mock Equipment"
+    address = "USB::0x0000::0x0000:C000000::INSTR"
+    e = Derrived(address, name=name)
+
+    instrument = mock_pyvisa.resources[address]
+
+    command = "*RST"
+    e.reset()
+
+    self.assertEqual(1, len(instrument.queue_tx))
+    self.assertEqual(command, instrument.queue_tx[0])
+
   def test_ask(self):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"

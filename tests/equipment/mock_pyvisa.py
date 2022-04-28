@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import List
 
 import pyvisa
+from pyvisa import resources as pyvisa_resources
 
 resources = {}
 available = []
@@ -13,11 +14,13 @@ available = []
 no_pop = False
 
 
-class Resource:
+class Resource(pyvisa_resources.MessageBasedResource):
   """Mock pyvisa.Resource
   """
 
-  def __init__(self, address: str) -> None:
+  def __init__(self, resource_manager: pyvisa.ResourceManager,
+               address: str) -> None:
+    super().__init__(resource_manager, address)
     self.address = address
     resources[address] = self
 
@@ -55,14 +58,14 @@ class Resource:
     return self.queue_rx.pop(0)
 
 
-class ResourceManager:
+class ResourceManager(pyvisa.ResourceManager):
   """Mock pyvisa.ResourceManager
   """
 
   def open_resource(self, address: str) -> Resource:
     if address in resources:
       return resources[address]
-    return Resource(address)
+    return Resource(self, address)
 
   def list_resources(self) -> List[str]:
     return available

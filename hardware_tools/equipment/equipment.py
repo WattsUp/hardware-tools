@@ -6,6 +6,7 @@ import time
 from typing import Iterable
 
 import pyvisa
+from pyvisa import resources
 
 # TODO (WattsUp) [Future] add more scopes and other instrument types
 
@@ -32,7 +33,11 @@ class Equipment(ABC):
     self._name = name
 
     rm = pyvisa.ResourceManager()
-    self._instrument = rm.open_resource(address)
+    resource = rm.open_resource(address)
+
+    if not isinstance(resource, resources.MessageBasedResource):
+      raise NotImplementedError("Only know MessageBasedResource")
+    self._instrument = resource
 
   def __del__(self) -> None:
     try:
