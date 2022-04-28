@@ -38,40 +38,42 @@ class TestEquipmentUtility(base.TestBase):
     address = "USB::0x0000::0x0000:C000000::INSTR"
 
     equipment_types = {
-        "TEKTRONIX,MSO4032": tektronix.MSO4000,
-        "TEKTRONIX,MSO4034": tektronix.MSO4000,
-        "TEKTRONIX,MSO4054": tektronix.MSO4000,
-        "TEKTRONIX,MSO4104": tektronix.MSO4000,
-        "TEKTRONIX,MSO4032B": tektronix.MSO4000,
-        "TEKTRONIX,MSO4034B": tektronix.MSO4000,
-        "TEKTRONIX,MSO4054B": tektronix.MSO4000,
-        "TEKTRONIX,MSO4104B": tektronix.MSO4000,
-        "TEKTRONIX,MDO4054": tektronix.MDO4000,
-        "TEKTRONIX,MDO4104": tektronix.MDO4000,
-        "TEKTRONIX,MDO3012": tektronix.MDO3000,
-        "TEKTRONIX,MDO3014": tektronix.MDO3000,
-        "TEKTRONIX,MDO3022": tektronix.MDO3000,
-        "TEKTRONIX,MDO3024": tektronix.MDO3000,
-        "TEKTRONIX,MDO3032": tektronix.MDO3000,
-        "TEKTRONIX,MDO3034": tektronix.MDO3000,
-        "TEKTRONIX,MDO3052": tektronix.MDO3000,
-        "TEKTRONIX,MDO3054": tektronix.MDO3000,
-        "TEKTRONIX,MDO3102": tektronix.MDO3000,
-        "TEKTRONIX,MDO3104": tektronix.MDO3000,
+        "TEKTRONIX,MSO4032": tektronix.MSO4000Family,
+        "TEKTRONIX,MDO4054": tektronix.MSO4000Family,
+        "TEKTRONIX,DPO4104B": tektronix.MSO4000Family,
+        "TEKTRONIX,MDO3104": tektronix.MSO4000Family,
     }
 
     mock_pyvisa.no_pop = True
 
-    instrument = mock_pyvisa.Resource(address)
+    rm = mock_pyvisa.ResourceManager()
+    instrument = mock_pyvisa.Resource(rm, address)
     instrument.query_map["*IDN?"] = "FAKE"
     self.assertRaises(LookupError, utility.connect, address)
     instrument.close()
 
     for name, class_type in equipment_types.items():
-      instrument = mock_pyvisa.Resource(address)
+      instrument = mock_pyvisa.Resource(rm, address)
       instrument.query_map["*IDN?"] = name
+      if class_type == tektronix.MSO4000Family:
+        instrument.query_map["SELECT?"] = (":SELECT:CH1 1;MATH 0;REF1 0;D0 0;"
+                                           "BUS1 0;CONTROL CH1")
 
       e = utility.connect(address)
       self.assertIsInstance(e, class_type)
 
       instrument.close()
+
+  def test_parse_scpi(self):
+    with open(self._DATA_ROOT.joinpath("scpi.txt"), "r",
+              encoding="utf-8") as file:
+      raw = file.read()
+
+    d = utility.parse_scpi(raw, flat=False, types=tektronix.TEK_TYPES)
+    self.assertIsInstance(d, dict)
+    self.assertIsInstance(d["TRIGGER"], dict)
+
+    d = utility.parse_scpi(raw, flat=True, types=tektronix.TEK_TYPES)
+    self.assertIsInstance(d, dict)
+    for v in d.values():
+      self.assertNotIsInstance(v, dict)

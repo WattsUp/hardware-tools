@@ -5,6 +5,7 @@ import re
 from typing import Callable, List, Tuple
 
 import pyvisa
+from pyvisa import resources
 
 from hardware_tools.equipment.equipment import Equipment
 from hardware_tools.equipment import tektronix
@@ -36,7 +37,7 @@ def connect(address: str) -> Equipment:
   """
   rm = pyvisa.ResourceManager()
   with rm.open_resource(address) as instrument:
-    if isinstance(instrument, pyvisa.resources.MessageBasedResource):
+    if isinstance(instrument, resources.MessageBasedResource):
       identity = instrument.query("*IDN?").strip()
     else:
       raise NotImplementedError("Only know MessageBasedResource")

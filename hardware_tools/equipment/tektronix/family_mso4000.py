@@ -198,7 +198,7 @@ class MSO4000Family(Scope):
 
     self.send("HEADER OFF")
 
-    name_freq = model[4:5]
+    name_freq = model[4:6]
     if name_freq == "01":
       self.max_bandwidth = 100e6
     elif name_freq == "02":
