@@ -94,24 +94,24 @@ class TriggerEdgeTimeout(Trigger):
     self.slope = slope
 
 
-class TriggerPulse(Trigger):
-  """Trigger on pulse
+class TriggerPulseWidth(Trigger):
+  """Trigger on pulse width
   """
 
   def __init__(self,
                src: str,
                level: float,
                width: Union[float, Tuple[float, float]],
-               comparision: Comparison,
+               comparison: Comparison,
                positive: bool = True,
                holdoff: float = 20e-9) -> None:
-    """Create an edge coupling trigger
+    """Create a pulse width trigger
 
     Args:
       src: Source of trigger, CH1, CH2,...
       level: Decision level for edge
       width: Pulse width, or (lower, upper) limits for WITHIN/OUTSIDE
-      comparision: Comparision operator to trigger off of, EQUAL/UNEQUAL has a
+      comparison: comparison operator to trigger off of, EQUAL/UNEQUAL has a
         tolerance, usually ±5%. Use WITHIN/OUTSIDE for finer control
       positive: True will trigger of of positive polarity pulses. False will use
         negative polarity pulses
@@ -121,7 +121,7 @@ class TriggerPulse(Trigger):
     self.src = src
     self.level = level
     self.width = width
-    self.comparision = comparision
+    self.comparison = comparison
     self.positive = positive
 
 

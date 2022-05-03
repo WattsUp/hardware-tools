@@ -15,7 +15,7 @@ from hardware_tools.equipment import utility
 from hardware_tools.equipment.scope import (Scope, AnalogChannel, Channel,
                                             DigitalChannel, SampleMode, Trigger,
                                             TriggerEdge, TriggerEdgeTimeout,
-                                            TriggerPulse, EdgePolarity,
+                                            TriggerPulseWidth, EdgePolarity,
                                             Comparison)
 from hardware_tools.equipment.tektronix import common
 
@@ -317,11 +317,12 @@ class MSO4000Family(Scope):
         ]:
           lower = settings["PULSEWIDTH"]["LOWLIMIT"]
           upper = settings["PULSEWIDTH"]["HIGHLIMIT"]
-          t = TriggerPulse(src, level, (lower, upper), comparison, positive,
-                           holdoff)
+          t = TriggerPulseWidth(src, level, (lower, upper), comparison,
+                                positive, holdoff)
         else:
           width = settings["PULSEWIDTH"]["WIDTH"]
-          t = TriggerPulse(src, level, width, comparison, positive, holdoff)
+          t = TriggerPulseWidth(src, level, width, comparison, positive,
+                                holdoff)
     return t
 
   @trigger.setter
@@ -382,7 +383,7 @@ class MSO4000Family(Scope):
           EdgePolarity.BOTH: "EITHER",
       }
       self.send(f"TRIGGER:A:TIMEOUT:POLARITY {polarities[value.slope]}")
-    elif isinstance(value, TriggerPulse):
+    elif isinstance(value, TriggerPulseWidth):
       self.send("TRIGGER:A:TYPE PULSE")
       self.send("TRIGGER:A:PULSE:CLASS WIDTH")
       sources = ["LINE"]
@@ -400,7 +401,7 @@ class MSO4000Family(Scope):
       else:
         self.send(f"TRIGGER:A:LEVEL:{value.src} {float(value.level):.6E}")
 
-      if value.comparision in [
+      if value.comparison in [
           Comparison.WITHIN, Comparison.WITHININC, Comparison.OUTSIDE,
           Comparison.OUTSIDEINC
       ]:
@@ -410,8 +411,8 @@ class MSO4000Family(Scope):
           self.send("TRIGGER:A:PULSEWIDTH:HIGHLIMIT "
                     f"{float(value.width[1]):.6E}")
         except TypeError as e:
-          raise ValueError("TriggerPulse.width should be a tuple (lower, upper)"
-                           " when using WITHIN/OUTSIDE comparision") from e
+          raise ValueError("TriggerPulseWidth.width should be a tuple (lower, "
+                           "upper) when using WITHIN/OUTSIDE comparison") from e
       else:
         self.send(f"TRIGGER:A:PULSEWIDTH:WIDTH {float(value.width):.6E}")
       whens = {
@@ -426,7 +427,7 @@ class MSO4000Family(Scope):
           Comparison.OUTSIDE: "OUTSIDE",
           Comparison.OUTSIDEINC: "OUTSIDE",
       }
-      self.send(f"TRIGGER:A:PULSEWIDTH:WHEN {whens[value.comparision]}")
+      self.send(f"TRIGGER:A:PULSEWIDTH:WHEN {whens[value.comparison]}")
       if value.positive:
         self.send("TRIGGER:A:PULSEWIDTH:POLARITY POSITIVE")
       else:

@@ -12,7 +12,7 @@ import numpy as np
 
 
 class Comparison(enum.Enum):
-  """Comparision enumeration
+  """Comparison enumeration
 
   LESS: Value is less than target
   LESSEQUAL: Value is less than or equal to target
