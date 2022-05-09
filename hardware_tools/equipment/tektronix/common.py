@@ -176,6 +176,8 @@ def parse_wfm(data: bytes,
       y_unit: str = Unit string for vertical axis
       x_incr: float = Step between horizontal axis values
       y_incr: float = Step between vertical axis values (LSB)
+      y_clip_min: float = Minimum input without clipping
+      y_clip_max: float = Maximum input without clipping
       clipping_top: bool = waveform exceeded ADC limits
       clipping_bottom: bool = waveform exceeded ADC limits
 

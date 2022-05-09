@@ -15,8 +15,8 @@ class TestCommon(base.TestBase):
   def test_parse_wfm(self):
     data = b""
     self.assertRaises(ValueError, common.parse_wfm, data)
-    data = (b"NR_PT 1;XINCR 1;XZERO 0;XUNIT s;WFID empty;BYT_OR MSB;BN_FMT RI;"
-            b"BYT_NR 4;:CURVE #11\0\0\0\0")
+    data = (b":WFMOUTPRE:NR_PT 1;XINCR 1;XZERO 0;XUNIT s;WFID empty;BYT_OR MSB;"
+            b"BN_FMT RI;BYT_NR 4;:CURVE #11\0\0\0\0")
     self.assertRaises(ValueError, common.parse_wfm, data)
 
     with open(self._DATA_ROOT.joinpath("tektronix", "waveform.0.isf"),
@@ -33,7 +33,9 @@ class TestCommon(base.TestBase):
           "x_incr": 2e-10,
           "x_unit": "s",
           "y_incr": 1.5625e-9,
-          "y_unit": "W"
+          "y_unit": "W",
+          "y_clip_min": -1.73984375e-05,
+          "y_clip_max": 8.49984375e-05
       }
       self.assertDictEqual(target, info)
 
@@ -51,6 +53,38 @@ class TestCommon(base.TestBase):
           "x_incr": 1e-6,
           "x_unit": "s",
           "y_incr": 1,
-          "y_unit": "ADC Counts"
+          "y_unit": "ADC Counts",
+          "y_clip_min": -127,
+          "y_clip_max": 127
       }
       self.assertDictEqual(target, info)
+
+  def test_comparison(self):
+    v = "OUT"
+    self.assertEqual(common._comparison(v), common.Comparison.OUTSIDE)  # pylint: disable=protected-access
+
+    v = "OUTRANGE"
+    self.assertEqual(common._comparison(v), common.Comparison.OUTSIDE)  # pylint: disable=protected-access
+
+    v = "OU"
+    self.assertEqual(common._comparison(v), v)  # pylint: disable=protected-access
+
+  def test_polarity(self):
+    v = "EIT"
+    self.assertEqual(common._polarity(v), common.EdgePolarity.BOTH)  # pylint: disable=protected-access
+
+    v = "EITHER"
+    self.assertEqual(common._polarity(v), common.EdgePolarity.BOTH)  # pylint: disable=protected-access
+
+    v = "EI"
+    self.assertEqual(common._polarity(v), v)  # pylint: disable=protected-access
+
+  def test_threshold(self):
+    v = "ECL"
+    self.assertEqual(common._threshold(v), -1.3)  # pylint: disable=protected-access
+
+    v = "TTL"
+    self.assertEqual(common._threshold(v), 1.4)  # pylint: disable=protected-access
+
+    v = 3.14
+    self.assertEqual(common._threshold(v), v)  # pylint: disable=protected-access
