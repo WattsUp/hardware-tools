@@ -192,6 +192,10 @@ class Channel(ABC):
         y_unit: str = Unit string for vertical axis
         x_incr: float = Step between horizontal axis values
         y_incr: float = Step between vertical axis values (LSB)
+        y_clip_min: float = Minimum input without clipping
+        y_clip_max: float = Maximum input without clipping
+        clipping_top: bool = True when input signal exceeds maximum input
+        clipping_bottom: bool = True when input signal exceeds minimum input
     """
     pass  # pragma: no cover
 
@@ -300,8 +304,11 @@ class AnalogChannel(Channel):
       scale = self.scale
 
       self._parent.single(trigger_cmd=trigger_cmd, force=True)
-      data: np.ndarray = self.read_waveform()[0][1]  # Vertical only
-      data = data / scale / n_div_vert  # Real units => -0.5 to 0.5
+      data, info = self.read_waveform()
+      data: np.ndarray = data[1]  # Vertical only
+      # Transform to -0.5 to 0.5 screen units
+      data = (data - info["y_clip_min"]) / (info["y_clip_max"] -
+                                            info["y_clip_min"]) - 0.5
       attempts -= 1
 
       new_scale = scale
@@ -312,15 +319,12 @@ class AnalogChannel(Channel):
       data_mid = (data_min + data_max) / 2
       data_span = (data_max - data_min)
 
-      # print(f"{data_min:.2f}, {data_mid:.2f}, {data_max:.2f}, "
-      #       f"{data_span:.2f}, {position:.2f}, {scale}")
-
       update = False
       if data_max > 0.45:
         # Too high
         if data_span > 0.6:
           new_scale = scale * 4
-        if data_span < 0.1:
+        elif data_span < 0.1:
           new_scale = scale / 4
         new_position = (position - n_div_vert * data_mid) * scale / new_scale
         update = True
@@ -328,13 +332,13 @@ class AnalogChannel(Channel):
         # Too low
         if data_span > 0.6:
           new_scale = scale * 4
-        if data_span < 0.1:
+        elif data_span < 0.1:
           new_scale = scale / 4
         new_position = (position - n_div_vert * data_mid) * scale / new_scale
         update = True
       elif data_span < 0.05:
         # Too small
-        new_scale = scale / 2
+        new_scale = scale / 10
         new_position = (position - n_div_vert * data_mid) * scale / new_scale
         update = True
       # Covered by too high and too low

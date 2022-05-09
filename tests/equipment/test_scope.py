@@ -17,9 +17,19 @@ class Channel(scope.Channel):
   """Channel for testing
   """
 
+  def __init__(self, alias: str, parent: scope.Scope) -> None:
+    super().__init__(alias, parent)
+
+    self._position = 0
+
   @property
   def position(self) -> float:
-    return 0
+    return self._position
+
+  @position.setter
+  def position(self, value: float) -> None:
+    self._position = min(max(round(value, 2), -self._parent.n_div_vert / 2),
+                         self._parent.n_div_vert / 2)
 
   @property
   def label(self) -> str:
@@ -32,16 +42,33 @@ class Channel(scope.Channel):
   def read_waveform(self,
                     raw: bool = False,
                     add_noise: bool = False) -> Tuple[np.ndarray, dict]:
-    return np.array([[], []]), {}
+    return None, None
 
 
 class AnalogChannel(scope.AnalogChannel, Channel):
   """AnalogChannel for testing
   """
 
+  def __init__(self, alias: str, parent: scope.Scope) -> None:
+    super().__init__(alias, parent)
+
+    self._scale = 1
+    self._offset = 0
+    self.input_grounded = False
+
+    self._cache_x_incr: float = None
+    self._cache_n: int = None
+    self._cache_random: np.ndarray = None
+    self._cache_t: np.ndarray = None
+    self._cache_y: np.ndarray = None
+
   @property
   def scale(self) -> float:
-    return 1
+    return self._scale
+
+  @scale.setter
+  def scale(self, value: float) -> None:
+    self._scale = float(f"{value:.3g}")
 
   @property
   def bandwidth(self) -> float:
@@ -61,7 +88,11 @@ class AnalogChannel(scope.AnalogChannel, Channel):
 
   @property
   def offset(self) -> float:
-    return 0
+    return self._offset
+
+  @offset.setter
+  def offset(self, value: float) -> None:
+    self._offset = value
 
   @property
   def termination(self) -> float:
@@ -70,6 +101,77 @@ class AnalogChannel(scope.AnalogChannel, Channel):
   @property
   def probe_gain(self) -> float:
     return 0.1
+
+  def read_waveform(self,
+                    raw: bool = False,
+                    add_noise: bool = False) -> Tuple[np.ndarray, dict]:
+    # AnalogChannel always sources 0-1V square wave @ 1kHz
+    # Assume 8b ADC for testing
+    self._parent.time_points = int(self._parent.time_points)
+    fs = self._parent.time_points / (self._parent.time_scale *
+                                     self._parent.n_div_horz)
+    x_incr = 1 / fs
+    if (self._cache_x_incr != x_incr or
+        self._cache_n != self._parent.time_points):
+      self._cache_x_incr = x_incr
+      self._cache_n = self._parent.time_points
+      self._cache_t = np.linspace(0, x_incr * (self._parent.time_points - 1),
+                                  self._parent.time_points)
+      self._cache_y = (np.mod(self._cache_t * 1e3, 1) > 0.5) * 1.0
+    t = self._cache_t
+    y = self._cache_y.copy()
+
+    # Random takes a long time, doesn't really matter
+    if (self._cache_random is None or
+        self._cache_random.shape[0] != self._parent.time_points):
+      self._cache_random = _rng.normal(0, 0.01, self._parent.time_points)
+    self._cache_random = np.roll(self._cache_random, 10)
+    y += self._cache_random
+
+    if self.input_grounded:
+      y *= 0.0
+
+    y_min = (-self._parent.n_div_vert / 2 -
+             self.position) * self.scale + self.offset
+    y_max = (self._parent.n_div_vert / 2 -
+             self.position) * self.scale + self.offset
+
+    clipping_top = y > y_max
+    clipping_bottom = y < y_min
+    y[clipping_top] = y_max
+    y[clipping_bottom] = y_min
+
+    clipping_top = np.any(clipping_top)
+    clipping_bottom = np.any(clipping_bottom)
+
+    # from matplotlib import pyplot
+    # pyplot.plot(t, y)
+    # pyplot.axhline(y=y_min)
+    # pyplot.axhline(y=y_max)
+    # pyplot.show()
+
+    info = {
+        "config_str": "Fake 1kHz source",
+        "x_unit": "s",
+        "y_unit": "V",
+        "x_incr": x_incr,
+        "y_incr": 0,
+        "y_clip_min": y_min,
+        "y_clip_max": y_max,
+        "clipping_top": clipping_top,
+        "clipping_bottom": clipping_bottom
+    }
+
+    if raw:
+      y = np.round((y - y_min) / (y_max - y_min) * 256 - 128)
+      if add_noise:
+        y += _rng.uniform(-0.5, 0.5, self._parent.time_points)
+      y = np.clip(y, -128, 127)
+      info["y_unit"] = "ADC Counts"
+      info["y_clip_min"] = -128
+      info["y_clip_max"] = 127
+
+    return np.array([t, y]), info
 
 
 class DigitalChannel(scope.DigitalChannel, Channel):
@@ -82,6 +184,8 @@ class DigitalChannel(scope.DigitalChannel, Channel):
 
 
 class Scope(scope.Scope):
+  """Scope for testing
+  """
 
   def _init_channels(self) -> None:
     self._channels[1] = AnalogChannel("CH1", self)
@@ -233,30 +337,114 @@ class TestChannel(base.TestBase):
 
       def __init__(self) -> None:
         self.time_points = time_points
+        self.n_div_horz = 10
         self.n_div_vert = 10
-        self.sample_rate = 1e6
+        self.time_scale = 1e-3
+
+      def single(self, *args, **kwargs) -> None:
+        pass
 
     s = FakeScope()
     self.assertEqual(s.time_points, time_points)
 
     c = AnalogChannel(alias=alias, parent=s)
     # AnalogChannel always sources 0-1V square wave @ 1kHz
-    # Ideal scale = 0.1, position = -4
+    # Ideal scale = 0.1 / 0.8, position = 0.0
+    c.offset = 0.5
+    ideal_scale = 0.1 / 0.8
+    ideal_position = 0.0
 
-    c.scale = 0.1
-    c.position = 0
+    # Right scale, too high
+    c.scale = ideal_scale
+    c.position = 4.0
     _, info = c.read_waveform()
     self.assertTrue(info["clipping_top"])
     self.assertFalse(info["clipping_bottom"])
 
-    c.autoscale()  # TODO (WattsUp) Implement in test AnalogChannel
+    c.autoscale()
 
     _, info = c.read_waveform()
     self.assertFalse(info["clipping_top"])
     self.assertFalse(info["clipping_bottom"])
     self.assertEqual(s.time_points, time_points)  # Should revert any changes
-    self.assertEqualWithinError(0.1, c.scale, 0.05)
-    self.assertEqualWithinError(-4, c.position, 0.05)
+    self.assertEqualWithinError(ideal_scale, c.scale, 0.2)
+    self.assertEqualWithinError(ideal_position, c.position, 0.2)
+
+    # Right scale, too low
+    c.scale = ideal_scale
+    c.position = -4.0
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertTrue(info["clipping_bottom"])
+
+    c.autoscale()
+
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+    self.assertEqual(s.time_points, time_points)  # Should revert any changes
+    self.assertEqualWithinError(ideal_scale, c.scale, 0.2)
+    self.assertEqualWithinError(ideal_position, c.position, 0.2)
+
+    # Clipping both sides
+    c.scale = 0.05
+    c.position = 0.0
+    c.offset = 0.5
+    _, info = c.read_waveform()
+    self.assertTrue(info["clipping_top"])
+    self.assertTrue(info["clipping_bottom"])
+
+    c.autoscale()
+
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+    self.assertEqual(s.time_points, time_points)  # Should revert any changes
+    self.assertEqualWithinError(ideal_scale, c.scale, 0.2)
+    self.assertEqualWithinError(ideal_position, c.position, 0.2)
+
+    # Small signal and too high
+    c.scale = 1.0
+    c.position = 5.0
+    c.offset = 0.5
+    _, info = c.read_waveform()
+    self.assertTrue(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+
+    c.autoscale()
+
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+    self.assertEqual(s.time_points, time_points)  # Should revert any changes
+    self.assertEqualWithinError(ideal_scale, c.scale, 0.2)
+    self.assertEqualWithinError(ideal_position, c.position, 0.2)
+
+    # Small signal and too low
+    c.scale = 1.0
+    c.position = -5.0
+    c.offset = 0.5
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertTrue(info["clipping_bottom"])
+
+    c.autoscale()
+
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+    self.assertEqual(s.time_points, time_points)  # Should revert any changes
+    self.assertEqualWithinError(ideal_scale, c.scale, 0.2)
+    self.assertEqualWithinError(ideal_position, c.position, 0.2)
+
+    # DC too small
+    c.input_grounded = True
+    c.scale = 0.1
+    c.position = 0.0
+    c.offset = 0.0
+
+    self.assertRaises(TimeoutError, c.autoscale)
+    self.assertEqual(s.time_points, time_points)  # Should revert any changes
 
   def test_digital(self):
     alias = "CH20"

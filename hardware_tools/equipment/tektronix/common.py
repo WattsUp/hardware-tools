@@ -125,7 +125,7 @@ TEK_TYPES = {
             "TYPe": str.upper
         }
     },
-    "WFMOpre|WFMInpre|WFMPre": {
+    "WFMOutpre|WFMInpre|WFMPre": {
         "BYT_Nr": int,
         "BIT_Nr": int,
         "ENCdg": str.upper,
@@ -193,7 +193,7 @@ def parse_wfm(data: bytes,
   curve = data_list[1]
 
   header = utility.parse_scpi(waveform_format, flat=False, types=TEK_TYPES)
-  header = header.popitem()[1]  # Remove outer "WFMOpre|WFMInpre|WFMPre"
+  header = header.popitem()[1]  # Remove outer "WFMOutpre|WFMInpre|WFMPre"
 
   points = header["NR_PT"]
   x_incr = header["XINCR"]
@@ -228,6 +228,8 @@ def parse_wfm(data: bytes,
   else:
     raise ValueError("Unknown number of bytes")
 
+  info_dict["y_clip_min"] = -max_val
+  info_dict["y_clip_max"] = max_val
   info_dict["clipping_top"] = wave.max() >= max_val
   info_dict["clipping_bottom"] = wave.min() <= -max_val
 
@@ -251,6 +253,9 @@ def parse_wfm(data: bytes,
   y_off = header["YOFF"]
   y_unit = header["YUNIT"]
   y = (wave - y_off) * y_mult + y_zero
+
+  info_dict["y_clip_min"] = (-max_val - y_off) * y_mult + y_zero
+  info_dict["y_clip_max"] = (max_val - y_off) * y_mult + y_zero
 
   info_dict["y_unit"] = y_unit
   info_dict["y_incr"] = y_mult
