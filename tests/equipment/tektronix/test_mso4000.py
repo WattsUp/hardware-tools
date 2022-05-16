@@ -599,6 +599,94 @@ class TestMSO4000(base.TestBase):
       if e is not None:
         e.close()
 
+  def test_run_stop(self):
+    try:
+      e = None
+      if self._TRY_REAL_SCOPE:
+        available = utility.get_available()
+        for a in available:
+          if a.startswith("USB::0x0699::"):
+            e = tektronix.MSO4000Family(a)
+
+      if e is None:
+        address = "USB::0x0000::0x0000:C000000::INSTR"
+
+        mock_pyvisa.no_pop = True
+        # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
+
+        rm = mock_pyvisa.ResourceManager()
+        e = tektronix.MSO4000Family(address, rm=rm)
+      else:
+        time.sleep = self._original_sleep
+        e.reset()
+
+      # Setup for probe composition signal
+      e.trigger = tektronix.TriggerEdge("CH1", 1.25)
+
+      e.run(normal=False)
+      result = e.ask("TRIGGER:STATE?")
+      self.assertIn(result, ["ARMED", "AUTO", "TRIGGER", "READY"])
+
+      e.stop()
+      result = e.ask("TRIGGER:STATE?")
+      self.assertEqual(result, "SAVE")
+
+      e.trigger = tektronix.TriggerEdge("CH1", -1.25)
+      e.run(normal=True)
+      result = e.ask("TRIGGER:STATE?")
+      self.assertEqual(result, "ARMED")
+
+    finally:
+      if e is not None:
+        e.close()
+
+  def test_single(self):
+    try:
+      e = None
+      if self._TRY_REAL_SCOPE:
+        available = utility.get_available()
+        for a in available:
+          if a.startswith("USB::0x0699::"):
+            e = tektronix.MSO4000Family(a)
+
+      if e is None:
+        address = "USB::0x0000::0x0000:C000000::INSTR"
+
+        mock_pyvisa.no_pop = True
+        # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
+
+        rm = mock_pyvisa.ResourceManager()
+        e = tektronix.MSO4000Family(address, rm=rm)
+      else:
+        time.sleep = self._original_sleep
+        e.reset()
+
+      # Setup for probe composition signal
+      e.trigger = tektronix.TriggerEdge("CH1", 1.25)
+
+      e.single()
+      result = e.ask("TRIGGER:STATE?")
+      self.assertEqual(result, "SAVE")
+
+      e.trigger = tektronix.TriggerEdge("CH1", -1.25)
+      self.assertRaises(TimeoutError, e.single)
+
+      e.single(force=True)
+      result = e.ask("TRIGGER:STATE?")
+      self.assertEqual(result, "SAVE")
+
+      def force_and_wait():
+        e.ask_and_wait("TRIGGER:STATE?", ["READY"])
+        e.force()
+
+      e.single(trigger_cmd=force_and_wait)
+      result = e.ask("TRIGGER:STATE?")
+      self.assertEqual(result, "SAVE")
+
+    finally:
+      if e is not None:
+        e.close()
+
   # def test_configure_channel(self):
   #   e = None
   #   if self._TRY_REAL_SCOPE:

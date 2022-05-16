@@ -421,8 +421,7 @@ class MSO4000Family(Scope):
 
   def stop(self, timeout: float = 1) -> None:
     self.send("ACQUIRE:STATE STOP")
-    if timeout is not None:
-      self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
+    self.ask_and_wait("TRIGGER:STATE?", ["SAVE"], timeout=timeout)
 
   def run(self, normal: bool = True, timeout: float = 1) -> None:
     self.send("ACQUIRE:STATE STOP")
@@ -433,9 +432,8 @@ class MSO4000Family(Scope):
       self.send("TRIGGER:A:MODE AUTO")
 
     self.send("ACQUIRE:STATE RUN")
-    if timeout is not None:
-      self.ask_and_wait("TRIGGER:STATE?", ["ARMED", "AUTO", "TRIGGER", "READY"],
-                        timeout=timeout)
+    self.ask_and_wait("TRIGGER:STATE?", ["ARMED", "AUTO", "TRIGGER", "READY"],
+                      timeout=timeout)
 
   def single(self,
              trigger_cmd: callable = None,
