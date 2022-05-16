@@ -400,12 +400,39 @@ class TestMSO4000(base.TestBase):
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
 
+    self._scope: tektronix.MSO4000Family = None
+
   def tearDown(self) -> None:
     super().tearDown()
 
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
     mock_pyvisa.no_pop = False
+
+    if self._scope is not None:
+      self._scope.close()
+
+  def connect(self) -> tektronix.MSO4000Family:
+    e = None
+    if self._TRY_REAL_SCOPE:
+      available = utility.get_available()
+      for a in available:
+        if a.startswith("USB::0x0699::"):
+          e = tektronix.MSO4000Family(a)
+
+    if e is None:
+      address = "USB::0x0000::0x0000:C000000::INSTR"
+
+      mock_pyvisa.no_pop = True
+      # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
+
+      rm = mock_pyvisa.ResourceManager()
+      e = tektronix.MSO4000Family(address, rm=rm)
+    else:
+      time.sleep = self._original_sleep
+      e.reset()
+    self._scope = e
+    return e
 
   def test_init(self):
     address = "USB::0x0000::0x0000:C000000::INSTR"
@@ -433,566 +460,245 @@ class TestMSO4000(base.TestBase):
     self.assertListEqual(list(e._digitals.keys()), [0])  # pylint: disable=protected-access
 
   def test_configure_generic(self):
-    try:
-      e = None
-      if self._TRY_REAL_SCOPE:
-        available = utility.get_available()
-        for a in available:
-          if a.startswith("USB::0x0699::"):
-            e = tektronix.MSO4000Family(a)
+    e = self.connect()
 
-      if e is None:
-        address = "USB::0x0000::0x0000:C000000::INSTR"
+    value = 1e6
+    e.sample_rate = value
+    self.assertEqual(value, e.sample_rate)
 
-        mock_pyvisa.no_pop = True
-        # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
+    value = tektronix.SampleMode.AVERAGE
+    e.sample_mode = value
+    self.assertEqual(value, e.sample_mode)
+    value = 16
+    e.sample_mode_n = value
+    self.assertEqual(value, e.sample_mode_n)
+    value = tektronix.SampleMode.ENVELOPE
+    e.sample_mode = value
+    self.assertEqual(value, e.sample_mode)
+    value = 16
+    e.sample_mode_n = value
+    self.assertEqual(value, e.sample_mode_n)
+    value = None
+    self.assertRaises(ValueError, setattr, e, "sample_mode", value)
+    e.send("ACQUIRE:MODE HIRES")
+    self.assertEqual(None, e.sample_mode)
+    value = tektronix.SampleMode.SAMPLE
+    e.sample_mode = value
+    self.assertEqual(value, e.sample_mode)
+    self.assertEqual(1, e.sample_mode_n)
 
-        rm = mock_pyvisa.ResourceManager()
-        e = tektronix.MSO4000Family(address, rm=rm)
-      else:
-        time.sleep = self._original_sleep
-        e.reset()
+    value = 2e-3
+    e.time_scale = value
+    self.assertEqual(value, e.time_scale)
 
-      value = 1e6
-      e.sample_rate = value
-      self.assertEqual(value, e.sample_rate)
+    value = 0.2e-3
+    e.time_offset = value
+    self.assertEqual(value, e.time_offset)
 
-      value = tektronix.SampleMode.AVERAGE
-      e.sample_mode = value
-      self.assertEqual(value, e.sample_mode)
-      value = 16
-      e.sample_mode_n = value
-      self.assertEqual(value, e.sample_mode_n)
-      value = tektronix.SampleMode.ENVELOPE
-      e.sample_mode = value
-      self.assertEqual(value, e.sample_mode)
-      value = 16
-      e.sample_mode_n = value
-      self.assertEqual(value, e.sample_mode_n)
-      value = None
-      self.assertRaises(ValueError, setattr, e, "sample_mode", value)
-      e.send("ACQUIRE:MODE HIRES")
-      self.assertEqual(None, e.sample_mode)
-      value = tektronix.SampleMode.SAMPLE
-      e.sample_mode = value
-      self.assertEqual(value, e.sample_mode)
-      self.assertEqual(1, e.sample_mode_n)
-
-      value = 2e-3
-      e.time_scale = value
-      self.assertEqual(value, e.time_scale)
-
-      value = 0.2e-3
-      e.time_offset = value
-      self.assertEqual(value, e.time_offset)
-
-      value = 1000
-      e.time_points = value
-      self.assertEqual(value, e.time_points)
-
-    finally:
-      if e is not None:
-        e.close()
+    value = 1000
+    e.time_points = value
+    self.assertEqual(value, e.time_points)
 
   def test_configure_trigger(self):
-    try:
-      e = None
-      if self._TRY_REAL_SCOPE:
-        available = utility.get_available()
-        for a in available:
-          if a.startswith("USB::0x0699::"):
-            e = tektronix.MSO4000Family(a)
+    e = self.connect()
 
-      if e is None:
-        address = "USB::0x0000::0x0000:C000000::INSTR"
+    t = tektronix.TriggerEdge("CH1", 0.5)
+    e.trigger = t
+    result = e.trigger
+    self.assertEqual(t.src, result.src)
+    self.assertEqual(t.level, result.level)
+    self.assertEqual(t.slope, result.slope)
+    self.assertEqual(t.dc_coupling, result.dc_coupling)
+    self.assertEqual(t.holdoff, result.holdoff)
 
-        mock_pyvisa.no_pop = True
-        # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
+    t = tektronix.TriggerEdge("CH1", 0.5, dc_coupling=False)
+    e._aux = False  # pylint: disable=protected-access
+    e.trigger = t
+    result = e.trigger
+    self.assertEqual(t.src, result.src)
+    self.assertEqual(t.level, result.level)
+    self.assertEqual(t.slope, result.slope)
+    self.assertEqual(t.dc_coupling, result.dc_coupling)
+    self.assertEqual(t.holdoff, result.holdoff)
 
-        rm = mock_pyvisa.ResourceManager()
-        e = tektronix.MSO4000Family(address, rm=rm)
-      else:
-        time.sleep = self._original_sleep
-        e.reset()
+    t = tektronix.TriggerEdge("FAKE", 0.5)
+    self.assertRaises(ValueError, setattr, e, "trigger", t)
 
-      t = tektronix.TriggerEdge("CH1", 0.5)
-      e.trigger = t
-      result = e.trigger
-      self.assertEqual(t.src, result.src)
-      self.assertEqual(t.level, result.level)
-      self.assertEqual(t.slope, result.slope)
-      self.assertEqual(t.dc_coupling, result.dc_coupling)
-      self.assertEqual(t.holdoff, result.holdoff)
+    t = tektronix.TriggerEdgeTimeout("CH1", 0.5, 1e-3)
+    e._aux = True  # pylint: disable=protected-access
+    e.trigger = t
+    result = e.trigger
+    self.assertEqual(t.src, result.src)
+    self.assertEqual(t.level, result.level)
+    self.assertEqual(t.slope, result.slope)
+    self.assertEqual(t.timeout, result.timeout)
+    self.assertEqual(t.holdoff, result.holdoff)
 
-      t = tektronix.TriggerEdge("CH1", 0.5, dc_coupling=False)
-      e._aux = False  # pylint: disable=protected-access
-      e.trigger = t
-      result = e.trigger
-      self.assertEqual(t.src, result.src)
-      self.assertEqual(t.level, result.level)
-      self.assertEqual(t.slope, result.slope)
-      self.assertEqual(t.dc_coupling, result.dc_coupling)
-      self.assertEqual(t.holdoff, result.holdoff)
+    t = tektronix.TriggerEdgeTimeout("FAKE", 0.5, 1e-3)
+    e._aux = False  # pylint: disable=protected-access
+    self.assertRaises(ValueError, setattr, e, "trigger", t)
 
-      t = tektronix.TriggerEdge("FAKE", 0.5)
-      self.assertRaises(ValueError, setattr, e, "trigger", t)
+    t = tektronix.TriggerPulseWidth("CH1", 0.5, 0.5e-3,
+                                    tektronix.Comparison.EQUAL)
+    e._aux = True  # pylint: disable=protected-access
+    e.trigger = t
+    result = e.trigger
+    self.assertEqual(t.src, result.src)
+    self.assertEqual(t.level, result.level)
+    self.assertEqual(t.width, result.width)
+    self.assertEqual(t.comparison, result.comparison)
+    self.assertEqual(t.positive, result.positive)
+    self.assertEqual(t.holdoff, result.holdoff)
 
-      t = tektronix.TriggerEdgeTimeout("CH1", 0.5, 1e-3)
-      e._aux = True  # pylint: disable=protected-access
-      e.trigger = t
-      result = e.trigger
-      self.assertEqual(t.src, result.src)
-      self.assertEqual(t.level, result.level)
-      self.assertEqual(t.slope, result.slope)
-      self.assertEqual(t.timeout, result.timeout)
-      self.assertEqual(t.holdoff, result.holdoff)
+    t = tektronix.TriggerPulseWidth("CH1",
+                                    0.5, (0.4e-3, 0.6e-3),
+                                    tektronix.Comparison.WITHIN,
+                                    positive=False)
+    e.trigger = t
+    result = e.trigger
+    self.assertEqual(t.src, result.src)
+    self.assertEqual(t.level, result.level)
+    self.assertEqual(t.width, result.width)
+    self.assertEqual(t.comparison, result.comparison)
+    self.assertEqual(t.positive, result.positive)
+    self.assertEqual(t.holdoff, result.holdoff)
 
-      t = tektronix.TriggerEdgeTimeout("FAKE", 0.5, 1e-3)
-      e._aux = False  # pylint: disable=protected-access
-      self.assertRaises(ValueError, setattr, e, "trigger", t)
+    t = tektronix.TriggerPulseWidth("FAKE", 0.5, 1e-3,
+                                    tektronix.Comparison.EQUAL)
+    e._aux = False  # pylint: disable=protected-access
+    self.assertRaises(ValueError, setattr, e, "trigger", t)
 
-      t = tektronix.TriggerPulseWidth("CH1", 0.5, 0.5e-3,
-                                      tektronix.Comparison.EQUAL)
-      e._aux = True  # pylint: disable=protected-access
-      e.trigger = t
-      result = e.trigger
-      self.assertEqual(t.src, result.src)
-      self.assertEqual(t.level, result.level)
-      self.assertEqual(t.width, result.width)
-      self.assertEqual(t.comparison, result.comparison)
-      self.assertEqual(t.positive, result.positive)
-      self.assertEqual(t.holdoff, result.holdoff)
+    t = tektronix.TriggerPulseWidth("CH1", 0.5, 1e-3,
+                                    tektronix.Comparison.OUTSIDE)
+    e._aux = False  # pylint: disable=protected-access
+    self.assertRaises(ValueError, setattr, e, "trigger", t)
 
-      t = tektronix.TriggerPulseWidth("CH1",
-                                      0.5, (0.4e-3, 0.6e-3),
-                                      tektronix.Comparison.WITHIN,
-                                      positive=False)
-      e.trigger = t
-      result = e.trigger
-      self.assertEqual(t.src, result.src)
-      self.assertEqual(t.level, result.level)
-      self.assertEqual(t.width, result.width)
-      self.assertEqual(t.comparison, result.comparison)
-      self.assertEqual(t.positive, result.positive)
-      self.assertEqual(t.holdoff, result.holdoff)
+    e.send("TRIGGER:A:TYPE PULSE")
+    e.send("TRIGGER:A:PULSE:CLASS RUNT")
+    self.assertEqual(None, e.trigger)
 
-      t = tektronix.TriggerPulseWidth("FAKE", 0.5, 1e-3,
-                                      tektronix.Comparison.EQUAL)
-      e._aux = False  # pylint: disable=protected-access
-      self.assertRaises(ValueError, setattr, e, "trigger", t)
+    e.send("TRIGGER:A:TYPE BUS")
+    self.assertEqual(None, e.trigger)
 
-      t = tektronix.TriggerPulseWidth("CH1", 0.5, 1e-3,
-                                      tektronix.Comparison.OUTSIDE)
-      e._aux = False  # pylint: disable=protected-access
-      self.assertRaises(ValueError, setattr, e, "trigger", t)
-
-      e.send("TRIGGER:A:TYPE PULSE")
-      e.send("TRIGGER:A:PULSE:CLASS RUNT")
-      self.assertEqual(None, e.trigger)
-
-      e.send("TRIGGER:A:TYPE BUS")
-      self.assertEqual(None, e.trigger)
-
-      self.assertRaises(ValueError, setattr, e, "trigger", None)
-
-    finally:
-      if e is not None:
-        e.close()
+    self.assertRaises(ValueError, setattr, e, "trigger", None)
 
   def test_run_stop(self):
-    try:
-      e = None
-      if self._TRY_REAL_SCOPE:
-        available = utility.get_available()
-        for a in available:
-          if a.startswith("USB::0x0699::"):
-            e = tektronix.MSO4000Family(a)
+    e = self.connect()
 
-      if e is None:
-        address = "USB::0x0000::0x0000:C000000::INSTR"
+    # Setup for probe composition signal
+    e.trigger = tektronix.TriggerEdge("CH1", 1.25)
 
-        mock_pyvisa.no_pop = True
-        # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
+    e.run(normal=False)
+    result = e.ask("TRIGGER:STATE?")
+    self.assertIn(result, ["ARMED", "AUTO", "TRIGGER", "READY"])
 
-        rm = mock_pyvisa.ResourceManager()
-        e = tektronix.MSO4000Family(address, rm=rm)
-      else:
-        time.sleep = self._original_sleep
-        e.reset()
+    e.stop()
+    result = e.ask("TRIGGER:STATE?")
+    self.assertEqual(result, "SAVE")
 
-      # Setup for probe composition signal
-      e.trigger = tektronix.TriggerEdge("CH1", 1.25)
-
-      e.run(normal=False)
-      result = e.ask("TRIGGER:STATE?")
-      self.assertIn(result, ["ARMED", "AUTO", "TRIGGER", "READY"])
-
-      e.stop()
-      result = e.ask("TRIGGER:STATE?")
-      self.assertEqual(result, "SAVE")
-
-      e.trigger = tektronix.TriggerEdge("CH1", -1.25)
-      e.run(normal=True)
-      result = e.ask("TRIGGER:STATE?")
-      self.assertEqual(result, "ARMED")
-
-    finally:
-      if e is not None:
-        e.close()
+    e.trigger = tektronix.TriggerEdge("CH1", -1.25)
+    e.run(normal=True)
+    result = e.ask("TRIGGER:STATE?")
+    self.assertEqual(result, "ARMED")
 
   def test_single(self):
-    try:
-      e = None
-      if self._TRY_REAL_SCOPE:
-        available = utility.get_available()
-        for a in available:
-          if a.startswith("USB::0x0699::"):
-            e = tektronix.MSO4000Family(a)
-
-      if e is None:
-        address = "USB::0x0000::0x0000:C000000::INSTR"
-
-        mock_pyvisa.no_pop = True
-        # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
-
-        rm = mock_pyvisa.ResourceManager()
-        e = tektronix.MSO4000Family(address, rm=rm)
-      else:
-        time.sleep = self._original_sleep
-        e.reset()
-
-      # Setup for probe composition signal
-      e.trigger = tektronix.TriggerEdge("CH1", 1.25)
-
-      e.single()
-      result = e.ask("TRIGGER:STATE?")
-      self.assertEqual(result, "SAVE")
-
-      e.trigger = tektronix.TriggerEdge("CH1", -1.25)
-      self.assertRaises(TimeoutError, e.single)
-
-      e.single(force=True)
-      result = e.ask("TRIGGER:STATE?")
-      self.assertEqual(result, "SAVE")
-
-      def force_and_wait():
-        e.ask_and_wait("TRIGGER:STATE?", ["READY"])
-        e.force()
-
-      e.single(trigger_cmd=force_and_wait)
-      result = e.ask("TRIGGER:STATE?")
-      self.assertEqual(result, "SAVE")
-
-    finally:
-      if e is not None:
-        e.close()
-
-  # def test_configure_channel(self):
-  #   e = None
-  #   if self._TRY_REAL_SCOPE:
-  #     utility.pyvisa = pyvisa
-  #     equipment.pyvisa = pyvisa
-  #     available = utility.get_available()
-  #     for a in available:
-  #       if a.startswith("USB::0x0699::"):
-  #         model = a[15:19]
-  #         if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
-  #           e = tektronix.MSO4000(a)
-  #           break
-  #         elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
-  #           e = tektronix.MDO4000(a)
-  #           break
-  #         elif model in ["0408"]:
-  #           e = tektronix.MDO3000(a)
-  #           break
-
-  #   if e is None:
-  #     utility.pyvisa = mock_pyvisa
-  #     equipment.pyvisa = mock_pyvisa
-  #     address = "USB::0x0000::0x0000:C000000::INSTR"
-
-  #     mock_pyvisa.no_pop = True
-  #     _ = MockMDO3054(address)
-
-  #     e = tektronix.MDO3000(address)
-  #   else:
-  #     time.sleep = self._original_sleep
-  #     e.send("*RST")
-
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "FAKE", None)
-
-  #   value = 2
-  #   reply = e.configure_channel("CH2", "SCALE", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "SCALE", value)
-
-  #   value = 2
-  #   reply = e.configure_channel("CH2", "POSITION", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "POSITION",
-  #                     value)
-
-  #   value = 0.1
-  #   reply = e.configure_channel("CH2", "OFFSET", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "OFFSET", value)
-
-  #   value = "I2C CLOCK"
-  #   reply = e.configure_channel("CH2", "LABEL", value)
-  #   self.assertEqual(f'"{value}"', reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "LABEL", value)
-
-  #   value = e.max_bandwidth
-  #   reply = e.configure_channel("CH2", "BANDWIDTH", value)
-  #   self.assertEqual(value, reply)
-  #   reply = e.configure_channel("CH2", "BANDWIDTH", "FULL")
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "BANDWIDTH",
-  #                     value)
-
-  #   value = 50
-  #   reply = e.configure_channel("CH2", "TERMINATION", value)
-  #   self.assertEqual(value, reply)
-  #   reply = e.configure_channel("CH2", "TERMINATION", "FIFTY")
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "TERMINATION",
-  #                     value)
-  #   value = 1e6
-  #   reply = e.configure_channel("CH2", "TERMINATION", value)
-  #   self.assertEqual(value, reply)
-
-  #   value = True
-  #   reply = e.configure_channel("CH2", "INVERT", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "INVERT", value)
-
-  #   value = 10
-  #   reply = e.configure_channel("CH2", "PROBE_GAIN", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "PROBE_GAIN",
-  #                     value)
-
-  #   value = 10
-  #   reply = e.configure_channel("CH2", "PROBE_ATTENUATION", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake",
-  #                     "PROBE_ATTENUATION", value)
-
-  #   value = "AC"
-  #   reply = e.configure_channel("CH2", "COUPLING", value)
-  #   self.assertEqual(value, reply)
-  #   self.assertRaises(KeyError, e.configure_channel, "CHFake", "COUPLING",
-  #                     value)
-  #   self.assertRaises(ValueError, e.configure_channel, "CH2", "COUPLING",
-  #                     "FAKE")
-
-  #   value = True
-  #   reply = e.configure_channel("CH2", "ACTIVE", value)
-  #   self.assertEqual(value, reply)
-
-  #   value = 1.4
-  #   reply = e.configure_channel("CH2", "TRIGGER_LEVEL", value)
-  #   self.assertEqual(value, reply)
-  #   reply = e.configure_channel("CH2", "TRIGGER_LEVEL", "TTL")
-  #   self.assertEqual(value, reply)
-
-  # def test_command(self):
-  #   e = None
-  #   if self._TRY_REAL_SCOPE:
-  #     utility.pyvisa = pyvisa
-  #     equipment.pyvisa = pyvisa
-  #     available = utility.get_available()
-  #     for a in available:
-  #       if a.startswith("USB::0x0699::"):
-  #         model = a[15:19]
-  #         if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
-  #           e = tektronix.MSO4000(a)
-  #           break
-  #         elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
-  #           e = tektronix.MDO4000(a)
-  #           break
-  #         elif model in ["0408"]:
-  #           e = tektronix.MDO3000(a)
-  #           break
-
-  #   if e is None:
-  #     utility.pyvisa = mock_pyvisa
-  #     equipment.pyvisa = mock_pyvisa
-  #     address = "USB::0x0000::0x0000:C000000::INSTR"
-
-  #     mock_pyvisa.no_pop = True
-  #     _ = MockMDO3054(address)
-
-  #     e = tektronix.MDO3000(address)
-  #   else:
-  #     time.sleep = self._original_sleep
-  #     e.send("*RST")
-
-  #   self.assertRaises(KeyError, e.command, "Fake")
-
-  #   e.configure("TIME_SCALE", 1e-3)
-  #   e.configure("TRIGGER_SOURCE", "LINE")
-  #   e.configure("TIME_POINTS", 10e6)
-
-  #   e.command("STOP")
-
-  #   e.command("RUN")
-
-  #   e.command("FORCE_TRIGGER")
-
-  #   e.command("SINGLE")
-
-  #   e.command("SINGLE_FORCE")
-
-  #   e.command("CLEAR_MENU")
-
-  #   channel = "CH1"
-  #   e.configure_channel(channel, "SCALE", 0.1)
-  #   e.configure_channel(channel, "POSITION", 0)
-  #   self.assertRaises(ValueError, e.command, "AUTOSCALE", channel=None)
-  #   self.assertRaises(ValueError, e.command, "AUTOSCALE", channel="CHFake")
-  #   e.command("AUTOSCALE", channel=channel, silent=True)
-  #   position = float(e.ask(f"{channel}:POSITION?"))
-  #   scale = float(e.ask(f"{channel}:SCALE?"))
-  #   self.assertEqualWithinError(2.5 / 8, scale, 0.1)
-  #   self.assertEqualWithinError(-4, position, 0.1)
-
-  # def test_autoscale(self):
-  #   address = "USB::0x0000::0x0000:C000000::INSTR"
-  #   instrument = MockMDO3054(address)
-
-  #   e = tektronix.MDO3000(address)
-
-  #   channel = "CH1"
-  #   self.assertRaises(ValueError, e.command, "AUTOSCALE", channel=None)
-  #   self.assertRaises(ValueError, e.command, "AUTOSCALE", channel="CHFake")
-
-  #   e.configure("TIME_SCALE", 1e-3)
-  #   e.configure_channel(channel, "SCALE", 0.1)
-  #   e.configure_channel(channel, "POSITION", 0)
-  #   with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-  #     e.command("AUTOSCALE", channel=channel, silent=False)
-
-  #   position = float(e.ask(f"{channel}:POSITION?"))
-  #   scale = float(e.ask(f"{channel}:SCALE?"))
-  #   self.assertEqualWithinError(2.5 / 8, scale, 0.1)
-  #   self.assertEqualWithinError(-4, position, 0.1)
-  #   self.assertTrue(
-  #       fake_stdout.getvalue().startswith(f"Autoscaling channel '{channel}'"))
-
-  #   # Too low, too small
-  #   e.configure_channel(channel, "SCALE", 5)
-  #   e.configure_channel(channel, "POSITION", -4.9)
-  #   with mock.patch("sys.stdout", new=io.StringIO()) as _:
-  #     e.command("AUTOSCALE", channel=channel, silent=True)
-  #   position = float(e.ask(f"{channel}:POSITION?"))
-  #   scale = float(e.ask(f"{channel}:SCALE?"))
-  #   self.assertEqualWithinError(2.5 / 8, scale, 0.1)
-  #   self.assertEqualWithinError(-4, position, 0.1)
-
-  #   # Too low, too large
-  #   e.configure_channel(channel, "SCALE", 0.3)
-  #   e.configure_channel(channel, "POSITION", -4.9)
-  #   with mock.patch("sys.stdout", new=io.StringIO()) as _:
-  #     e.command("AUTOSCALE", channel=channel, silent=False)
-  #   position = float(e.ask(f"{channel}:POSITION?"))
-  #   scale = float(e.ask(f"{channel}:SCALE?"))
-  #   self.assertEqualWithinError(2.5 / 8, scale, 0.1)
-  #   self.assertEqualWithinError(-4, position, 0.1)
-
-  #   # Too high, too small
-  #   e.configure_channel(channel, "SCALE", 50)
-  #   e.configure_channel(channel, "POSITION", 5)
-  #   with mock.patch("sys.stdout", new=io.StringIO()) as _:
-  #     e.command("AUTOSCALE", channel=channel, silent=True)
-  #   position = float(e.ask(f"{channel}:POSITION?"))
-  #   scale = float(e.ask(f"{channel}:SCALE?"))
-  #   self.assertEqualWithinError(2.5 / 8, scale, 0.1)
-  #   self.assertEqualWithinError(-4, position, 0.1)
-
-  #   instrument.waveform_amp = 0
-  #   instrument.waveform_offset = 0
-  #   e.configure_channel(channel, "SCALE", 0.1)
-  #   e.configure_channel(channel, "POSITION", 0)
-  #   with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-  #     self.assertRaises(TimeoutError,
-  #                       e.command,
-  #                       "AUTOSCALE",
-  #                       channel=channel,
-  #                       silent=False)
-
-  # def test_read_waveform(self):
-  #   e = None
-  #   if self._TRY_REAL_SCOPE:
-  #     utility.pyvisa = pyvisa
-  #     equipment.pyvisa = pyvisa
-  #     available = utility.get_available()
-  #     for a in available:
-  #       if a.startswith("USB::0x0699::"):
-  #         model = a[15:19]
-  #         if model in ["0409", "040A", "040B", "041A", "041B", "041C", "0428"]:
-  #           e = tektronix.MSO4000(a)
-  #           break
-  #         elif model in ["040C", "040D", "040E", "040F", "042A", "042E"]:
-  #           e = tektronix.MDO4000(a)
-  #           break
-  #         elif model in ["0408"]:
-  #           e = tektronix.MDO3000(a)
-  #           break
-
-  #   if e is None:
-  #     utility.pyvisa = mock_pyvisa
-  #     equipment.pyvisa = mock_pyvisa
-  #     address = "USB::0x0000::0x0000:C000000::INSTR"
-
-  #     mock_pyvisa.no_pop = True
-  #     _ = MockMDO3054(address)
-
-  #     e = tektronix.MDO3000(address)
-  #   else:
-  #     time.sleep = self._original_sleep
-  #     e.send("*RST")
-
-  #   self.assertRaises(KeyError, e.read_waveform, "CHFake")
-
-  #   num_points = 10e3
-  #   e.configure("TIME_POINTS", num_points)
-  #   e.configure("TIME_SCALE", 1e-3)
-  #   e.configure("TIME_OFFSET", -1e-3)
-  #   e.configure_channel("CH2", "SCALE", 0.05)
-  #   e.configure_channel("CH2", "OFFSET", -0.01)
-  #   e.configure_channel("CH2", "POSITION", 1)
-  #   e.command("SINGLE_FORCE")
-
-  #   samples, info = e.read_waveform("CH2")
-
-  #   self.assertEqual(samples.shape[0], 2)
-  #   self.assertEqual(samples.shape[1], num_points)
-
-  #   self.assertEqual(info["x_unit"], "s")
-
-  #   samples, info = e.read_waveform("CH2", raw=True, add_noise=False)
-
-  #   self.assertEqual(samples.shape[0], 2)
-  #   self.assertEqual(samples.shape[1], num_points)
-
-  #   self.assertEqual(info["x_unit"], "s")
-  #   self.assertEqual(info["y_incr"], 1)
-
-  #   for i in range(samples.shape[1]):
-  #     self.assertAlmostEqual(0, samples[1, i] % 1)
-
-  #   samples, info = e.read_waveform("CH2", raw=True, add_noise=True)
-
-  #   self.assertEqual(samples.shape[0], 2)
-  #   self.assertEqual(samples.shape[1], num_points)
-
-  #   self.assertEqual(info["x_unit"], "s")
-  #   self.assertEqual(info["y_incr"], 1)
-
-  #   # At least 1 instance of decimal precision
-  #   sub_detected = False
-  #   for i in range(samples.shape[1]):
-  #     if round(samples[1, i] % 1, 7) != 0:
-  #       sub_detected = True
-  #   self.assertTrue(sub_detected)
+    e = self.connect()
+
+    # Setup for probe composition signal
+    e.trigger = tektronix.TriggerEdge("CH1", 1.25)
+
+    e.single()
+    result = e.ask("TRIGGER:STATE?")
+    self.assertEqual(result, "SAVE")
+
+    e.trigger = tektronix.TriggerEdge("CH1", -1.25)
+    self.assertRaises(TimeoutError, e.single)
+
+    e.single(force=True)
+    result = e.ask("TRIGGER:STATE?")
+    self.assertEqual(result, "SAVE")
+
+    def force_and_wait():
+      e.ask_and_wait("TRIGGER:STATE?", ["READY"])
+      e.force()
+
+    e.single(trigger_cmd=force_and_wait)
+    result = e.ask("TRIGGER:STATE?")
+    self.assertEqual(result, "SAVE")
+
+  def test_channel(self):
+    e = self.connect()
+
+    # Setup for probe composition signal
+    e.trigger = tektronix.TriggerEdge("CH1", 1.25)
+
+    c = e.ch(1)
+
+    e.single(force=True)
+    data, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+    self.assertEqual(data.shape[1], e.time_points)
+
+    value = 3
+    c.position = value
+    self.assertEqual(value, c.position)
+    e.single(force=True)
+    _, info = c.read_waveform()
+    self.assertTrue(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+
+    value = "CLOCK"
+    c.label = value
+    self.assertEqual(value, c.label)
+    value = "CLOCK and a bunch of other stuff to be longer"
+    c.label = value
+    self.assertEqual(value[:30], c.label)
+
+    value = False
+    c.active = value
+    self.assertEqual(value, c.active)
+
+    value = 5
+    c.scale = value
+    self.assertEqual(value, c.scale)
+    e.single(force=True)
+    _, info = c.read_waveform()
+    self.assertFalse(info["clipping_top"])
+    self.assertFalse(info["clipping_bottom"])
+
+    value = 20e6
+    c.bandwidth = value
+    self.assertEqual(value, c.bandwidth)
+
+    value = False
+    c.dc_coupling = value
+    self.assertEqual(value, c.dc_coupling)
+    value = True
+    c.dc_coupling = value
+    self.assertEqual(value, c.dc_coupling)
+
+    value = 10e-9
+    c.deskew = value
+    self.assertEqual(value, c.deskew)
+
+    value = True
+    c.inverted = value
+    self.assertEqual(value, c.inverted)
+
+    value = 1
+    c.offset = value
+    self.assertEqual(value, c.offset)
+
+    value = 1e6
+    c.termination = value
+    self.assertEqual(value, c.termination)
+
+    value = 0.1
+    c.probe_gain = value
+    self.assertEqual(value, c.probe_gain)
+
+    d = e.d(0)
+    value = 0.5
+    d.threshold = value
+    self.assertEqual(value, d.threshold)

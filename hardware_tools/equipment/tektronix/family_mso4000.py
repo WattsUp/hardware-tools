@@ -34,7 +34,7 @@ class _MSO4000Channel(Channel):
 
   @property
   def label(self) -> str:
-    return self._parent.ask(f"{self._alias}:LABEL?")
+    return self._parent.ask(f"{self._alias}:LABEL?").strip('"')
 
   @label.setter
   def label(self, value: str) -> None:
@@ -43,7 +43,7 @@ class _MSO4000Channel(Channel):
 
   @property
   def active(self) -> bool:
-    return bool(self._parent.ask(f"SELECT:{self._alias}?"))
+    return self._parent.ask(f"SELECT:{self._alias}?") in ["ON", "1"]
 
   @active.setter
   def active(self, on: bool) -> None:
@@ -63,8 +63,8 @@ class _MSO4000Channel(Channel):
     self._parent.send("HEADER 1")
     self._parent.send("WAVFRM?")
     data = self._parent.receive()
-    with open("out.wfm", "wb") as file:
-      file.write(data)
+    # with open("out.wfm", "wb") as file:
+    #   file.write(data)
     self._parent.send("HEADER 0")
 
     return common.parse_wfm(data, raw=raw, add_noise=add_noise)
@@ -150,7 +150,7 @@ class _MSO4000DigitalChannel(DigitalChannel, _MSO4000Channel):
 
   @property
   def threshold(self) -> float:
-    return common._threshold(self._parent.ask(f"{self._alias}:THRESHOLD?"))  # pylint: disable=protected-access
+    return common.parse_threshold(self._parent.ask(f"{self._alias}:THRESHOLD?"))  # pylint: disable=protected-access
 
   @threshold.setter
   def threshold(self, value: float) -> None:
