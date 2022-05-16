@@ -11,7 +11,6 @@ from typing import Tuple
 
 import numpy as np
 
-from hardware_tools.equipment import utility
 from hardware_tools.equipment.scope import (Scope, AnalogChannel, Channel,
                                             DigitalChannel, SampleMode, Trigger,
                                             TriggerEdge, TriggerEdgeTimeout,
@@ -182,39 +181,21 @@ class MSO4000Family(Scope):
            f"  '*IDN?' returned '{id_str}'")
       raise ValueError(e)
 
-    self.send("HEADER ON")
+    self.send("HEADER OFF")
     self.send("VERBOSE ON")
 
+    for i in range(1, int(self.ask("CONFIGURATION:ANALOG:NUMCHANNELS?")) + 1):
+      self._channels[i] = _MSO4000AnalogChannel(f"CH{i}", self)
+
+    for i in range(int(self.ask("CONFIGURATION:DIGITAL:NUMCHANNELS?"))):
+      self._digitals[i] = _MSO4000DigitalChannel(f"D{i}", self)
+
     self.rf: AnalogChannel = None  # TODO (WattsUp) add RFChannel
-    self._aux = False  # True indicate scope has auxiliary trigger connector
 
-    channels = utility.parse_scpi(self.ask("SELECT?"))["SELECT"]
-    for c in channels:
-      match = re.match(r"^(CH|D)(\d+)$", c)
-      if match:
-        n = int(match.group(2))
-        if match.group(1) == "CH":
-          self._channels[n] = _MSO4000AnalogChannel(f"CH{n}", self)
-        else:
-          self._digitals[n] = _MSO4000DigitalChannel(f"D{n}", self)
+    # True indicate scope has auxiliary trigger connector
+    self._aux = bool(self.ask("CONFIGURATION:AUXIN?"))
 
-    self.send("HEADER OFF")
-
-    name_freq = model[4:6]
-    if name_freq == "01":
-      self.max_bandwidth = 100e6
-    elif name_freq == "02":
-      self.max_bandwidth = 200e6
-    elif name_freq == "03":
-      self.max_bandwidth = 350e6
-    elif name_freq == "05":
-      self.max_bandwidth = 500e6
-    elif name_freq == "10":
-      self.max_bandwidth = 1000e6
-    else:
-      e = f"{self} is Tektronix but unknown bandwidth\n"
-      e += f"  '*IDN?' returned '{id_str}'"
-      raise ValueError(e)
+    self.max_bandwidth = float(self.ask("CONFIGURATION:ANALOG:BANDWIDTH?"))
 
   @property
   def sample_rate(self) -> float:
@@ -289,47 +270,47 @@ class MSO4000Family(Scope):
 
   @property
   def trigger(self) -> Trigger:
-    self.send("HEADER ON")
-    settings = utility.parse_scpi(self.ask("TRIGGER:A?"),
-                                  types=common.TEK_TYPES)["TRIGGER"]["A"]
-    self.send("HEADER OFF")
-    holdoff = settings["HOLDOFF"]["TIME"]
+    t_type = self.ask("TRIGGER:A:TYPE?")
+    holdoff = float(self.ask("TRIGGER:A:HOLDOFF:TIME?"))
 
     t = None
-    if re.match(r"^EDG(E)?$", settings["TYPE"]):
-      src = settings["EDGE"]["SOURCE"]
-      level = settings["LEVEL"][src]
-      slope = settings["EDGE"]["SLOPE"]
-      dc_coupling = (settings["EDGE"]["COUPLING"] == "DC")
+    if re.match(r"^EDG(E)?$", t_type):
+      src = self.ask("TRIGGER:A:EDGE:SOURCE?")
+      level = float(self.ask(f"TRIGGER:A:LEVEL:{src}?"))
+      slope = common.parse_polarity(self.ask("TRIGGER:A:EDGE:SLOPE?"))
+      dc_coupling = (self.ask("TRIGGER:A:EDGE:COUPLING?") == "DC")
       t = TriggerEdge(src, level, slope, dc_coupling, holdoff)
-    elif re.match(r"^PULS(E)?$", settings["TYPE"]):
-      if re.match(r"^TIMEO(UT)?$", settings["PULSE"]["CLASS"]):
-        src = settings["TIMEOUT"]["SOURCE"]
-        level = settings["LEVEL"][src]
-        timeout = settings["TIMEOUT"]["TIME"]
-        slope = settings["TIMEOUT"]["POLARITY"]
+    elif re.match(r"^PULS(E)?$", t_type):
+      p_class = self.ask("TRIGGER:A:PULSE:CLASS?")
+      if re.match(r"^TIMEO(UT)?$", p_class):
+        src = self.ask("TRIGGER:A:TIMEOUT:SOURCE?")
+        level = float(self.ask(f"TRIGGER:A:LEVEL:{src}?"))
+        timeout = float(self.ask("TRIGGER:A:TIMEOUT:TIME?"))
+        slope = common.parse_polarity(self.ask("TRIGGER:A:TIMEOUT:POLARITY?"))
         t = TriggerEdgeTimeout(src, level, timeout, slope, holdoff)
-      elif re.match(r"^WID(TH)?$", settings["PULSE"]["CLASS"]):
-        src = settings["PULSEWIDTH"]["SOURCE"]
-        comparison = settings["PULSEWIDTH"]["WHEN"]
-        positive = settings["PULSEWIDTH"]["POLARITY"] == EdgePolarity.RISING
+      elif re.match(r"^WID(TH)?$", p_class):
+        src = self.ask("TRIGGER:A:PULSEWIDTH:SOURCE?")
+        level = float(self.ask(f"TRIGGER:A:LEVEL:{src}?"))
+        comparison = common.parse_comparison(
+            self.ask("TRIGGER:A:PULSEWIDTH:WHEN?"))
+        positive = self.ask(
+            "TRIGGER:A:PULSEWIDTH:POLARITY?").upper().startswith("POS")
         if comparison in [
             Comparison.WITHIN, Comparison.WITHININC, Comparison.OUTSIDE,
             Comparison.OUTSIDEINC
         ]:
-          lower = settings["PULSEWIDTH"]["LOWLIMIT"]
-          upper = settings["PULSEWIDTH"]["HIGHLIMIT"]
+          lower = float(self.ask("TRIGGER:A:PULSEWIDTH:LOWLIMIT?"))
+          upper = float(self.ask("TRIGGER:A:PULSEWIDTH:HIGHLIMIT?"))
           t = TriggerPulseWidth(src, level, (lower, upper), comparison,
                                 positive, holdoff)
         else:
-          width = settings["PULSEWIDTH"]["WIDTH"]
+          width = float(self.ask("TRIGGER:A:PULSEWIDTH:WIDTH?"))
           t = TriggerPulseWidth(src, level, width, comparison, positive,
                                 holdoff)
     return t
 
   @trigger.setter
   def trigger(self, value: Trigger) -> None:
-    self.send(f"TRIGGER:A:HOLDOFF:TIME {float(value.holdoff):.6E}")
     src_a = [f"CH{i}" for i in self._channels]
     src_d = [f"D{i}" for i in self._digitals]
     if isinstance(value, TriggerEdge):
@@ -337,15 +318,15 @@ class MSO4000Family(Scope):
       sources = ["LINE"]
       sources.extend(src_a)
       sources.extend(src_d)
-      if self.rf:
-        sources.append("RF")
+      # if self.rf: # TODO (WattsUp) Add RF trigger
+      #   sources.append("RF")
       if self._aux:
         sources.append("AUX")
       if value.src not in sources:
         raise ValueError(f"Trigger.src not available '{value.src}'")
       self.send(f"TRIGGER:A:EDGE:SOURCE {value.src}")
       if value.src == "RF":
-        pass  # TODO (WattsUp) Add RF trigger
+        pass  # pragma: no cover TODO (WattsUp) Add unit tests
       else:
         self.send(f"TRIGGER:A:LEVEL:{value.src} {float(value.level):.6E}")
 
@@ -366,15 +347,15 @@ class MSO4000Family(Scope):
       sources = ["LINE"]
       sources.extend(src_a)
       sources.extend(src_d)
-      if self.rf:
-        sources.append("RF")
+      # if self.rf: # TODO (WattsUp) Add RF trigger
+      #   sources.append("RF")
       if self._aux:
         sources.append("AUX")
       if value.src not in sources:
         raise ValueError(f"Trigger.src not available '{value.src}'")
       self.send(f"TRIGGER:A:TIMEOUT:SOURCE {value.src}")
       if value.src == "RF":
-        pass  # TODO (WattsUp) Add RF trigger
+        pass  # pragma: no cover TODO (WattsUp) Add unit tests
       else:
         self.send(f"TRIGGER:A:LEVEL:{value.src} {float(value.level):.6E}")
 
@@ -391,15 +372,15 @@ class MSO4000Family(Scope):
       sources = ["LINE"]
       sources.extend(src_a)
       sources.extend(src_d)
-      if self.rf:
-        sources.append("RF")
+      # if self.rf: # TODO (WattsUp) Add RF trigger
+      #   sources.append("RF")
       if self._aux:
         sources.append("AUX")
       if value.src not in sources:
         raise ValueError(f"Trigger.src not available '{value.src}'")
       self.send(f"TRIGGER:A:PULSEWIDTH:SOURCE {value.src}")
       if value.src == "RF":
-        pass  # TODO (WattsUp) Add RF trigger
+        pass  # pragma: no cover TODO (WattsUp) Add unit tests
       else:
         self.send(f"TRIGGER:A:LEVEL:{value.src} {float(value.level):.6E}")
 
@@ -436,6 +417,7 @@ class MSO4000Family(Scope):
         self.send("TRIGGER:A:PULSEWIDTH:POLARITY NEGATIVE")
     else:
       raise ValueError(f"Unknown Trigger type {type(value)}")
+    self.send(f"TRIGGER:A:HOLDOFF:TIME {float(value.holdoff):.6E}")
 
   def stop(self, timeout: float = 1) -> None:
     self.send("ACQUIRE:STATE STOP")

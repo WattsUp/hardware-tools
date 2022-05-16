@@ -13,7 +13,7 @@ from hardware_tools.math.stats import Comparison
 _rng = np.random.default_rng()
 
 
-def _comparison(v: str) -> Comparison:
+def parse_comparison(v: str) -> Comparison:
   """Convert a str to a Comparison
 
   Args:
@@ -29,7 +29,9 @@ def _comparison(v: str) -> Comparison:
       "UNEqual": Comparison.UNEQUAL,
       "LESSEQual": Comparison.LESSEQUAL,
       "MOREEQual": Comparison.MOREEQUAL,
+      "WIThin": Comparison.WITHIN,
       "INrange": Comparison.WITHIN,
+      "OUTside": Comparison.OUTSIDE,
       "OUTrange": Comparison.OUTSIDE
   }
   for kd, vd in d.items():
@@ -40,7 +42,7 @@ def _comparison(v: str) -> Comparison:
   return v
 
 
-def _polarity(v: str) -> EdgePolarity:
+def parse_polarity(v: str) -> EdgePolarity:
   """Convert a str to a EdgePolarity
 
   Args:
@@ -66,7 +68,7 @@ def _polarity(v: str) -> EdgePolarity:
   return v
 
 
-def _threshold(v: str) -> float:
+def parse_threshold(v: str) -> float:
   """Convert a str to a threshold
 
   Args:
@@ -94,16 +96,16 @@ TEK_TYPES = {
             },
             "EDGE": {
                 "COUPling": str.upper,
-                "SLOpe": _polarity,
+                "SLOpe": parse_polarity,
                 "SOUrce": str.upper
             },
             "HOLDoff": {
                 "TIMe": float
             },
             "LEVel": {
-                "AUXin": _threshold,
-                "CH<1-4>": _threshold,
-                "D<0-15>": _threshold
+                "AUXin": parse_threshold,
+                "CH<1-4>": parse_threshold,
+                "D<0-15>": parse_threshold
             },
             "MODe": str.upper,
             "PULse": {
@@ -112,13 +114,13 @@ TEK_TYPES = {
             "PULSEWidth": {
                 "HIGHLimit": float,
                 "LOWLimit": float,
-                "POLarity": _polarity,
+                "POLarity": parse_polarity,
                 "SOUrce": str.upper,
-                "WHEn": _comparison,
+                "WHEn": parse_comparison,
                 "WIDth": float
             },
             "TIMEOut": {
-                "POLarity": _polarity,
+                "POLarity": parse_polarity,
                 "SOUrce": str.upper,
                 "TIMe": float
             },

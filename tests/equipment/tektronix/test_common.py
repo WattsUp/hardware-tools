@@ -59,32 +59,32 @@ class TestCommon(base.TestBase):
       }
       self.assertDictEqual(target, info)
 
-  def test_comparison(self):
+  def test_parse_comparison(self):
     v = "OUT"
-    self.assertEqual(common._comparison(v), common.Comparison.OUTSIDE)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_comparison(v), common.Comparison.OUTSIDE)
 
     v = "OUTRANGE"
-    self.assertEqual(common._comparison(v), common.Comparison.OUTSIDE)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_comparison(v), common.Comparison.OUTSIDE)
 
     v = "OU"
-    self.assertEqual(common._comparison(v), v)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_comparison(v), v)
 
-  def test_polarity(self):
+  def test_parse_polarity(self):
     v = "EIT"
-    self.assertEqual(common._polarity(v), common.EdgePolarity.BOTH)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_polarity(v), common.EdgePolarity.BOTH)
 
     v = "EITHER"
-    self.assertEqual(common._polarity(v), common.EdgePolarity.BOTH)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_polarity(v), common.EdgePolarity.BOTH)
 
     v = "EI"
-    self.assertEqual(common._polarity(v), v)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_polarity(v), v)
 
-  def test_threshold(self):
+  def test_parse_threshold(self):
     v = "ECL"
-    self.assertEqual(common._threshold(v), -1.3)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_threshold(v), -1.3)
 
     v = "TTL"
-    self.assertEqual(common._threshold(v), 1.4)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_threshold(v), 1.4)
 
     v = 3.14
-    self.assertEqual(common._threshold(v), v)  # pylint: disable=protected-access
+    self.assertEqual(common.parse_threshold(v), v)

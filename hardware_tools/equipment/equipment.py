@@ -1,6 +1,8 @@
 """Equipment base class to interface to physical testing hardware
 """
 
+from __future__ import annotations
+
 from abc import ABC
 import time
 from typing import Iterable
@@ -22,17 +24,23 @@ class Equipment(ABC):
   settings = []
   commands = []
 
-  def __init__(self, address: str, name: str = "") -> None:
+  def __init__(self,
+               address: str,
+               rm: pyvisa.ResourceManager = None,
+               name: str = "") -> None:
     """Initialize Equipment by connecting to it
 
     Args:
       address: Address to the Equipment (VISA resource string)
+      rm: pyvisa ResourceManager to connect via, None for default
       name: Name of the Equipment
     """
+    self._instrument = None
     self._address = address
     self._name = name
 
-    rm = pyvisa.ResourceManager()
+    if rm is None:
+      rm = pyvisa.ResourceManager()
     resource = rm.open_resource(address)
 
     if not isinstance(resource, resources.MessageBasedResource):
@@ -40,10 +48,18 @@ class Equipment(ABC):
     self._instrument = resource
 
   def __del__(self) -> None:
-    try:
+    self.close()
+
+  def close(self) -> None:
+    if self._instrument is not None:
       self._instrument.close()
-    except AttributeError:  # pragma: no cover
-      pass
+      self._instrument = None
+
+  def __enter__(self) -> Equipment:
+    return self
+
+  def __exit__(self, *args) -> None:
+    self.close()
 
   def __repr__(self) -> str:
     return f"{self._name} @ {self._address}"
@@ -60,6 +76,7 @@ class Equipment(ABC):
     """Send reset command
     """
     self.send("*RST")
+    self.send("*WAI")  # Wait until complete
 
   def ask(self, command: str) -> str:
     """Send a command to the Equipment and receive a reply

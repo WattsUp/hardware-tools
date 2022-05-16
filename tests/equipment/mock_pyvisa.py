@@ -20,8 +20,8 @@ class Resource(pyvisa_resources.MessageBasedResource):
 
   def __init__(self, resource_manager: pyvisa.ResourceManager,
                address: str) -> None:
-    super().__init__(resource_manager, address)
     self.address = address
+    super().__init__(resource_manager, address)
     resources[address] = self
 
     self.queue_tx = []
@@ -40,6 +40,7 @@ class Resource(pyvisa_resources.MessageBasedResource):
   def close(self) -> None:
     if not no_pop and self.address in resources:
       resources.pop(self.address)
+      self.address = None
 
   def write(self, command: str) -> None:
     self.queue_tx.append(command)
@@ -58,9 +59,19 @@ class Resource(pyvisa_resources.MessageBasedResource):
     return self.queue_rx.pop(0)
 
 
-class ResourceManager(pyvisa.ResourceManager):
+class VisaLib:
+
+  def __init__(self) -> None:
+    self.library_path = None
+
+
+class ResourceManager:
   """Mock pyvisa.ResourceManager
   """
+
+  def __init__(self) -> None:
+    self.session = None
+    self.visalib = VisaLib()
 
   def open_resource(self, address: str) -> Resource:
     if address in resources:

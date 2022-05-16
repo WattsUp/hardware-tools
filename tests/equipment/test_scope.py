@@ -465,7 +465,6 @@ class TestScope(base.TestBase):
 
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
-    scope.equipment.pyvisa = mock_pyvisa
 
   def tearDown(self) -> None:
     super().tearDown()
@@ -476,7 +475,8 @@ class TestScope(base.TestBase):
   def test_init(self):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
-    s = Scope(address, name=name)
+    rm = mock_pyvisa.ResourceManager()
+    s = Scope(address, rm=rm, name=name)
     self.assertIn(address, mock_pyvisa.resources)
     self.assertEqual(s._instrument, mock_pyvisa.resources[address])  # pylint: disable=protected-access
 
@@ -486,13 +486,15 @@ class TestScope(base.TestBase):
   def test_ch(self):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
-    s = Scope(address, name=name)
+    rm = mock_pyvisa.ResourceManager()
+    s = Scope(address, rm=rm, name=name)
 
     self.assertEqual(s.ch(1), s._channels[1])  # pylint: disable=protected-access
 
   def test_d(self):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
-    s = Scope(address, name=name)
+    rm = mock_pyvisa.ResourceManager()
+    s = Scope(address, rm=rm, name=name)
 
     self.assertEqual(s.d(0), s._digitals[0])  # pylint: disable=protected-access

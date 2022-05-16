@@ -8,6 +8,7 @@ import enum
 from typing import Tuple, Union
 
 import numpy as np
+import pyvisa
 
 from hardware_tools.equipment import equipment
 from hardware_tools.math.stats import Comparison
@@ -407,8 +408,11 @@ class Scope(equipment.Equipment):
   n_div_vert: int = 1
   max_bandwidth: float = 0
 
-  def __init__(self, address: str, name: str = "") -> None:
-    super().__init__(address, name)
+  def __init__(self,
+               address: str,
+               rm: pyvisa.ResourceManager = None,
+               name: str = "") -> None:
+    super().__init__(address, rm=rm, name=name)
     self._channels = {}
     self._digitals = {}
     self._init_channels()

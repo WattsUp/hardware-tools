@@ -11,23 +11,28 @@ from hardware_tools.equipment.equipment import Equipment
 from hardware_tools.equipment import tektronix
 
 
-def get_available() -> List[str]:
+def get_available(rm: pyvisa.ResourceManager = None) -> List[str]:
   """Get a list of available equipment addresses
+
+  Args:
+    rm: pyvisa ResourceManager to connect via, None for default
 
   Returns:
     List of VISA address strings
   """
-  rm = pyvisa.ResourceManager()
-  return rm.list_resources()
+  if rm is None:
+    rm = pyvisa.ResourceManager()
+  return list(rm.list_resources())
 
 
-def connect(address: str) -> Equipment:
+def connect(address: str, rm: pyvisa.ResourceManager = None) -> Equipment:
   """Open an address to an Equipment and return the appropriate derrived object
 
   Queries the identity and switches based on reply.
 
   Args:
     address: Address to the Equipment (VISA resource string)
+    rm: pyvisa ResourceManager to connect via, None for default
 
   Returns:
     Derrived class of Equipment as appropriate
@@ -35,7 +40,8 @@ def connect(address: str) -> Equipment:
   Raises:
     LookupError if equipment ID is not recognized
   """
-  rm = pyvisa.ResourceManager()
+  if rm is None:
+    rm = pyvisa.ResourceManager()
   with rm.open_resource(address) as instrument:
     if isinstance(instrument, resources.MessageBasedResource):
       identity = instrument.query("*IDN?").strip()
@@ -49,7 +55,7 @@ def connect(address: str) -> Equipment:
   }
   for name, c in classes.items():
     if identity.startswith(name):
-      return c(address)
+      return c(address, rm=rm)
 
   raise LookupError(f"Unknown equipment identity '{identity}'")
 

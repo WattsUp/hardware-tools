@@ -1,7 +1,9 @@
 """Test module hardware_tools.equipment.utility
 """
 
-from hardware_tools.equipment import equipment, utility
+import pyvisa
+
+from hardware_tools.equipment import utility
 from hardware_tools.equipment import tektronix
 
 from tests import base
@@ -17,8 +19,6 @@ class TestEquipmentUtility(base.TestBase):
 
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
-    equipment.pyvisa = mock_pyvisa
-    utility.pyvisa = mock_pyvisa
 
   def tearDown(self) -> None:
     super().tearDown()
@@ -31,8 +31,16 @@ class TestEquipmentUtility(base.TestBase):
         "USB::0x0000::0x0000:C000000::INSTR", "TCPIP::127.0.0.1::INSTR"
     ]
 
-    available = utility.get_available()
+    rm = mock_pyvisa.ResourceManager()
+    available = utility.get_available(rm=rm)
     self.assertListEqual(mock_pyvisa.available, available)
+
+    try:
+      utility.pyvisa = mock_pyvisa
+      available = utility.get_available()
+      self.assertListEqual(mock_pyvisa.available, available)
+    finally:
+      utility.pyvisa = pyvisa
 
   def test_connect(self):
     address = "USB::0x0000::0x0000:C000000::INSTR"
@@ -49,17 +57,26 @@ class TestEquipmentUtility(base.TestBase):
     rm = mock_pyvisa.ResourceManager()
     instrument = mock_pyvisa.Resource(rm, address)
     instrument.query_map["*IDN?"] = "FAKE"
-    self.assertRaises(LookupError, utility.connect, address)
+    self.assertRaises(LookupError, utility.connect, address, rm=rm)
+
+    try:
+      utility.pyvisa = mock_pyvisa
+      self.assertRaises(LookupError, utility.connect, address)
+    finally:
+      utility.pyvisa = pyvisa
+
     instrument.close()
 
     for name, class_type in equipment_types.items():
       instrument = mock_pyvisa.Resource(rm, address)
       instrument.query_map["*IDN?"] = name
       if class_type == tektronix.MSO4000Family:
-        instrument.query_map["SELECT?"] = (":SELECT:CH1 1;MATH 0;REF1 0;D0 0;"
-                                           "BUS1 0;CONTROL CH1")
+        instrument.query_map["CONFIGURATION:ANALOG:NUMCHANNELS?"] = "1"
+        instrument.query_map["CONFIGURATION:ANALOG:BANDWIDTH?"] = "1.0000E+9"
+        instrument.query_map["CONFIGURATION:DIGITAL:NUMCHANNELS?"] = "1"
+        instrument.query_map["CONFIGURATION:AUXIN?"] = "0"
 
-      e = utility.connect(address)
+      e = utility.connect(address, rm=rm)
       self.assertIsInstance(e, class_type)
 
       instrument.close()
