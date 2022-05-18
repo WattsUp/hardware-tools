@@ -4,15 +4,13 @@
 import io
 import re
 import time
+from typing import Any
 from unittest import mock
 
 import numpy as np
 import pyvisa
 
 import sys
-# sys.modules["pyvisa"] = __import__("tests.equipment.mock_pyvisa", fromlist=[None])
-# # sys.modules["pyvisa.resources"] = __import__("pyvisa.resources")
-# import pyvisa as mock_pyvisa
 
 from hardware_tools.equipment import equipment, utility, scope
 from hardware_tools.equipment import tektronix
@@ -20,12 +18,70 @@ from hardware_tools.equipment import tektronix
 from tests import base
 from tests.equipment import mock_pyvisa
 
-# class MockMDO3054(mock_pyvisa.Resource):
-#   """Mock Tektronix MDO3054
-#   """
 
-#   def __init__(self, address: str) -> None:
-#     super().__init__(address)
+class MockMSO4104B(mock_pyvisa.Resource):
+  """Mock Tektronix MSO4104B
+  """
+
+  def __init__(self, resource_manager: pyvisa.ResourceManager,
+               address: str) -> None:
+    super().__init__(resource_manager, address)
+
+    self.reset()
+
+  def reset(self) -> None:
+    # Taken from Appendix C: Factory Defaults in Programming Manual
+    # Tuples are (type [or callable to convert str to value], value)
+    self.query_map = {
+        "*IDN": "TEKTRONIX,MSO4104",
+        "ACQUIRE": {
+            "MODE": (tektronix.parse_sample_mode, tektronix.SampleMode.SAMPLE),
+            "NUMAVG": (int, 16),
+            "NUMENV": (lambda x: x if x == "INFINITE" else int(x), "INFINITE")
+        },
+        "CONFIGURATION": {
+            "ANALOG": {
+                "NUMCHANNELS": 1,
+                "BANDWIDTH": 1e9
+            },
+            "DIGITAL": {
+                "NUMCHANNELS": 1
+            },
+            "AUXIN": 0
+        },
+        "HEADER": (lambda x: x in ["ON", "1"], False),
+        "VERBOSE": (lambda x: x in ["ON", "1"], True),
+        "HORIZONTAL": {
+            "RECORDLENGTH": (int, 10000),
+            "SAMPLERATE":
+                lambda: (self.query_map["HORIZONTAL"]["RECORDLENGTH"][1] /
+                         (10 * self.query_map["HORIZONTAL"]["SCALE"][1])),
+            "SCALE": (float, 4e-6),
+            "DELAY": {
+                "MODE": (lambda x: x in ["ON", "1"], True),
+                "TIME": (float, 0)
+            }
+        }
+    }
+
+  def query_str(self, value: Any) -> str:
+    s = None
+    if isinstance(value, tektronix.SampleMode):
+      if value == tektronix.SampleMode.SAMPLE:
+        s = "SAMPLE"
+      elif value == tektronix.SampleMode.AVERAGE:
+        s = "AVERAGE"
+      elif value == tektronix.SampleMode.ENVELOPE:
+        s = "ENVELOPE"
+    else:
+      s = super().query_str(value)
+
+    if self.query_map["HEADER"][1]:
+      return "header " + s # TODO (WattsUp) Fix somehow...
+    else:
+      return s
+
+
 #     self.record_length = 1000
 #     self.horizontal_scale = 1e-9
 #     self.horizontal_delay = 0
@@ -392,7 +448,7 @@ class TestMSO4000(base.TestBase):
   """
 
   # When true, connect CH1 to probe compensation, and all others open
-  _TRY_REAL_SCOPE = True
+  _TRY_REAL_SCOPE = False
 
   def setUp(self) -> None:
     super().setUp()
@@ -424,9 +480,9 @@ class TestMSO4000(base.TestBase):
       address = "USB::0x0000::0x0000:C000000::INSTR"
 
       mock_pyvisa.no_pop = True
-      # _ = MockMDO3054(address) # TODO (WattsUp) Fix MockMDO3054
-
       rm = mock_pyvisa.ResourceManager()
+      _ = MockMSO4104B(rm, address)
+
       e = tektronix.MSO4000Family(address, rm=rm)
     else:
       time.sleep = self._original_sleep
@@ -439,21 +495,16 @@ class TestMSO4000(base.TestBase):
 
     mock_pyvisa.no_pop = True
     rm = mock_pyvisa.ResourceManager()
-    instrument = mock_pyvisa.Resource(rm, address)
+    instrument = MockMSO4104B(rm, address)
 
-    instrument.query_map["*IDN?"] = "FAKE"
+    instrument.query_map["*IDN"] = "FAKE"
     self.assertRaises(ValueError, tektronix.MSO4000Family, address, rm=rm)
-    instrument.query_map["*IDN?"] = "TEKTRONIX,MSO2010"
+    instrument.query_map["*IDN"] = "TEKTRONIX,MSO2010"
     self.assertRaises(ValueError, tektronix.MSO4000Family, address, rm=rm)
 
-    instrument.query_map["CONFIGURATION:ANALOG:NUMCHANNELS?"] = "1"
-    instrument.query_map["CONFIGURATION:ANALOG:BANDWIDTH?"] = "1.0000E+9"
-    instrument.query_map["CONFIGURATION:DIGITAL:NUMCHANNELS?"] = "1"
-    instrument.query_map["CONFIGURATION:AUXIN?"] = "0"
-
-    instrument.query_map["*IDN?"] = "TEKTRONIX,FAKE012"
+    instrument.query_map["*IDN"] = "TEKTRONIX,FAKE012"
     self.assertRaises(ValueError, tektronix.MSO4000Family, address, rm=rm)
-    instrument.query_map["*IDN?"] = "TEKTRONIX,MSO4104"
+    instrument.query_map["*IDN"] = "TEKTRONIX,MSO4104"
     e = tektronix.MSO4000Family(address, rm=rm, name="Emulated MSO4104B")
     self.assertEqual(e.max_bandwidth, 1000e6)
     self.assertListEqual(list(e._channels.keys()), [1])  # pylint: disable=protected-access

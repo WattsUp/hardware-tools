@@ -56,7 +56,7 @@ class TestEquipmentUtility(base.TestBase):
 
     rm = mock_pyvisa.ResourceManager()
     instrument = mock_pyvisa.Resource(rm, address)
-    instrument.query_map["*IDN?"] = "FAKE"
+    instrument.query_map["*IDN"] = "FAKE"
     self.assertRaises(LookupError, utility.connect, address, rm=rm)
 
     try:
@@ -69,12 +69,20 @@ class TestEquipmentUtility(base.TestBase):
 
     for name, class_type in equipment_types.items():
       instrument = mock_pyvisa.Resource(rm, address)
-      instrument.query_map["*IDN?"] = name
+      instrument.query_map["*IDN"] = name
       if class_type == tektronix.MSO4000Family:
-        instrument.query_map["CONFIGURATION:ANALOG:NUMCHANNELS?"] = "1"
-        instrument.query_map["CONFIGURATION:ANALOG:BANDWIDTH?"] = "1.0000E+9"
-        instrument.query_map["CONFIGURATION:DIGITAL:NUMCHANNELS?"] = "1"
-        instrument.query_map["CONFIGURATION:AUXIN?"] = "0"
+        instrument.query_map["CONFIGURATION"] = {
+            "ANALOG": {
+                "NUMCHANNELS": "1",
+                "BANDWIDTH": "1.0000E+9"
+            },
+            "DIGITAL": {
+                "NUMCHANNELS": "1"
+            },
+            "AUXIN": "0"
+        }
+        instrument.query_map["HEADER"] = (lambda _: None, "0")
+        instrument.query_map["VERBOSE"] = (lambda _: None, "1")
 
       e = utility.connect(address, rm=rm)
       self.assertIsInstance(e, class_type)

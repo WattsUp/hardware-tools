@@ -7,6 +7,7 @@ from typing import Tuple
 import numpy as np
 
 from hardware_tools.equipment import utility
+from hardware_tools.equipment.scope import SampleMode
 from hardware_tools.math.lines import EdgePolarity
 from hardware_tools.math.stats import Comparison
 
@@ -33,6 +34,28 @@ def parse_comparison(v: str) -> Comparison:
       "INrange": Comparison.WITHIN,
       "OUTside": Comparison.OUTSIDE,
       "OUTrange": Comparison.OUTSIDE
+  }
+  for kd, vd in d.items():
+    kd: str
+    kk_short = re.sub(r"[a-z]+$", "", kd)
+    if v.startswith(kk_short):
+      return vd
+  return v
+
+
+def parse_sample_mode(v: str) -> SampleMode:
+  """Convert a str to a Comparison
+
+  Args:
+    v: Value to convert
+
+  Returns:
+    Comparison or v if no match
+  """
+  d = {
+      "SAMple": SampleMode.SAMPLE,
+      "AVErage": SampleMode.AVERAGE,
+      "ENVelope": SampleMode.ENVELOPE
   }
   for kd, vd in d.items():
     kd: str

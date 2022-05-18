@@ -67,7 +67,7 @@ class TestEquipment(base.TestBase):
     rm = mock_pyvisa.ResourceManager()
     e = Derrived(address, rm=rm, name=name)
 
-    instrument = mock_pyvisa.resources[address]
+    instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
 
     command = "*IDN?"
     e.send(command)
@@ -81,7 +81,7 @@ class TestEquipment(base.TestBase):
     rm = mock_pyvisa.ResourceManager()
     e = Derrived(address, rm=rm, name=name)
 
-    instrument = mock_pyvisa.resources[address]
+    instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
 
     e.reset()
 
@@ -95,10 +95,10 @@ class TestEquipment(base.TestBase):
     rm = mock_pyvisa.ResourceManager()
     e = Derrived(address, rm=rm, name=name)
 
-    instrument = mock_pyvisa.resources[address]
+    instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     command = "*IDN?"
     reply = "FAKE:SERIAL_NUMBER"
-    instrument.query_map[command] = reply
+    instrument.query_map[command.removesuffix("?")] = reply
 
     self.assertEqual(reply, e.ask(command))
     self.assertEqual(1, len(instrument.queue_tx))
@@ -112,7 +112,7 @@ class TestEquipment(base.TestBase):
 
     count = self._RNG.integers(1, 4)
 
-    instrument = mock_pyvisa.resources[address]
+    instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     command = "*IDN?"
     reply = "FAKE:SERIAL_NUMBER"
     loading = "FAKE:LOADING"
@@ -149,7 +149,7 @@ class TestEquipment(base.TestBase):
     rm = mock_pyvisa.ResourceManager()
     e = Derrived(address, rm=rm, name=name)
 
-    instrument = mock_pyvisa.resources[address]
+    instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     reply = b"FAKE:SERIAL_NUMBER"
     instrument.queue_rx.append(reply)
 

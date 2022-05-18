@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, List
 
 import pyvisa
 from pyvisa import resources as pyvisa_resources
@@ -26,6 +26,8 @@ class Resource(pyvisa_resources.MessageBasedResource):
 
     self.queue_tx = []
     self.queue_rx = []
+
+    # Tuples are (type [or callable to convert str to value], value)
     self.query_map = {}
 
   def __enter__(self) -> Resource:
@@ -44,14 +46,61 @@ class Resource(pyvisa_resources.MessageBasedResource):
 
   def write(self, command: str) -> None:
     self.queue_tx.append(command)
+    if " " not in command:
+      return
+    command_raw, value = command.split(" ", maxsplit=1)
+    command = command_raw.split(":")
+    d = self.query_map
+    while len(command) > 1:
+      if command[0] in d:
+        d = d[command[0]]
+        command = command[1:]
+      else:
+        d = None
+        break
+    k = command[0]
+    if d is not None and k in d:
+      if isinstance(d[k], tuple):
+        d[k] = (d[k][0], d[k][0](value))
+      else:
+        e = TypeError("Cannot convert read only register: "
+                      f"{command_raw} {d[k]}->{value}")
+        raise pyvisa.VisaIOError(-1073807339) from e
+    else:
+      e = KeyError(f"Register not found: {command_raw}")
+      raise pyvisa.VisaIOError(-1073807339) from e
+
+  def query_str(self, value: Any) -> str:
+    if isinstance(value, tuple):
+      return self.query_str(value[1])
+    elif callable(value):
+      return str(value())
+    elif isinstance(value, bool):
+      return "1" if value else "0"
+    else:
+      return str(value)
 
   def query(self, command: str) -> str:
+    if not command.endswith("?"):
+      # Not a query
+      raise pyvisa.VisaIOError(-1073807339)
+
     self.queue_tx.append(command)
-    if command in self.query_map:
-      return self.query_map[command]
+    command = command.removesuffix("?").split(":")
+    d = self.query_map
+    while len(command) > 1:
+      if command[0] in d:
+        d = d[command[0]]
+        command = command[1:]
+      else:
+        d = None
+        break
+    k = command[0]
+    if d is not None and k in d:
+      return self.query_str(d[k])
     if len(self.queue_rx) == 0:
       raise pyvisa.VisaIOError(-1073807339)
-    return self.queue_rx.pop(0)
+    return str(self.queue_rx.pop(0))
 
   def read_raw(self) -> bytes:
     if len(self.queue_rx) == 0:
