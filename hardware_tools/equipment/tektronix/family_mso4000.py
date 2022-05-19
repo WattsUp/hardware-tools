@@ -104,11 +104,11 @@ class _MSO4000AnalogChannel(AnalogChannel, _MSO4000Channel):
 
   @property
   def deskew(self) -> float:
-    return float(self._parent.ask(f"{self._alias}:deskew?"))
+    return float(self._parent.ask(f"{self._alias}:DESKEW?"))
 
   @deskew.setter
   def deskew(self, value: float) -> None:
-    self._parent.send(f"{self._alias}:deskew {float(value):.6E}")
+    self._parent.send(f"{self._alias}:DESKEW {float(value):.6E}")
 
   @property
   def inverted(self) -> bool:
