@@ -70,11 +70,11 @@ class Resource(pyvisa_resources.MessageBasedResource):
       e = KeyError(f"Register not found: {command_raw}")
       raise pyvisa.VisaIOError(-1073807339) from e
 
-  def query_str(self, value: Any) -> str:
+  def query_str(self, keys: List[str], value: Any) -> str:
     if isinstance(value, tuple):
-      return self.query_str(value[1])
+      return self.query_str(keys, value[1])
     elif callable(value):
-      return str(value())
+      return self.query_str(keys, value())
     elif isinstance(value, bool):
       return "1" if value else "0"
     else:
@@ -87,6 +87,7 @@ class Resource(pyvisa_resources.MessageBasedResource):
 
     self.queue_tx.append(command)
     command = command.removesuffix("?").split(":")
+    keys = command
     d = self.query_map
     while len(command) > 1:
       if command[0] in d:
@@ -97,7 +98,7 @@ class Resource(pyvisa_resources.MessageBasedResource):
         break
     k = command[0]
     if d is not None and k in d:
-      return self.query_str(d[k])
+      return self.query_str(keys, d[k])
     if len(self.queue_rx) == 0:
       raise pyvisa.VisaIOError(-1073807339)
     return str(self.queue_rx.pop(0))

@@ -4,7 +4,7 @@
 import io
 import re
 import time
-from typing import Any
+from typing import Any, Callable, List
 from unittest import mock
 
 import numpy as np
@@ -32,12 +32,16 @@ class MockMSO4104B(mock_pyvisa.Resource):
   def reset(self) -> None:
     # Taken from Appendix C: Factory Defaults in Programming Manual
     # Tuples are (type [or callable to convert str to value], value)
+    self._running = True
     self.query_map = {
         "*IDN": "TEKTRONIX,MSO4104",
         "ACQUIRE": {
             "MODE": (tektronix.parse_sample_mode, tektronix.SampleMode.SAMPLE),
             "NUMAVG": (int, 16),
-            "NUMENV": (lambda x: x if x == "INFINITE" else int(x), "INFINITE")
+            "NUMENV": (lambda x: x if x == "INFINITE" else int(x), "INFINITE"),
+            "NUMACQ": 0,
+            "STATE": (self.acquire_state, self.acquire_state),
+            "STOPAFTER": (str, "RUNSTOP")
         },
         "CONFIGURATION": {
             "ANALOG": {
@@ -61,10 +65,54 @@ class MockMSO4104B(mock_pyvisa.Resource):
                 "MODE": (lambda x: x in ["ON", "1"], True),
                 "TIME": (float, 0)
             }
+        },
+        "TRIGGER": {
+            "A": {
+                "EDGE": {
+                    "SOURCE": (str, "CH1"),
+                    "SLOPE": (tektronix.parse_polarity,
+                              tektronix.EdgePolarity.RISING),
+                    "COUPLING": (str, "DC")
+                },
+                "HOLDOFF": {
+                    "TIME": (float, 20e-9),
+                },
+                "LEVEL": {
+                    "CH1": (float, 0.0)
+                },
+                "MODE": (str, "AUTO"),
+                "PULSE": {
+                    "CLASS": (str, "WIDTH")
+                },
+                "PULSEWIDTH": {
+                    "SOURCE": (str, "CH1"),
+                    "WIDTH": (float, 8e-9),
+                    "HIGHLIMIT": (float, 12e-9),
+                    "LOWLIMIT": (float, 8e-9),
+                    "POLARITY": (tektronix.parse_polarity,
+                                 tektronix.EdgePolarity.RISING),
+                    "WHEN":
+                        (tektronix.parse_comparison, tektronix.Comparison.LESS)
+                },
+                "TIMEOUT": {
+                    "SOURCE": (str, "CH1"),
+                    "TIME": (float, 8e-9),
+                    "POLARITY": (tektronix.parse_polarity,
+                                 tektronix.EdgePolarity.RISING)
+                },
+                "TYPE": (str, "EDGE")
+            },
+            "STATE": self.trigger_state
         }
     }
 
-  def query_str(self, value: Any) -> str:
+  def write(self, command: str) -> None:
+    if command == "TRIGGER FORCE":
+      self.trigger_state(triggered=True)
+      return
+    return super().write(command)
+
+  def query_str(self, keys: List[str], value: Any) -> str:
     s = None
     if isinstance(value, tektronix.SampleMode):
       if value == tektronix.SampleMode.SAMPLE:
@@ -73,13 +121,93 @@ class MockMSO4104B(mock_pyvisa.Resource):
         s = "AVERAGE"
       elif value == tektronix.SampleMode.ENVELOPE:
         s = "ENVELOPE"
+    elif isinstance(value, tektronix.EdgePolarity):
+      if keys[-2:] == ["EDGE", "SLOPE"]:
+        if value == tektronix.EdgePolarity.RISING:
+          s = "RISE"
+        elif value == tektronix.EdgePolarity.FALLING:
+          s = "FALL"
+        elif value == tektronix.EdgePolarity.BOTH:
+          s = "EITHER"
+      elif keys[-2:] == ["TIMEOUT", "POLARITY"]:
+        if value == tektronix.EdgePolarity.RISING:
+          s = "STAYSHIGH"
+        elif value == tektronix.EdgePolarity.FALLING:
+          s = "STAYSLOW"
+        elif value == tektronix.EdgePolarity.BOTH:
+          s = "EITHER"
+      elif keys[-2:] == ["PULSEWIDTH", "POLARITY"]:
+        if value == tektronix.EdgePolarity.RISING:
+          s = "POSITIVE"
+        elif value == tektronix.EdgePolarity.FALLING:
+          s = "NEGATIVE"
+    elif isinstance(value, tektronix.Comparison):
+      if value in [tektronix.Comparison.LESS, tektronix.Comparison.LESSEQUAL]:
+        s = "LESSTHAN"
+      elif value in [tektronix.Comparison.MORE, tektronix.Comparison.MOREEQUAL]:
+        s = "MORETHAN"
+      elif value == tektronix.Comparison.EQUAL:
+        s = "EQUAL"
+      elif value == tektronix.Comparison.UNEQUAL:
+        s = "UNEQUAL"
+      elif (value
+            in [tektronix.Comparison.WITHIN, tektronix.Comparison.WITHININC]):
+        s = "WITHIN"
+      elif (value
+            in [tektronix.Comparison.OUTSIDE, tektronix.Comparison.OUTSIDEINC]):
+        s = "OUTSIDE"
     else:
-      s = super().query_str(value)
+      s = super().query_str(keys, value)
 
     if self.query_map["HEADER"][1]:
-      return "header " + s # TODO (WattsUp) Fix somehow...
+      return ":".join(keys) + " " + s
     else:
       return s
+
+  def trigger_state(self, triggered=False) -> str:
+    if self._running:
+      # Acquisition engine is running
+      t_type = self.query_map["TRIGGER"]["A"]["TYPE"][1]
+      if t_type == "EDGE":
+        src = self.query_map["TRIGGER"]["A"]["EDGE"]["SOURCE"][1]
+        level = self.query_map["TRIGGER"]["A"]["LEVEL"][src][1]
+        if 0 <= level <= 2.5:
+          triggered = True
+      if triggered:
+        self.query_map["ACQUIRE"]["NUMACQ"] += 1
+
+      if self.query_map["ACQUIRE"]["STOPAFTER"][1] == "SEQUENCE":
+        # Single capture will stop acquisition if triggered
+        if triggered:
+          self._running = False
+          return "SAVE"
+        else:
+          return "READY"
+      elif self.query_map["TRIGGER"]["A"]["MODE"][1] == "AUTO":
+        # Auto mode is always AUTO
+        return "AUTO"
+      else:
+        # Normal mode is always READY
+        # (technically ARMED->TRIGGER->READY->ARMED loop)
+        if triggered:
+          return "TRIGGER"
+        else:
+          return "READY"
+    else:
+      return "SAVE"
+
+  def acquire_state(self, value=None) -> Callable:
+    if value is None:
+      # Call trigger_state to update state machine
+      self.trigger_state()
+      return self._running
+    else:
+      self.query_map["ACQUIRE"]["NUMACQ"] = 0
+      self._running = value in ["ON", "1", "RUN"]
+
+    # Since writes assign the result to the value, need to return this
+    # function so it can be called in the future
+    return self.acquire_state
 
 
 #     self.record_length = 1000
@@ -650,7 +778,8 @@ class TestMSO4000(base.TestBase):
     e.trigger = tektronix.TriggerEdge("CH1", -1.25)
     e.run(normal=True)
     result = e.ask("TRIGGER:STATE?")
-    self.assertEqual(result, "ARMED")
+    # Real scope usually is still arming without any delays
+    self.assertIn(result, ["ARMED", "READY"])
 
   def test_single(self):
     e = self.connect()
