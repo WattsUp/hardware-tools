@@ -45,7 +45,7 @@ class Resource(pyvisa_resources.MessageBasedResource):
       self.address = None
 
   def write(self, command: str) -> None:
-    self.queue_tx.append(command)
+    self.queue_rx.append(command)
     if " " not in command:
       return
     command_raw, value = command.split(" ", maxsplit=1)
@@ -85,7 +85,7 @@ class Resource(pyvisa_resources.MessageBasedResource):
       # Not a query
       raise pyvisa.VisaIOError(-1073807339)
 
-    self.queue_tx.append(command)
+    self.queue_rx.append(command)
     command = command.removesuffix("?").split(":")
     keys = command
     d = self.query_map
@@ -99,14 +99,14 @@ class Resource(pyvisa_resources.MessageBasedResource):
     k = command[0]
     if d is not None and k in d:
       return self.query_str(keys, d[k])
-    if len(self.queue_rx) == 0:
+    if len(self.queue_tx) == 0:
       raise pyvisa.VisaIOError(-1073807339)
-    return str(self.queue_rx.pop(0))
+    return str(self.queue_tx.pop(0))
 
   def read_raw(self) -> bytes:
-    if len(self.queue_rx) == 0:
+    if len(self.queue_tx) == 0:
       raise pyvisa.VisaIOError(-1073807339)
-    return self.queue_rx.pop(0)
+    return self.queue_tx.pop(0)
 
 
 class VisaLib:

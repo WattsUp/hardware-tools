@@ -1,22 +1,19 @@
 """Test module hardware_tools.equipment.tektronix.family_mso4000
 """
 
-import io
-import re
 import time
 from typing import Any, Callable, List
-from unittest import mock
 
 import numpy as np
 import pyvisa
 
-import sys
-
-from hardware_tools.equipment import equipment, utility, scope
+from hardware_tools.equipment import utility
 from hardware_tools.equipment import tektronix
 
 from tests import base
 from tests.equipment import mock_pyvisa
+
+_rng = np.random.default_rng()
 
 
 class MockMSO4104B(mock_pyvisa.Resource):
@@ -26,6 +23,11 @@ class MockMSO4104B(mock_pyvisa.Resource):
   def __init__(self, resource_manager: pyvisa.ResourceManager,
                address: str) -> None:
     super().__init__(resource_manager, address)
+
+    self._cache_x_incr: float = None
+    self._cache_n: int = None
+    self._cache_random: np.ndarray = None
+    self._cache_y: np.ndarray = None
 
     self.reset()
 
@@ -37,7 +39,7 @@ class MockMSO4104B(mock_pyvisa.Resource):
         "*IDN": "TEKTRONIX,MSO4104",
         "ACQUIRE": {
             "MODE": (tektronix.parse_sample_mode, tektronix.SampleMode.SAMPLE),
-            "NUMAVG": (int, 16),
+            "NUMAVG": (lambda x: int(float(x)), 16),
             "NUMENV": (lambda x: x if x == "INFINITE" else int(x), "INFINITE"),
             "NUMACQ": 0,
             "STATE": (self.acquire_state, self.acquire_state),
@@ -53,10 +55,34 @@ class MockMSO4104B(mock_pyvisa.Resource):
             },
             "AUXIN": 0
         },
+        "CH1": {
+            "BANDWIDTH": (float, 1e9),
+            "DESKEW": (float, 0.0),
+            "COUPLING": (str, "DC"),
+            "SCALE": (float, 1.0),  # Technically 0.1 but 10x probe
+            "OFFSET": (float, 0.0),
+            "POSITION": (lambda x: min(5.0, max(-5.0, float(x))), 0.0),
+            "LABEL": (lambda x: str.strip(x, "'")[:30], ""),
+            "INVERT": (lambda x: x in ["ON", "1"], False),
+            "TERMINATION": (float, 1e6),  # Fixed 1MΩ termination
+            "PROBE": {
+                "GAIN": (float, 10.0)  # Technically 0.1 but 10x probe
+            }
+        },
+        "D0": {
+            "THRESHOLD": (float, 1.4)
+        },
+        "DATA": {
+            "ENCDG": (str, "RIBINARY"),
+            "SOURCE": (str, "CH1"),
+            "START": (lambda x: int(float(x)), 1),
+            "STOP": (lambda x: int(float(x)), 10000),
+            "WIDTH": (lambda x: int(float(x)), 1)
+        },
         "HEADER": (lambda x: x in ["ON", "1"], False),
         "VERBOSE": (lambda x: x in ["ON", "1"], True),
         "HORIZONTAL": {
-            "RECORDLENGTH": (int, 10000),
+            "RECORDLENGTH": (lambda x: int(float(x)), 10000),
             "SAMPLERATE":
                 lambda: (self.query_map["HORIZONTAL"]["RECORDLENGTH"][1] /
                          (10 * self.query_map["HORIZONTAL"]["SCALE"][1])),
@@ -65,6 +91,9 @@ class MockMSO4104B(mock_pyvisa.Resource):
                 "MODE": (lambda x: x in ["ON", "1"], True),
                 "TIME": (float, 0)
             }
+        },
+        "SELECT": {
+            "CH1": (lambda x: x in ["ON", "1"], True)
         },
         "TRIGGER": {
             "A": {
@@ -209,373 +238,68 @@ class MockMSO4104B(mock_pyvisa.Resource):
     # function so it can be called in the future
     return self.acquire_state
 
+  def read_raw(self) -> bytes:
+    if len(self.queue_rx) > 0 and self.queue_rx[-1] == "WAVFRM?":
+      points = self.query_map["HORIZONTAL"]["RECORDLENGTH"][1]
+      h_scale = self.query_map["HORIZONTAL"]["SCALE"][1]
+      h_delay = self.query_map["HORIZONTAL"]["DELAY"]["TIME"][1]
+      fs = points / (10 * h_scale)
 
-#     self.record_length = 1000
-#     self.horizontal_scale = 1e-9
-#     self.horizontal_delay = 0
-#     self.sample_frequency = min(
-#         2.5e9, self.record_length / (10 * self.horizontal_scale))
-#     self.trigger_a_mode = "AUTO"
-#     self.trigger_a_source = "CH1"
-#     self.trigger_a_coupling = "DC"
-#     self.trigger_a_slope = "FALL"
-#     self.trigger_state = "AUTO"
-#     self.acquire_mode = "SAMPLE"
-#     self.acquire_single = False
-#     self.acquire_state_running = True
-#     self.acquire_num = 0
-#     self.data_source = "CH1"
-#     self.data_start = 1
-#     self.data_stop = self.record_length
+      src = self.query_map["DATA"]["SOURCE"][1]
+      coupling = self.query_map[src]["COUPLING"][1]
+      scale = self.query_map[src]["SCALE"][1]
+      position = self.query_map[src]["POSITION"][1]
+      offset = self.query_map[src]["OFFSET"][1]
+      wf_id = (f"{src}, "
+               f"{coupling} coupling, "
+               f"{scale}V/div, "
+               f"{h_scale}s/div, "
+               f"{points} points")
 
-#     self.waveform_amp = 1.25
-#     self.waveform_offset = 1.25
+      x_incr = 1 / fs
+      if (self._cache_x_incr != x_incr or self._cache_n != points):
+        self._cache_x_incr = x_incr
+        self._cache_n = points
+        t = np.linspace(0, x_incr * (points - 1), points) - x_incr * points / 2
+        self._cache_y = (np.mod(t * 1e3, 1) > 0.5) * 2.5
+      y: np.ndarray = self._cache_y.copy()
+      if coupling != "DC":
+        y -= 1.25
 
-#     self.channels = {
-#         c: {
-#             "scale": 0.1,
-#             "position": 0,
-#             "offset": 0,
-#             "label": c,
-#             "bandwidth": 500e6,
-#             "termination": 1e6,
-#             "invert": False,
-#             "gain": 1,
-#             "coupling": "DC",
-#             "trigger": 0
-#         } for c in ["CH1", "CH2", "CH3", "CH4"]
-#     }
+      # Random takes a long time, doesn't really matter
+      if (self._cache_random is None or self._cache_random.shape[0] != points):
+        self._cache_random = _rng.normal(0, 0.01, points)
+      self._cache_random = np.roll(self._cache_random, 10)
+      y += self._cache_random
 
-#   def write(self, command: str) -> None:
-#     self.queue_tx.append(command)
-#     command = re.split(":| ", command.upper())
-#     if command[0] in ["HEADER", "VERBOSE", "CLEARMENU"]:
-#       return
-#     if command[0] == "HORIZONTAL":
-#       if command[1] == "RECORDLENGTH":
-#         value = int(command[2])
-#         choices = [1e3, 10e3, 100e3, 1e6, 5e6, 10e6]
-#         choices = sorted(choices, key=lambda c: (value - c)**2)
-#         self.record_length = int(choices[0])
-#         self.sample_frequency = min(
-#             2.5e9, self.record_length / (10 * self.horizontal_scale))
-#         return
-#       if command[1] == "SCALE":
-#         value = float(command[2])
-#         choices = []
-#         for i in range(-9, 2):
-#           if 1 * 10**i == 0.1e-9 * self.record_length:
-#             choices.append(0.8 * 10**i)
-#           else:
-#             choices.append(1 * 10**i)
-#           choices.append(2 * 10**i)
-#           choices.append(4 * 10**i)
-#         if self.record_length >= 10e3:
-#           choices.extend([100, 200, 400])
-#         if self.record_length >= 100e3:
-#           choices.append(1000)
-#         choices = sorted(choices, key=lambda c: (value - c)**2)
-#         self.horizontal_scale = choices[0]
-#         self.sample_frequency = min(
-#             2.5e9, self.record_length / (10 * self.horizontal_scale))
-#         return
-#       if command[1] == "DELAY":
-#         if command[2] == "MODE":
-#           return
-#         if command[2] == "TIME":
-#           value = float(command[3])
-#           sample_t = 1 / self.sample_frequency
-#           value = round(value / sample_t) * sample_t
-#           min_delay = -sample_t * self.record_length
-#           self.horizontal_delay = min(5e3, max(min_delay, value))
-#           return
-#     if command[0] == "TRIGGER":
-#       if command[1] == "FORCE":
-#         return
-#       if command[1] == "A":
-#         if command[2] == "TYPE":
-#           return
-#         if command[2] == "MODE":
-#           value = command[3]
-#           if value in ["AUTO", "NORM", "NORMAL"]:
-#             self.trigger_a_mode = value
-#           return
-#         if command[2] == "EDGE":
-#           if command[3] == "SOURCE":
-#             value = command[4]
-#             choices = [
-#                 "AUX", "CH1", "CH2", "CH3", "CH4", "D0", "D1", "D2", "D3", "D4",
-#                 "D5", "D6", "D7", "D8", "D9", "D10", "D11", "D12", "D13", "D14",
-#                 "D15", "LINE", "RF"
-#             ]
-#             if value in choices:
-#               self.trigger_a_source = value
-#               return
-#           if command[3] == "COUPLING":
-#             value = command[4]
-#             choices = [
-#                 "AC", "DC", "HFR", "HFREJ", "LFR", "LFREJ", "NOISE", "NOISEREJ"
-#             ]
-#             if value in choices:
-#               self.trigger_a_coupling = value
-#             return
-#           if command[3] == "SLOPE":
-#             value = command[4]
-#             choices = ["RIS", "RISE", "FALL", "EITH", "EITHER"]
-#             if value in choices:
-#               self.trigger_a_slope = value
-#             return
-#         if command[2] == "LEVEL":
-#           if command[3] in ["CH1", "CH2", "CH3", "CH4"]:
-#             if command[4] == "ECL":
-#               value = -1.3
-#             elif command[4] == "TTL":
-#               value = 1.4
-#             else:
-#               value = float(command[4])
-#             self.channels[command[3]]["trigger"] = value
-#             return
-#     if command[0] == "ACQUIRE":
-#       if command[1] == "MODE":
-#         value = command[2]
-#         choices = [
-#             "SAM", "SAMPLE", "PEAK", "PEAKDETECT", "HIR", "HIRES", "AVE",
-#             "AVERAGE", "ENV", "ENVELOPE"
-#         ]
-#         if value in choices:
-#           self.acquire_mode = value
-#           return
-#       if command[1] == "STATE":
-#         if command[2] in ["1", "ON", "RUN"]:
-#           self.acquire_num = 1
-#           if self.acquire_single:
-#             self.trigger_state = "SAVE"
-#             self.acquire_state_running = False
-#           else:
-#             self.trigger_state = "TRIGGER"
-#             self.acquire_state_running = True
-#           return
-#         if command[2] in ["0", "OFF", "STOP"]:
-#           self.acquire_state_running = False
-#           self.trigger_state = "SAVE"
-#           return
-#       if command[1] == "STOPAFTER":
-#         if command[2] == "SEQUENCE":
-#           self.acquire_single = True
-#           return
-#         if command[2] == "RUNSTOP":
-#           self.acquire_single = False
-#           return
-#     if command[0] in ["CH1", "CH2", "CH3", "CH4"]:
-#       if command[1] == "SCALE":
-#         value = float(command[2])
-#         self.channels[command[0]]["scale"] = value
-#         return
-#       if command[1] == "POSITION":
-#         value = float(command[2])
-#         value = max(-5, min(5, value))
-#         self.channels[command[0]]["position"] = value
-#         return
-#       if command[1] == "OFFSET":
-#         value = float(command[2])
-#         self.channels[command[0]]["offset"] = value
-#         return
-#       if command[1] == "LABEL":
-#         value = " ".join(command[2:])
-#         if value[0] in ["'", '"']:
-#           value = value[1:]
-#         if value[-1] in ["'", '"']:
-#           value = value[:-1]
-#         self.channels[command[0]]["label"] = value
-#         return
-#       if command[1] == "BANDWIDTH":
-#         choices = [20e6, 200e6, 500e6]
-#         if command[2] == "FULL":
-#           self.channels[command[0]]["bandwidth"] = choices[-1]
-#         else:
-#           value = float(command[2])
-#           choices = sorted(choices, key=lambda c: (value - c)**2)
-#           self.channels[command[0]]["label"] = choices[0]
-#         return
-#       if command[1] == "TERMINATION":
-#         choices = [50, 75, 1e6]
-#         if command[2] == "MEG":
-#           self.channels[command[0]]["termination"] = 1e6
-#         elif command[2] in ["FIFTY", "FIF"]:
-#           self.channels[command[0]]["termination"] = 50
-#         else:
-#           value = float(command[2])
-#           choices = sorted(choices, key=lambda c: (value - c)**2)
-#           self.channels[command[0]]["termination"] = choices[0]
-#         return
-#       if command[1] == "INVERT":
-#         if command[2] in ["1", "ON"]:
-#           self.channels[command[0]]["invert"] = True
-#           return
-#         if command[2] in ["0", "OFF"]:
-#           self.channels[command[0]]["invert"] = False
-#           return
-#       if command[1] == "COUPLING":
-#         if command[2] in ["AC", "DC", "DCREJ", "DCREJECT"]:
-#           self.channels[command[0]]["coupling"] = command[2]
-#           return
-#       if command[1] == "PROBE":
-#         if command[2] == "GAIN":
-#           value = float(command[3])
-#           attenuations = [
-#               0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10,
-#               20, 50, 100, 200, 500, 1000, 2000, 2500, 5000, 10e3
-#           ]
-#           choices = [1 / a for a in attenuations]
-#           choices = sorted(choices, key=lambda c: (value - c)**2)
-#           self.channels[command[0]]["gain"] = choices[0]
-#           return
-#     if command[0] == "SELECT":
-#       if command[1] in ["CH1", "CH2", "CH3", "CH4"]:
-#         if command[2] in ["1", "ON"]:
-#           self.channels[command[1]]["active"] = True
-#           return
-#         if command[2] in ["0", "OFF"]:
-#           self.channels[command[1]]["active"] = False
-#           return
-#     if command[0] == "DATA":
-#       if command[1] == "SOURCE":
-#         value = command[2]
-#         choices = [
-#             "CH1", "CH2", "CH3", "CH4", "MATH", "REF1", "REF2", "REF3", "REF4",
-#             "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10",
-#             "D11", "D12", "D13", "D14", "D15", "DIGITAL", "RF_AMPLITUDE",
-#             "RF_FREQUENCY", "RF_PHASE", "RF_NORMAL", "RF_AVERAGE", "RF_MAXHOLD",
-#             "RF_MINHOLD"
-#         ]
-#         if value in choices:
-#           self.data_source = value
-#           return
-#       if command[1] == "START":
-#         self.data_start = max(1, int(float(command[2])))
-#         return
-#       if command[1] == "STOP":
-#         self.data_stop = max(1, int(float(command[2])))
-#         return
-#       if command[1] == "WIDTH":
-#         if int(command[2]) != 1:
-#           raise ValueError("Mock MDO3054 only knows DATA:WIDTH 1")
-#         return
-#       if command[1] == "ENCDG":
-#         if command[2] != "FASTEST":
-#           raise ValueError("Mock MDO3054 only knows DATA:ENCDG FASTEST")
-#         return
-#     if command[0] == "WAVFRM?":
-#       points = int(min(self.record_length,
-#                        self.data_stop - self.data_start + 1))
-#       x_incr = 1 / self.sample_frequency
-#       x_zero = -x_incr * points / 2 + self.horizontal_delay
-#       x_unit = "s"
-#       y_mult = 10 * self.channels[self.data_source]["scale"] / 250
-#       y_off = self.channels[self.data_source]["position"] / 10 * 250
-#       y_zero = self.channels[self.data_source]["offset"]
-#       y_unit = "V"
-#       wf_id = (f"{self.data_source}, "
-#                f"{self.channels[self.data_source]['coupling']} coupling, "
-#                f"{self.channels[self.data_source]['scale']}V/div, "
-#                f"{self.horizontal_scale}s/div, "
-#                f"{self.record_length} points")
+      # Transform real world units to ADC counts
+      x_zero = -x_incr * points / 2 + h_delay
+      y_mult = 10 * scale / 254
+      y_off = position / 10 * 254
+      y_zero = offset
+      y = np.floor((y - y_zero) / y_mult + y_off + 0.5)
+      y = np.clip(y, -127, 127)
 
-#       x = x_zero + x_incr * np.arange(points).astype(np.float32)
-#       y_real = self.waveform_amp * np.sin(
-#           x * 2 * np.pi * 1e3) + self.waveform_offset
-#       y = np.clip(np.floor((y_real - y_zero) / y_mult + y_off + 0.5), -127, 127)
+      waveform = y.astype(">b").tobytes()
+      n_bytes = f"{len(waveform)}"
 
-#       waveform = y.astype(">b").tobytes()
-#       n_bytes = f"{len(waveform)}"
-
-#       real_data = (f':WFMOUTPRE:WFID "{wf_id}";'
-#                    f"NR_PT {points};"
-#                    f'XUNIT "{x_unit}";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
-#                    f'YUNIT "{y_unit}";YMULT {y_mult:.4E};'
-#                    f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
-#                    "BYT_OR MSB;BYT_NR 1;BN_FMT RI;"
-#                    f":CURVE #{len(n_bytes)}{n_bytes}")
-#       real_data = real_data.encode(encoding="ascii") + waveform + b"\n"
-
-#       self.queue_rx.append(real_data)
-#       return
-
-#     raise KeyError(f"Unknown command {command}")
-
-#   def query(self, command: str) -> str:
-#     self.queue_tx.append(command)
-
-#     command = re.split(":| ", command.upper())
-#     if command[0] == "*IDN?":
-#       return "TEKTRONIX,MDO3054"
-#     if command[0] == "HORIZONTAL":
-#       if command[1] == "RECORDLENGTH?":
-#         return f"{self.record_length}"
-#       if command[1] == "SCALE?":
-#         return f"{self.horizontal_scale:.6E}"
-#       if command[1] == "SAMPLERATE?":
-#         return f"{self.sample_frequency:.6E}"
-#       if command[1] == "DELAY":
-#         if command[2] == "TIME?":
-#           return f"{self.horizontal_delay:.6E}"
-#     if command[0] == "TRIGGER":
-#       if command[1] == "STATE?":
-#         return self.trigger_state
-#       if command[1] == "A":
-#         if command[2] == "MODE?":
-#           return f"{self.trigger_a_mode}"
-#         if command[2] == "EDGE":
-#           if command[3] == "SOURCE?":
-#             return f"{self.trigger_a_source}"
-#           if command[3] == "COUPLING?":
-#             return f"{self.trigger_a_coupling}"
-#           if command[3] == "SLOPE?":
-#             return f"{self.trigger_a_slope}"
-#         if command[2] == "LEVEL":
-#           if command[3][:-1] in ["CH1", "CH2", "CH3", "CH4"]:
-#             return f"{self.channels[command[3][:-1]]['trigger']}"
-#     if command[0] == "ACQUIRE":
-#       if command[1] == "STATE?":
-#         return "1" if self.acquire_state_running else "0"
-#       if command[1] == "NUMACQ?":
-#         if not self.acquire_single:
-#           self.acquire_num += 1
-#         return f"{self.acquire_num}"
-#       if command[1] == "MODE?":
-#         return f"{self.acquire_mode}"
-#     if command[0] in ["CH1", "CH2", "CH3", "CH4"]:
-#       if command[1] == "SCALE?":
-#         return f"{self.channels[command[0]]['scale']:.6E}"
-#       if command[1] == "POSITION?":
-#         return f"{self.channels[command[0]]['position']:.6E}"
-#       if command[1] == "OFFSET?":
-#         return f"{self.channels[command[0]]['offset']:.6E}"
-#       if command[1] == "LABEL?":
-#         return f'"{self.channels[command[0]]["label"]}"'
-#       if command[1] == "BANDWIDTH?":
-#         return f"{self.channels[command[0]]['bandwidth']:.6E}"
-#       if command[1] == "TERMINATION?":
-#         return f"{self.channels[command[0]]['termination']:.6E}"
-#       if command[1] == "INVERT?":
-#         return f"{int(self.channels[command[0]]['invert'])}"
-#       if command[1] == "COUPLING?":
-#         return f"{self.channels[command[0]]['coupling']}"
-#       if command[1] == "PROBE":
-#         if command[2] == "GAIN?":
-#           return f"{self.channels[command[0]]['gain']:.6E}"
-#     if command[0] == "SELECT":
-#       if command[1][:-1] in ["CH1", "CH2", "CH3", "CH4"]:
-#         return f"{int(self.channels[command[1][:-1]]['active'])}"
-
-#     raise KeyError(f"Unknown query {command}")
+      header = (f':WFMOUTPRE:WFID "{wf_id}";'
+                f"NR_PT {points};"
+                f'XUNIT "s";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
+                f'YUNIT "V";YMULT {y_mult:.4E};'
+                f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
+                "BYT_OR MSB;BYT_NR 1;BN_FMT RI;"
+                f":CURVE #{len(n_bytes)}{n_bytes}")
+      return header.encode(encoding="ascii") + waveform + b"\n"
+    return super().read_raw()
 
 
 class TestMSO4000(base.TestBase):
   """Test Equipment Tektronix MSO4000
   """
 
-  # When true, connect CH1 to probe compensation, and all others open
+  # When true, connect CH1 to probe compensation with fixed 10x probe,
+  # and all others open
   _TRY_REAL_SCOPE = False
 
   def setUp(self) -> None:

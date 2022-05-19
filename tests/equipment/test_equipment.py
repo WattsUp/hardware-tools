@@ -72,8 +72,8 @@ class TestEquipment(base.TestBase):
     command = "*IDN?"
     e.send(command)
 
-    self.assertEqual(1, len(instrument.queue_tx))
-    self.assertEqual(command, instrument.queue_tx[0])
+    self.assertEqual(1, len(instrument.queue_rx))
+    self.assertEqual(command, instrument.queue_rx[0])
 
   def test_reset(self):
     name = "Mock Equipment"
@@ -85,9 +85,9 @@ class TestEquipment(base.TestBase):
 
     e.reset()
 
-    self.assertEqual(2, len(instrument.queue_tx))
-    self.assertEqual("*RST", instrument.queue_tx[0])
-    self.assertEqual("*WAI", instrument.queue_tx[1])
+    self.assertEqual(2, len(instrument.queue_rx))
+    self.assertEqual("*RST", instrument.queue_rx[0])
+    self.assertEqual("*WAI", instrument.queue_rx[1])
 
   def test_ask(self):
     name = "Mock Equipment"
@@ -101,8 +101,8 @@ class TestEquipment(base.TestBase):
     instrument.query_map[command.removesuffix("?")] = reply
 
     self.assertEqual(reply, e.ask(command))
-    self.assertEqual(1, len(instrument.queue_tx))
-    self.assertEqual(command, instrument.queue_tx[0])
+    self.assertEqual(1, len(instrument.queue_rx))
+    self.assertEqual(command, instrument.queue_rx[0])
 
   def test_ask_and_wait(self):
     name = "Mock Equipment"
@@ -116,26 +116,26 @@ class TestEquipment(base.TestBase):
     command = "*IDN?"
     reply = "FAKE:SERIAL_NUMBER"
     loading = "FAKE:LOADING"
-    instrument.queue_rx.extend([loading] * count)
-    instrument.queue_rx.append(reply)
+    instrument.queue_tx.extend([loading] * count)
+    instrument.queue_tx.append(reply)
 
     self.assertEqual(reply, e.ask_and_wait(command, [reply]))
-    self.assertListEqual([command] * (count + 1), instrument.queue_tx)
+    self.assertListEqual([command] * (count + 1), instrument.queue_rx)
 
     count = self._RNG.integers(1, 4)
 
-    instrument.queue_tx = []
     instrument.queue_rx = []
-    instrument.queue_rx.extend([loading] * count)
-    instrument.queue_rx.append(reply)
+    instrument.queue_tx = []
+    instrument.queue_tx.extend([loading] * count)
+    instrument.queue_tx.append(reply)
 
     self.assertEqual(
         reply, e.ask_and_wait(command, [reply], additional_command="RESET"))
-    self.assertListEqual(["RESET", command] * (count + 1), instrument.queue_tx)
+    self.assertListEqual(["RESET", command] * (count + 1), instrument.queue_rx)
 
-    instrument.queue_tx = []
     instrument.queue_rx = []
-    instrument.queue_rx.extend([loading] * 100)
+    instrument.queue_tx = []
+    instrument.queue_tx.extend([loading] * 100)
 
     self.assertRaises(TimeoutError,
                       e.ask_and_wait,
@@ -151,7 +151,7 @@ class TestEquipment(base.TestBase):
 
     instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     reply = b"FAKE:SERIAL_NUMBER"
-    instrument.queue_rx.append(reply)
+    instrument.queue_tx.append(reply)
 
     self.assertEqual(reply, e.receive())
-    self.assertEqual(0, len(instrument.queue_tx))
+    self.assertEqual(0, len(instrument.queue_rx))
