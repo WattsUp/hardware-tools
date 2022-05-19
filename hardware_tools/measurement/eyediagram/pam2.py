@@ -11,9 +11,9 @@ from matplotlib import pyplot
 
 from hardware_tools import strformat
 from hardware_tools.math import gaussian, lines, stats
+from hardware_tools.math.lines import EdgePolarity
 from hardware_tools.measurement.mask import Mask
 from hardware_tools.measurement.eyediagram import cdr, eyediagram
-from hardware_tools.measurement.eyediagram.eyediagram import ClockPolarity
 
 try:
   from hardware_tools.measurement.eyediagram import _pam2
@@ -767,10 +767,10 @@ class PAM2(eyediagram.EyeDiagram):
 
 
 def _filter_edge_polarity(edges: tuple[np.ndarray],
-                          polarity: ClockPolarity) -> np.ndarray:
+                          polarity: EdgePolarity) -> np.ndarray:
   """Filter edges to fit polarity restrictions and return
 
-  ClockPolarity.BOTH concatenates then sorts rising and falling edges
+  EdgePolarity.BOTH concatenates then sorts rising and falling edges
 
   Args:
     edges: Tuple[rising, falling] List of edge timestamps, see edges.get_np
@@ -779,9 +779,9 @@ def _filter_edge_polarity(edges: tuple[np.ndarray],
   Returns:
     Single dimensional array of edges
   """
-  if polarity is ClockPolarity.RISING:
+  if polarity is EdgePolarity.RISING:
     return edges[0]
-  elif polarity is ClockPolarity.FALLING:
+  elif polarity is EdgePolarity.FALLING:
     return edges[1]
   return np.sort(np.concatenate(edges))
 
@@ -839,7 +839,7 @@ def _runner_levels(waveform_y: np.ndarray, n_max: int) -> dict:
 
 def _runner_cdr(waveform_t: np.ndarray, waveform_y: np.ndarray, y_rise: float,
                 y_half: float, y_fall: float, cdr_obj: cdr.CDR,
-                polarity: ClockPolarity) -> Tuple[np.ndarray, np.ndarray]:
+                polarity: EdgePolarity) -> Tuple[np.ndarray, np.ndarray]:
   """Recover a clock from the data signal
 
   Args:

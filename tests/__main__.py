@@ -25,15 +25,17 @@ def post_tests():
     methods = sorted(d["methods"].items(),
                      key=lambda item: -item[1])[:n_slowest]
 
-  n_pad = max([len(k) for k, _ in classes]) + 1
   print(f"{n_slowest} slowest classes")
-  for cls, duration in classes:
-    print(f"  {cls:{n_pad}}: {duration:6.2f}s")
+  if len(classes) != 0:
+    n_pad = max([len(k) for k, _ in classes]) + 1
+    for cls, duration in classes:
+      print(f"  {cls:{n_pad}}: {duration:6.2f}s")
 
-  n_pad = max([len(k) for k, _ in methods]) + 1
   print(f"{n_slowest} slowest tests")
-  for method, duration in methods:
-    print(f"  {method:{n_pad}}: {duration:6.2f}s")
+  if len(methods) != 0:
+    n_pad = max([len(k) for k, _ in methods]) + 1
+    for method, duration in methods:
+      print(f"  {method:{n_pad}}: {duration:6.2f}s")
 
 
 pre_tests()

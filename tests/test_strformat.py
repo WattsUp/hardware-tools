@@ -6,6 +6,7 @@ import random
 import string
 import time
 
+import numpy as np
 import time_machine
 
 from hardware_tools import strformat
@@ -59,6 +60,10 @@ class TestStringFormat(base.TestBase):
 
     x = 2
     s = strformat.metric_prefix(x, unit=unit, specifier=specifier, threshold=2)
+    self.assertEqual(s, f"{x:{specifier}}  {unit}")
+
+    x = np.nan
+    s = strformat.metric_prefix(x, unit=unit, specifier=specifier)
     self.assertEqual(s, f"{x:{specifier}}  {unit}")
 
   def test_time_str(self):

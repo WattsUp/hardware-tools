@@ -5,9 +5,36 @@ Binning, Uncertain Value, etc.
 
 from __future__ import annotations
 
+import enum
 from typing import Iterable, Tuple
 
 import numpy as np
+
+
+class Comparison(enum.Enum):
+  """Comparison enumeration
+
+  LESS: Value is less than target
+  LESSEQUAL: Value is less than or equal to target
+  MORE: Value is more than target
+  MOREEQUAL: Value is more than or equal to target
+  EQUAL: Value is equal to target
+  UNEQUAL: Value is not equal to target
+  WITHIN: Value is inside the target bounds (lower, upper)
+  WITHININC: Value is inside the target bounds [lower, upper]
+  OUTSIDE: Value is outside the target bounds (lower, upper)
+  OUTSIDEINC: Value is outside the target bounds [lower, upper]
+  """
+  LESS = 1
+  LESSEQUAL = 2
+  MORE = 3
+  MOREEQUAL = 4
+  EQUAL = 5
+  UNEQUAL = 6
+  WITHIN = 7
+  WITHININC = 8
+  OUTSIDE = 9
+  OUTSIDEINC = 10
 
 
 def bin_linear(y: np.ndarray,

@@ -1,11 +1,14 @@
 """Equipment base class to interface to physical testing hardware
 """
 
-from abc import ABC, abstractmethod
+from __future__ import annotations
+
+from abc import ABC
 import time
-from typing import Any, Iterable
+from typing import Iterable
 
 import pyvisa
+from pyvisa import resources
 
 # TODO (WattsUp) [Future] add more scopes and other instrument types
 
@@ -21,24 +24,42 @@ class Equipment(ABC):
   settings = []
   commands = []
 
-  def __init__(self, address: str, name: str = "") -> None:
+  def __init__(self,
+               address: str,
+               rm: pyvisa.ResourceManager = None,
+               name: str = "") -> None:
     """Initialize Equipment by connecting to it
 
     Args:
       address: Address to the Equipment (VISA resource string)
+      rm: pyvisa ResourceManager to connect via, None for default
       name: Name of the Equipment
     """
+    self._instrument = None
     self._address = address
     self._name = name
 
-    rm = pyvisa.ResourceManager()
-    self._instrument = rm.open_resource(address)
+    if rm is None:
+      rm = pyvisa.ResourceManager()
+    resource = rm.open_resource(address)
+
+    if not isinstance(resource, resources.MessageBasedResource):
+      raise NotImplementedError("Only know MessageBasedResource")
+    self._instrument = resource
 
   def __del__(self) -> None:
-    try:
+    self.close()
+
+  def close(self) -> None:
+    if self._instrument is not None:
       self._instrument.close()
-    except AttributeError:  # pragma: no cover
-      pass
+      self._instrument = None
+
+  def __enter__(self) -> Equipment:
+    return self
+
+  def __exit__(self, *args) -> None:
+    self.close()
 
   def __repr__(self) -> str:
     return f"{self._name} @ {self._address}"
@@ -50,6 +71,12 @@ class Equipment(ABC):
       command: Command string to write
     """
     self._instrument.write(command)
+
+  def reset(self) -> None:
+    """Send reset command
+    """
+    self.send("*RST")
+    self.send("*WAI")  # Wait until complete
 
   def ask(self, command: str) -> str:
     """Send a command to the Equipment and receive a reply
@@ -108,38 +135,3 @@ class Equipment(ABC):
       Reply as bytes
     """
     return self._instrument.read_raw()
-
-  @abstractmethod
-  def configure(self, setting: str, value: Any) -> Any:
-    """Configure a setting to a new value
-
-    Args:
-      setting: The setting to change (see self.settings)
-      value: The value to change to
-
-    Returns:
-      Setting change validation
-
-    Raises:
-      KeyError if setting is improper
-
-      ValueError if value is improper
-    """
-    pass  # pragma: no cover
-
-  @abstractmethod
-  def command(self,
-              command: str,
-              timeout: float = 1,
-              silent: bool = True) -> None:
-    """Perform a command sequence
-
-    Args:
-      command: The command to perform (see self.commands)
-      timeout: Time in seconds to wait until giving up
-      silent: True will not print anything except errors
-
-    Raises:
-      TimeoutError if timeout was exceeded
-    """
-    pass  # pragma: no cover

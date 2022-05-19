@@ -71,10 +71,13 @@ class TestBase(unittest.TestCase):
 
   @classmethod
   def setUpClass(cls):
+    print(f"{cls.__module__}.{cls.__qualname__}[", end="", flush=True)
     cls._CLASS_START = time.perf_counter()
 
   @classmethod
   def tearDownClass(cls):
+    print("]done", flush=True)
+    # time.sleep(10)
     duration = time.perf_counter() - cls._CLASS_START
     with autodict.JSONAutoDict(TEST_LOG) as d:
       d["classes"][f"{cls.__module__}.{cls.__qualname__}"] = duration
