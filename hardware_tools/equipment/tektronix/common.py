@@ -2,7 +2,8 @@
 """
 
 import re
-from typing import Tuple
+import struct
+from typing import Any, Tuple
 
 import numpy as np
 
@@ -182,16 +183,16 @@ TEK_TYPES = {
 }
 
 
-def parse_wfm(data: bytes,
-              raw: bool = False,
-              add_noise: bool = False) -> Tuple[np.ndarray, dict]:
-  """Parse wfm file format
+def parse_waveform_query(data: bytes,
+                         raw: bool = False,
+                         add_noise: bool = False) -> Tuple[np.ndarray, dict]:
+  """Parse waveform query format, output of WAVFRM?, also ISF files
 
   Args:
-    data: Raw data from .wfm file or equivalent source
+    data: Raw data from WAVFRM? query or equivalent source
     raw: True will return raw ADC values, False will transform into
       real-world units
-    add_noise: True will add uniform noise to the LSB for antialiasing
+    add_noise: True will add uniform noise to the LSB for anti-aliasing
 
   Returns:
     Samples: [[x0, x1,..., xn], [y0, y1,..., yn]]
@@ -207,7 +208,6 @@ def parse_wfm(data: bytes,
       clipping_bottom: bool = waveform exceeded ADC limits
 
   Raises:
-
     ValueError if a parsing error was encountered
   """
   data_list = data.split(b";:CURVE ")
@@ -288,3 +288,61 @@ def parse_wfm(data: bytes,
   info_dict["y_incr"] = y_mult
 
   return (np.stack([x, y]), info_dict)
+
+
+def parse_wfm_file(data: bytes,
+                   raw: bool = False,
+                   add_noise: bool = False) -> Tuple[np.ndarray, dict]:
+  """Parse wfm file format
+
+  Args:
+    data: Raw data from .wfm file or equivalent source
+    raw: True will return raw ADC values, False will transform into
+      real-world units
+    add_noise: True will add uniform noise to the LSB for anti-aliasing
+
+  Returns:
+    Samples: [[x0, x1,..., xn], [y0, y1,..., yn]]
+    Dictionary of sampling information:
+      config_string: str = Human readable string describing configuration
+      x_unit: str = Unit string for horizontal axis
+      y_unit: str = Unit string for vertical axis
+      x_incr: float = Step between horizontal axis values
+      y_incr: float = Step between vertical axis values (LSB)
+      y_clip_min: float = Minimum input without clipping
+      y_clip_max: float = Maximum input without clipping
+      clipping_top: bool = waveform exceeded ADC limits
+      clipping_bottom: bool = waveform exceeded ADC limits
+
+  Raises:
+    ValueError if a parsing error was encountered
+  """
+  size_static_header = 78
+  if len(data) < size_static_header:
+    raise ValueError("File is shorter than minimum")
+  # Section: Waveform static file information
+
+  endianness = "<"
+  if data[:2] == b"\xF0\xF0":
+    endianness = ">"
+  elif data[:2] != b"\x0F\x0F":
+    raise ValueError(f"File unrecognized start {data[:2]}")
+
+  version = int(struct.unpack_from(f"{endianness}3s", data, 0x007)[0])
+  if version > 3:
+    raise ValueError("Only versions 3 and below are supported")
+
+  digits_per_byte: int = struct.unpack_from(f"{endianness}b", data, 0x00A)[0]
+  bytes_until_eof: int = struct.unpack_from(f"{endianness}l", data, 0x00B)[0]
+  bytes_per_point: int = struct.unpack_from(f"{endianness}b", data, 0x00F)[0]
+  buffer_offset: int = struct.unpack_from(f"{endianness}l", data, 0x010)[0]
+  label: str = (struct.unpack_from(f"{endianness}32s", data,
+                                   0x028)[0]).decode(encoding="utf-8")
+  n_fast_frames: int = struct.unpack_from(f"{endianness}L", data, 0x048)[0]
+  size_wfm_header: int = struct.unpack_from(f"{endianness}H", data, 0x04C)[0]
+
+  if len(data) < (size_static_header + size_wfm_header):
+    raise ValueError("File is shorter than minimum")
+  # Section: Waveform header
+  print(size_wfm_header)
+  return None

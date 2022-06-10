@@ -12,17 +12,17 @@ class TestCommon(base.TestBase):
   """Test Equipment Tektronix Common
   """
 
-  def test_parse_wfm(self):
+  def test_parse_waveform_query(self):
     data = b""
-    self.assertRaises(ValueError, common.parse_wfm, data)
+    self.assertRaises(ValueError, common.parse_waveform_query, data)
     data = (b":WFMOUTPRE:NR_PT 1;XINCR 1;XZERO 0;XUNIT s;WFID empty;BYT_OR MSB;"
             b"BN_FMT RI;BYT_NR 4;:CURVE #11\0\0\0\0")
-    self.assertRaises(ValueError, common.parse_wfm, data)
+    self.assertRaises(ValueError, common.parse_waveform_query, data)
 
     with open(self._DATA_ROOT.joinpath("tektronix", "waveform.0.isf"),
               "rb") as file:
       data = file.read()
-      samples, info = common.parse_wfm(data, add_noise=True)
+      samples, info = common.parse_waveform_query(data, add_noise=True)
       self.assertIsInstance(samples, np.ndarray)
       self.assertEqual(samples.shape, (2, 20000000))
       target = {
@@ -42,7 +42,7 @@ class TestCommon(base.TestBase):
     with open(self._DATA_ROOT.joinpath("tektronix", "waveform.1.isf"),
               "rb") as file:
       data = file.read()
-      samples, info = common.parse_wfm(data, raw=True)
+      samples, info = common.parse_waveform_query(data, raw=True)
       self.assertIsInstance(samples, np.ndarray)
       self.assertEqual(samples.shape, (2, 10000))
       target = {
@@ -56,6 +56,32 @@ class TestCommon(base.TestBase):
           "y_unit": "ADC Counts",
           "y_clip_min": -127,
           "y_clip_max": 127
+      }
+      self.assertDictEqual(target, info)
+
+  def test_parse_wfm_file(self):
+    data = b""
+    self.assertRaises(ValueError, common.parse_wfm_file, data)
+    data = b"12" * 78
+    self.assertRaises(ValueError, common.parse_wfm_file, data)
+
+    with open(self._DATA_ROOT.joinpath("tektronix", "waveform.2.wfm"),
+              "rb") as file:
+      data = file.read()
+      samples, info = common.parse_wfm_file(data, add_noise=True)
+      self.assertIsInstance(samples, np.ndarray)
+      self.assertEqual(samples.shape, (2, 20000000))
+      target = {  # TODO (WattsUp) Update this target
+          "clipping_bottom": False,
+          "clipping_top": False,
+          "config_string": "Ch1, DC coupling, 10.00uW/div, 400.0us/div, "
+                           "20000000 points, Sample mode",
+          "x_incr": 2e-10,
+          "x_unit": "s",
+          "y_incr": 1.5625e-9,
+          "y_unit": "W",
+          "y_clip_min": -1.73984375e-05,
+          "y_clip_max": 8.49984375e-05
       }
       self.assertDictEqual(target, info)
 
