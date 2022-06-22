@@ -33,7 +33,7 @@ def sample_vertical(waveform_y: np.ndarray, centers_t: List[float],
       y_1_cross: List of samples within the y_cross window, logical 1
       y_avg: List of samples within [0, 1]UI
       transitions: Dictionary of collected transitions, see MeasuresPAM2
-      edge_dir: List of edge directions, True=rising, False=falling, None=none
+      edge_dir: List of edge directions, 1=rising, -1=falling, 0=none
   """
   i_width = int((t_sym / t_delta) + 0.5) + 2
   t_width_ui = (i_width * t_delta / t_sym)
