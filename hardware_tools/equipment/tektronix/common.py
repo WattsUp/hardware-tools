@@ -324,6 +324,7 @@ def parse_wfm_file(data: bytes,
       clipping_bottom: bool = waveform exceeded ADC limits
       timestamp: datetime = Timestamp of trigger
         If data has fast frames, this will be a list of datetimes
+        The resolution of datetime is µs so some resolution may be loss
 
   Raises:
     ValueError if a parsing error was encountered
@@ -335,9 +336,10 @@ def parse_wfm_file(data: bytes,
 
   # Section: Waveform static file information
   endianness = "<"
-  if data[:2] == b"\xF0\xF0":
-    endianness = ">"
-  elif data[:2] != b"\x0F\x0F":
+  # TODO (WattsUp) Find a wfm file with big endianness to test against
+  # if data[:2] == b"\xF0\xF0":
+  #   endianness = ">"
+  if data[:2] != b"\x0F\x0F":
     raise ValueError(f"Data unrecognized start {data[:2]}")
 
   def unpack(fmt: str, offset: int) -> Any:
@@ -452,7 +454,7 @@ def parse_wfm_file(data: bytes,
   info_dict = {
       "config_string": f"Label: {label}, "
                        f"{n_samples_all if include_prepost else n_samples} "
-                       f"points, {n_frames} frames",
+                       f"points, {n_frames} frame{'s' if n_frames > 1 else ''}",
       "x_unit": imp_dim_units,
       "y_unit": "ADC Counts",
       "x_incr": imp_dim_scale,
@@ -508,4 +510,5 @@ def parse_wfm_file(data: bytes,
     if not include_prepost:
       wave = wave[:, n_precharge:(n_precharge + n_samples)]
 
+  info_dict["timestamp"] = timestamp
   return wave, info_dict
