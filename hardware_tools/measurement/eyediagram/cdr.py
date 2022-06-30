@@ -1,6 +1,7 @@
 """Clock Data Recovery worker
 """
 
+import traceback
 from typing import Tuple
 
 import numpy as np
@@ -8,6 +9,7 @@ import numpy as np
 try:
   from hardware_tools.measurement.eyediagram import _cdr
 except ImportError:
+  traceback.print_exc()
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.measurement.eyediagram import _cdr_fb as _cdr
 

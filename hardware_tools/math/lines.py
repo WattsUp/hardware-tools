@@ -6,6 +6,7 @@ Intersections, edges, drawing, etc.
 from __future__ import annotations
 
 from enum import Enum
+import traceback
 from typing import List
 
 import numpy as np
@@ -14,6 +15,7 @@ try:
   from hardware_tools.math._lines import *  # pylint: disable=wildcard-import
   # raise ImportError
 except ImportError:
+  traceback.print_exc()
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.math._lines_fb import *  # pylint: disable=wildcard-import, unused-wildcard-import
 

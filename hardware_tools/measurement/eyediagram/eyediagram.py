@@ -9,6 +9,7 @@ import datetime
 import io
 import json
 import os
+import traceback
 from typing import Any, List, Union
 
 import colorama
@@ -26,6 +27,7 @@ from hardware_tools.measurement.mask import Mask
 try:
   from hardware_tools.measurement.eyediagram import _eyediagram
 except ImportError:
+  traceback.print_exc()
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.measurement.eyediagram import _eyediagram_fb as _eyediagram
 
