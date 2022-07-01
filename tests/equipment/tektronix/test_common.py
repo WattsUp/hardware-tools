@@ -21,26 +21,60 @@ class TestCommon(base.TestBase):
             b"BN_FMT RI;BYT_NR 4;:CURVE #11\0\0\0\0")
     self.assertRaises(ValueError, common.parse_waveform_query, data)
 
+    # waveform.0 is 16b and has a CSV copy to compare against
     with open(self._DATA_ROOT.joinpath("tektronix", "waveform.0.isf"),
               "rb") as file:
       data = file.read()
-      samples, info = common.parse_waveform_query(data, add_noise=True)
-      self.assertIsInstance(samples, np.ndarray)
-      self.assertEqual(samples.shape, (2, 20000000))
+      samples_noisy, info = common.parse_waveform_query(data, add_noise=True)
+      self.assertIsInstance(samples_noisy, np.ndarray)
+      self.assertEqual(samples_noisy.shape, (2, 10000))
       target = {
           "clipping_bottom": False,
           "clipping_top": False,
-          "config_string": "Ch1, DC coupling, 10.00uW/div, 400.0us/div, "
-                           "20000000 points, Sample mode",
-          "x_incr": 2e-10,
+          "config_string": "Ch1, DC coupling, 500.0mV/div, 400.0us/div, "
+                           "10000 points, Sample mode",
+          "x_incr": 4e-7,
           "x_unit": "s",
-          "y_incr": 1.5625e-9,
-          "y_unit": "W",
-          "y_clip_min": -1.73984375e-05,
-          "y_clip_max": 8.49984375e-05
+          "y_incr": 7.8125e-05,
+          "y_unit": "V",
+          "y_clip_min": -0.559921875,
+          "y_clip_max": 4.559921875
       }
       self.assertDictEqual(target, info)
 
+      samples, info = common.parse_waveform_query(data, add_noise=False)
+      self.assertIsInstance(samples, np.ndarray)
+      self.assertEqual(samples.shape, (2, 10000))
+      target = {
+          "clipping_bottom": False,
+          "clipping_top": False,
+          "config_string": "Ch1, DC coupling, 500.0mV/div, 400.0us/div, "
+                           "10000 points, Sample mode",
+          "x_incr": 4e-7,
+          "x_unit": "s",
+          "y_incr": 7.8125e-05,
+          "y_unit": "V",
+          "y_clip_min": -0.559921875,
+          "y_clip_max": 4.559921875
+      }
+      self.assertDictEqual(target, info)
+
+      # Validate a uniform distribution
+      noise: np.ndarray = samples_noisy[1] - samples[1]
+      self.assertEqualWithinSampleError(0.0, noise.mean(), noise.size)
+      noise_width = noise.max() - noise.min()
+      self.assertEqualWithinSampleError(noise_width,
+                                        np.sqrt(noise.std()**2 * 12),
+                                        noise.size)
+
+      # Compare against CSV the scope also saved
+      path = self._DATA_ROOT.joinpath("tektronix", "waveform.0.csv")
+      csv_samples = np.genfromtxt(path, delimiter=",").T
+      for i in range(samples.shape[1]):
+        self.assertEqualWithinError(csv_samples[0, i], samples[0, i], 1e-6)
+        self.assertEqualWithinError(csv_samples[1, i], samples[1, i], 1e-6)
+
+    # waveform.1 is 8b
     with open(self._DATA_ROOT.joinpath("tektronix", "waveform.1.isf"),
               "rb") as file:
       data = file.read()
@@ -245,3 +279,13 @@ class TestCommon(base.TestBase):
 
     v = 3.14
     self.assertEqual(common.parse_threshold(v), v)
+
+  def test_parse_sample_mode(self):
+    v = "ENV"
+    self.assertEqual(common.parse_sample_mode(v), common.SampleMode.ENVELOPE)
+
+    v = "ENVELOPE"
+    self.assertEqual(common.parse_sample_mode(v), common.SampleMode.ENVELOPE)
+
+    v = "EN"
+    self.assertEqual(common.parse_sample_mode(v), v)
