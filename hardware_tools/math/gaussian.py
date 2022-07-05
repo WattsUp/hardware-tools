@@ -96,8 +96,8 @@ class GaussianMix:
     if len(self.components) == 1:
       return self.components[0].mean
 
-    x_min = min([c.mean for c in self.components])
-    x_max = max([c.mean for c in self.components])
+    x_min = min(c.mean for c in self.components)
+    x_max = max(c.mean for c in self.components)
     x = np.linspace(x_min, x_max, 1000)
     y = self.compute(x)
     x = x[y.argmax()]

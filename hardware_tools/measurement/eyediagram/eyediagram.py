@@ -258,7 +258,7 @@ class Measures(ABC):
       item = getattr(self, key)
       if isinstance(item, dict):
         print("")
-        kk_max = max([len(kk) for kk in item])
+        kk_max = max(len(kk) for kk in item)
         for kk, vv in item.items():
           print(f"  {kk:{kk_max}}: ", end="")
           if isinstance(vv, np.ndarray):
