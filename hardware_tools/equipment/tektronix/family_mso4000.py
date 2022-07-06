@@ -67,7 +67,7 @@ class _MSO4000Channel(Channel):
     #   file.write(data)
     self._parent.send("HEADER 0")
 
-    return common.parse_wfm(data, raw=raw, add_noise=add_noise)
+    return common.parse_waveform_query(data, raw=raw, add_noise=add_noise)
 
 
 class _MSO4000AnalogChannel(AnalogChannel, _MSO4000Channel):

@@ -490,7 +490,7 @@ def intersection(p1: float,
         r2: float,
         s1: float,
         s2: float,
-        segments: bool = True) -> Tuple(float):
+        segments: bool = True) -> Tuple[float]:
   point = intersection_c(p1, p2, q1, q2, r1, r2, s1, s2, segments)
   if point is None:
     return None

@@ -28,104 +28,6 @@ class SampleMode(enum.Enum):
   ENVELOPE = 3
 
 
-class Trigger(ABC):
-  """Base Scope Trigger class
-  """
-
-  def __init__(self, holdoff: float = 20e-9) -> None:
-    """Create a trigger
-
-    Args:
-      holdoff: Time after trigger than a new trigger cannot be generated
-    """
-    super().__init__()
-    self.holdoff = holdoff
-
-
-class TriggerEdge(Trigger):
-  """Trigger on edge
-  """
-
-  def __init__(self,
-               src: str,
-               level: float,
-               slope: EdgePolarity = EdgePolarity.RISING,
-               dc_coupling: bool = True,
-               holdoff: float = 20e-9) -> None:
-    """Create an edge coupling trigger
-
-    Args:
-      src: Source of trigger, CH1, CH2,...
-      level: Decision level for edge
-      slope: Direction of edge, BOTH will trigger on either polarity
-      dc_coupling: True will DC couple the trigger source, False will AC couple
-      holdoff: Time after trigger than a new trigger cannot be generated
-    """
-    super().__init__(holdoff=holdoff)
-    self.src = src
-    self.level = level
-    self.slope = slope
-    self.dc_coupling = dc_coupling
-
-
-class TriggerEdgeTimeout(Trigger):
-  """Trigger on edge timeout (edge that stays transitioned for a period)
-  """
-
-  def __init__(self,
-               src: str,
-               level: float,
-               timeout: float,
-               slope: EdgePolarity = EdgePolarity.RISING,
-               holdoff: float = 20e-9) -> None:
-    """Create an edge coupling trigger
-
-    Args:
-      src: Source of trigger, CH1, CH2,...
-      level: Decision level for edge
-      timeout: Duration of edge timeout in seconds.
-        timeout=0.1, slope=RISING will trigger when src stays high for 0.1s
-      slope: Direction of edge, BOTH will trigger on either polarity
-      holdoff: Time after trigger than a new trigger cannot be generated
-    """
-    super().__init__(holdoff=holdoff)
-    self.src = src
-    self.level = level
-    self.timeout = timeout
-    self.slope = slope
-
-
-class TriggerPulseWidth(Trigger):
-  """Trigger on pulse width
-  """
-
-  def __init__(self,
-               src: str,
-               level: float,
-               width: Union[float, Tuple[float, float]],
-               comparison: Comparison,
-               positive: bool = True,
-               holdoff: float = 20e-9) -> None:
-    """Create a pulse width trigger
-
-    Args:
-      src: Source of trigger, CH1, CH2,...
-      level: Decision level for edge
-      width: Pulse width, or (lower, upper) limits for WITHIN/OUTSIDE
-      comparison: comparison operator to trigger off of, EQUAL/UNEQUAL has a
-        tolerance, usually ±5%. Use WITHIN/OUTSIDE for finer control
-      positive: True will trigger of of positive polarity pulses. False will use
-        negative polarity pulses
-      holdoff: Time after trigger than a new trigger cannot be generated
-    """
-    super().__init__(holdoff=holdoff)
-    self.src = src
-    self.level = level
-    self.width = width
-    self.comparison = comparison
-    self.positive = positive
-
-
 class Channel(ABC):
   """Base Scope Channel
 
@@ -386,6 +288,110 @@ class DigitalChannel(Channel):
     Changes will immediately configure the scope.
     """
     pass  # pragma: no cover
+
+
+class Trigger(ABC):
+  """Base Scope Trigger class
+  """
+
+  def __init__(self, holdoff: float = 20e-9) -> None:
+    """Create a trigger
+
+    Args:
+      holdoff: Time after trigger than a new trigger cannot be generated
+    """
+    super().__init__()
+    self.holdoff = holdoff
+
+
+class TriggerEdge(Trigger):
+  """Trigger on edge
+  """
+
+  def __init__(self,
+               src: Union[str, Channel],
+               level: float,
+               slope: EdgePolarity = EdgePolarity.RISING,
+               dc_coupling: bool = True,
+               holdoff: float = 20e-9) -> None:
+    """Create an edge coupling trigger
+
+    Args:
+      src: Source of trigger, CH1, CH2,...
+      level: Decision level for edge
+      slope: Direction of edge, BOTH will trigger on either polarity
+      dc_coupling: True will DC couple the trigger source, False will AC couple
+      holdoff: Time after trigger than a new trigger cannot be generated
+    """
+    super().__init__(holdoff=holdoff)
+    if isinstance(src, Channel):
+      src = src._alias
+    self.src = src
+    self.level = level
+    self.slope = slope
+    self.dc_coupling = dc_coupling
+
+
+class TriggerEdgeTimeout(Trigger):
+  """Trigger on edge timeout (edge that stays transitioned for a period)
+  """
+
+  def __init__(self,
+               src: Union[str, Channel],
+               level: float,
+               timeout: float,
+               slope: EdgePolarity = EdgePolarity.RISING,
+               holdoff: float = 20e-9) -> None:
+    """Create an edge coupling trigger
+
+    Args:
+      src: Source of trigger, CH1, CH2,...
+      level: Decision level for edge
+      timeout: Duration of edge timeout in seconds.
+        timeout=0.1, slope=RISING will trigger when src stays high for 0.1s
+      slope: Direction of edge, BOTH will trigger on either polarity
+      holdoff: Time after trigger than a new trigger cannot be generated
+    """
+    super().__init__(holdoff=holdoff)
+    if isinstance(src, Channel):
+      src = src._alias
+    self.src = src
+    self.level = level
+    self.timeout = timeout
+    self.slope = slope
+
+
+class TriggerPulseWidth(Trigger):
+  """Trigger on pulse width
+  """
+
+  def __init__(self,
+               src: Union[str, Channel],
+               level: float,
+               width: Union[float, Tuple[float, float]],
+               comparison: Comparison,
+               positive: bool = True,
+               holdoff: float = 20e-9) -> None:
+    """Create a pulse width trigger
+
+    Args:
+      src: Source of trigger, CH1, CH2,...
+      level: Decision level for edge
+      width: Pulse width, or (lower, upper) limits for WITHIN/OUTSIDE
+      comparison: comparison operator to trigger off of, EQUAL/UNEQUAL has a
+        tolerance, usually ±5%. Use WITHIN/OUTSIDE for finer control
+      positive: True will trigger of of positive polarity pulses. False will use
+        negative polarity pulses
+      holdoff: Time after trigger than a new trigger cannot be generated
+    """
+    super().__init__(holdoff=holdoff)
+    if isinstance(src, Channel):
+      src = src._alias
+    self.src = src
+    self.level = level
+    self.width = width
+    self.comparison = comparison
+    self.positive = positive
 
 
 class Scope(equipment.Equipment):

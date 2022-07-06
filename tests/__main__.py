@@ -27,13 +27,13 @@ def post_tests():
 
   print(f"{n_slowest} slowest classes")
   if len(classes) != 0:
-    n_pad = max([len(k) for k, _ in classes]) + 1
+    n_pad = max(len(k) for k, _ in classes) + 1
     for cls, duration in classes:
       print(f"  {cls:{n_pad}}: {duration:6.2f}s")
 
   print(f"{n_slowest} slowest tests")
   if len(methods) != 0:
-    n_pad = max([len(k) for k, _ in methods]) + 1
+    n_pad = max(len(k) for k, _ in methods) + 1
     for method, duration in methods:
       print(f"  {method:{n_pad}}: {duration:6.2f}s")
 

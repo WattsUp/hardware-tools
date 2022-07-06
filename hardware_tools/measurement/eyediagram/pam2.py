@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import traceback
 from typing import List, Tuple
 
 import numpy as np
@@ -18,6 +19,7 @@ from hardware_tools.measurement.eyediagram import cdr, eyediagram
 try:
   from hardware_tools.measurement.eyediagram import _pam2
 except ImportError:
+  traceback.print_exc()
   print(f"The cython version of {__name__} is not available")
   from hardware_tools.measurement.eyediagram import _pam2_fb as _pam2
 

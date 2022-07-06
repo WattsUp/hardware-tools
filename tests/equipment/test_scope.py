@@ -265,6 +265,21 @@ class TestTrigger(base.TestBase):
     self.assertEqual(t.dc_coupling, dc_coupling)
     self.assertEqual(t.holdoff, holdoff)
 
+    src_channel = Channel(src, None)
+
+    t = scope.TriggerEdge(src_channel,
+                          level,
+                          slope=slope,
+                          dc_coupling=dc_coupling,
+                          holdoff=holdoff)
+
+    self.assertEqual(t.src, src)
+    self.assertEqual(t.level, level)
+    self.assertEqual(t.slope, slope)
+    self.assertEqual(t.dc_coupling, dc_coupling)
+    self.assertEqual(t.holdoff, holdoff)
+
+
   def test_edge_timeout(self):
     src = "Trigger src"
     level = _rng.uniform(-1.0, 1.0)
@@ -273,6 +288,20 @@ class TestTrigger(base.TestBase):
     holdoff = _rng.uniform(-1.0, 1.0)
 
     t = scope.TriggerEdgeTimeout(src,
+                                 level,
+                                 timeout,
+                                 slope=slope,
+                                 holdoff=holdoff)
+
+    self.assertEqual(t.src, src)
+    self.assertEqual(t.level, level)
+    self.assertEqual(t.timeout, timeout)
+    self.assertEqual(t.slope, slope)
+    self.assertEqual(t.holdoff, holdoff)
+
+    src_channel = Channel(src, None)
+
+    t = scope.TriggerEdgeTimeout(src_channel,
                                  level,
                                  timeout,
                                  slope=slope,
@@ -293,6 +322,22 @@ class TestTrigger(base.TestBase):
     holdoff = _rng.uniform(-1.0, 1.0)
 
     t = scope.TriggerPulseWidth(src,
+                                level,
+                                width,
+                                comparison,
+                                positive=positive,
+                                holdoff=holdoff)
+
+    self.assertEqual(t.src, src)
+    self.assertEqual(t.level, level)
+    self.assertEqual(t.width, width)
+    self.assertEqual(t.comparison, comparison)
+    self.assertEqual(t.positive, positive)
+    self.assertEqual(t.holdoff, holdoff)
+
+    src_channel = Channel(src, None)
+
+    t = scope.TriggerPulseWidth(src_channel,
                                 level,
                                 width,
                                 comparison,
