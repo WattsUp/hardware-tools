@@ -58,7 +58,7 @@ class MeasuresJSONEncoder(json.JSONEncoder):
 class Measures(ABC):
   """Eye Diagram Measures collecting metrics from an eye diagram
 
-  Must be derrived to support proper signal encoding
+  Must be derived to support proper signal encoding
 
   All images are base64 encoded PNGs, use save_images to save to disk
 
@@ -285,7 +285,7 @@ class Measures(ABC):
 class Config():
   """EyeDiagram configuration
 
-  Extend for additional configuration specific to derrived EyeDiagram
+  Extend for additional configuration specific to derived EyeDiagram
 
   Properties:
     hysteresis: float, difference between rising and falling thresholds
@@ -358,7 +358,7 @@ class Config():
 class EyeDiagram(ABC):
   """Eye Diagram to layer repeated waveforms and measure the resultant heat map
 
-  Must be derrived to support proper signal encoding
+  Must be derived to support proper signal encoding
   """
 
   def __init__(self,
@@ -524,7 +524,7 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # Derrived classes set these parameters
+    # Derived classes set these parameters
     self._y_zero = 0.0  # pragma: no cover
     self._y_ua = 0.0  # pragma: no cover
 
@@ -705,7 +705,7 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # Derrived classes set these parameters
+    # Derived classes set these parameters
     self._measures = Measures()  # pragma: no cover
     self._offenders = [[]]  # pragma: no cover List[List[indices]]
     self._hits = [[]]  # pragma: no cover List[[t_UI, y_UA]]

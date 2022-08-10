@@ -11,7 +11,7 @@ from tests import base
 from tests.equipment import mock_pyvisa
 
 
-class Derrived(equipment.Equipment):
+class Derived(equipment.Equipment):
 
   def configure(self, setting: str, value: Any) -> Any:
     pass
@@ -43,7 +43,7 @@ class TestEquipment(base.TestBase):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
     rm = mock_pyvisa.ResourceManager()
-    with Derrived(address, rm=rm, name=name) as e:
+    with Derived(address, rm=rm, name=name) as e:
       self.assertIn(address, mock_pyvisa.resources)
       self.assertEqual(e._instrument, mock_pyvisa.resources[address])  # pylint: disable=protected-access
 
@@ -53,7 +53,7 @@ class TestEquipment(base.TestBase):
 
     try:
       equipment.pyvisa = mock_pyvisa
-      with Derrived(address, name=name) as e:
+      with Derived(address, name=name) as e:
         self.assertIn(address, mock_pyvisa.resources)
         self.assertEqual(e._instrument, mock_pyvisa.resources[address])  # pylint: disable=protected-access
 
@@ -65,7 +65,7 @@ class TestEquipment(base.TestBase):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
     rm = mock_pyvisa.ResourceManager()
-    e = Derrived(address, rm=rm, name=name)
+    e = Derived(address, rm=rm, name=name)
 
     instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
 
@@ -79,7 +79,7 @@ class TestEquipment(base.TestBase):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
     rm = mock_pyvisa.ResourceManager()
-    e = Derrived(address, rm=rm, name=name)
+    e = Derived(address, rm=rm, name=name)
 
     instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
 
@@ -93,7 +93,7 @@ class TestEquipment(base.TestBase):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
     rm = mock_pyvisa.ResourceManager()
-    e = Derrived(address, rm=rm, name=name)
+    e = Derived(address, rm=rm, name=name)
 
     instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     command = "*IDN?"
@@ -108,7 +108,7 @@ class TestEquipment(base.TestBase):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
     rm = mock_pyvisa.ResourceManager()
-    e = Derrived(address, rm=rm, name=name)
+    e = Derived(address, rm=rm, name=name)
 
     count = self._RNG.integers(1, 4)
 
@@ -147,7 +147,7 @@ class TestEquipment(base.TestBase):
     name = "Mock Equipment"
     address = "USB::0x0000::0x0000:C000000::INSTR"
     rm = mock_pyvisa.ResourceManager()
-    e = Derrived(address, rm=rm, name=name)
+    e = Derived(address, rm=rm, name=name)
 
     instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     reply = b"FAKE:SERIAL_NUMBER"

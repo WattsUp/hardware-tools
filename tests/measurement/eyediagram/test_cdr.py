@@ -203,7 +203,7 @@ class TestCDR(base.TestBase):
     self._n_sym = int(10e3)
     self._n_data_edges = self._n_sym
 
-    # Override for derrived classes
+    # Override for derived classes
     self._cdr = cdr.CDR(t_sym=self._t_sym)
     self._skip_real = False
 
