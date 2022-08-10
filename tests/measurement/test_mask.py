@@ -9,15 +9,15 @@ from hardware_tools.math import lines
 from tests import base
 
 
-class Derrived(mask.Mask):
+class Derived(mask.Mask):
 
-  def convert_mixed_units(self, ua: float, ui: float) -> Derrived:
-    m = Derrived()
+  def convert_mixed_units(self, ua: float, ui: float) -> Derived:
+    m = Derived()
     m._paths = self._paths  # pylint: disable=protected-access
     m._converted = True  # pylint: disable=protected-access
     return m
 
-  def adjust(self, factor: float) -> Derrived:
+  def adjust(self, factor: float) -> Derived:
     return self
 
 
@@ -27,7 +27,7 @@ class TestMask(base.TestBase):
 
   def test_init(self):
 
-    m = Derrived()
+    m = Derived()
     self.assertRaises(ValueError, getattr, m, "paths")
     m.convert_mixed_units(1, 1)
     self.assertRaises(ValueError, getattr, m, "paths")
@@ -35,7 +35,7 @@ class TestMask(base.TestBase):
     self.assertListEqual([], m.paths)
 
     paths = [(0, 1), (1, 0)]
-    m = Derrived(paths=paths)
+    m = Derived(paths=paths)
     m = m.convert_mixed_units(1, 1)
     self.assertListEqual(paths, m.paths)
 

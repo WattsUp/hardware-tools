@@ -26,7 +26,7 @@ def get_available(rm: pyvisa.ResourceManager = None) -> List[str]:
 
 
 def connect(address: str, rm: pyvisa.ResourceManager = None) -> Equipment:
-  """Open an address to an Equipment and return the appropriate derrived object
+  """Open an address to an Equipment and return the appropriate derived object
 
   Queries the identity and switches based on reply.
 
@@ -35,7 +35,7 @@ def connect(address: str, rm: pyvisa.ResourceManager = None) -> Equipment:
     rm: pyvisa ResourceManager to connect via, None for default
 
   Returns:
-    Derrived class of Equipment as appropriate
+    Derived class of Equipment as appropriate
 
   Raises:
     LookupError if equipment ID is not recognized

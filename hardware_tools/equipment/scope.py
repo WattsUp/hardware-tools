@@ -511,7 +511,7 @@ class Scope(equipment.Equipment):
   @property
   @abstractmethod
   def trigger(self) -> Trigger:
-    """Trigger configuration, see derrived classes.
+    """Trigger configuration, see derived classes.
     Changes will immediately configure the scope.
     """
     pass  # pragma: no cover

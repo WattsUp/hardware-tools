@@ -59,8 +59,8 @@ centers_i = np.fromiter(centers_i, np.int32)
 centers_t = np.fromiter(centers_t, np.float64)
 
 
-class Derrived(eyediagram.EyeDiagram):
-  """Derrived EyeDiagram to test abstract class without errors
+class Derived(eyediagram.EyeDiagram):
+  """Derived EyeDiagram to test abstract class without errors
   """
 
   def _step1_levels(self,
@@ -240,36 +240,36 @@ class TestEyeDiagram(base.TestBase):
   def test_init(self):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
-    Derrived(waveforms)
-    Derrived(waveforms, clocks=clocks)
+    Derived(waveforms)
+    Derived(waveforms, clocks=clocks)
 
     waveforms = np.array([[t, y], [t, y]])
     clocks = np.array([[t, clock], [t, clock]])
-    Derrived(waveforms, clocks=clocks)
+    Derived(waveforms, clocks=clocks)
 
-    self.assertRaises(ValueError, Derrived, y)
+    self.assertRaises(ValueError, Derived, y)
 
     waveforms = np.array([y])
-    self.assertRaises(ValueError, Derrived, waveforms)
+    self.assertRaises(ValueError, Derived, waveforms)
 
     waveforms = np.array([[t, y]]).T
-    self.assertRaises(ValueError, Derrived, waveforms)
+    self.assertRaises(ValueError, Derived, waveforms)
 
     waveforms = np.array([[t, y], [t, y]])
     clocks = np.array([t, clock])
-    self.assertRaises(ValueError, Derrived, waveforms, clocks=clocks)
-    self.assertRaises(ValueError, Derrived, waveforms, clocks=clock)
+    self.assertRaises(ValueError, Derived, waveforms, clocks=clocks)
+    self.assertRaises(ValueError, Derived, waveforms, clocks=clock)
 
     waveforms = np.array([[t, y], [t, y]])
     clock_edges = [[], []]
-    Derrived(waveforms, clock_edges=clock_edges)
+    Derived(waveforms, clock_edges=clock_edges)
 
     clock_edges = np.array([[], []])
-    self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
+    self.assertRaises(ValueError, Derived, waveforms, clock_edges=clock_edges)
     clock_edges = [None, None]
-    self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
+    self.assertRaises(ValueError, Derived, waveforms, clock_edges=clock_edges)
     clock_edges = [[]]
-    self.assertRaises(ValueError, Derrived, waveforms, clock_edges=clock_edges)
+    self.assertRaises(ValueError, Derived, waveforms, clock_edges=clock_edges)
 
     self.assertRaises(KeyError,
                       eyediagram.Config,
@@ -278,7 +278,7 @@ class TestEyeDiagram(base.TestBase):
   def test_get_raw_heatmap(self):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
-    eye = Derrived(waveforms, clocks=clocks, resolution=200)
+    eye = Derived(waveforms, clocks=clocks, resolution=200)
 
     self.assertRaises(RuntimeError, eye.get_raw_heatmap)
 
@@ -302,7 +302,7 @@ class TestEyeDiagram(base.TestBase):
   def test_get_measures(self):
     waveforms = np.array([t, y])
     clocks = np.array([t, clock])
-    eye = Derrived(waveforms, clocks=clocks, resolution=200)
+    eye = Derived(waveforms, clocks=clocks, resolution=200)
 
     self.assertRaises(RuntimeError, eye.get_measures)
 
@@ -317,14 +317,14 @@ class TestEyeDiagram(base.TestBase):
     path = str(self._TEST_ROOT.joinpath("eyediagram_step2"))
     waveforms = np.array([[t, y]])
 
-    eye = Derrived(waveforms, resolution=1000)
+    eye = Derived(waveforms, resolution=1000)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, debug_plots=path)  # pylint: disable=protected-access
     self.assertIn("Saved image to", fake_stdout.getvalue())
     self.assertTrue(os.path.exists(path + ".step2.png"))
 
-    eye = Derrived(waveforms, resolution=1000)
+    eye = Derived(waveforms, resolution=1000)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
       eye._low_snr = True  # pylint: disable=protected-access
@@ -338,7 +338,7 @@ class TestEyeDiagram(base.TestBase):
     waveforms = np.array([[t, y]])
     clocks = np.array([[t, clock]])
 
-    eye = Derrived(waveforms, clocks=clocks, resolution=1000)
+    eye = Derived(waveforms, clocks=clocks, resolution=1000)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -352,7 +352,7 @@ class TestEyeDiagram(base.TestBase):
     clocks = np.array([[t, clock]])
 
     m = mask.MaskDecagon(0.18, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
-    eye = Derrived(waveforms, clocks=clocks, resolution=1000, mask=m)
+    eye = Derived(waveforms, clocks=clocks, resolution=1000, mask=m)
     with mock.patch("sys.stdout", new=io.StringIO()) as fake_stdout:
       eye._step1_levels(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
       eye._step2_clock(print_progress=False, debug_plots=None)  # pylint: disable=protected-access
@@ -377,7 +377,7 @@ class TestEyeDiagram(base.TestBase):
     m = mask.MaskDecagon(0.01, 0.29, 0.35, 0.35, 0.38, 0.4, 0.5)
 
     waveforms = np.array([t, y_filtered])
-    eye = Derrived(waveforms,
+    eye = Derived(waveforms,
                    clock_edges=eye.get_clock_edges(),
                    resolution=1000,
                    mask=m,

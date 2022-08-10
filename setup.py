@@ -24,20 +24,6 @@ required = [
     "scikit-image"
 ]
 
-# TODO (WattsUp) Allow source install to fetch semver every time
-try:
-  from tools import gitsemver
-  version = gitsemver.get_version()
-  with open(f"{module_folder}/version.py", "w", encoding="utf-8") as file:
-    file.write('"""Module version information\n"""\n\n')
-    file.write(f'version = "{version}"\n')
-    file.write(f'version_full = "{version.full_str()}"\n')
-    file.write(f'tag = "{version.raw}"\n')
-except ImportError:
-  import re
-  with open(f"{module_folder}/version.py", "r", encoding="utf-8") as file:
-    version = re.search(r'version = "(.*)"', file.read())[1]
-
 cwd = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -134,7 +120,7 @@ class Develop(setuptools.command.develop.develop):
 
 setuptools.setup(
     name=module_name,
-    version=str(version),
+    use_witch_ver=True,
     description="A library for automating hardware development and testing",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -143,7 +129,9 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=["tests", "tests.*"]),
     package_data={module_folder: ["**/*.pxd"]},
     install_requires=required,
-    extras_require={"test": ["time-machine", "AutoDict", "coverage", "pylint"]},
+    extras_require={
+        "test": ["time-machine", "AutoDict", "coverage", "pylint", "witch-ver"]
+    },
     test_suite="tests",
     scripts=[],
     author="Bradley Davis",

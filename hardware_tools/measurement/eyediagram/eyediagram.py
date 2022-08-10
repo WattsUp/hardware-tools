@@ -14,7 +14,6 @@ from typing import Any, List, Union
 
 import colorama
 from colorama import Fore
-from matplotlib import pyplot
 import numpy as np
 import skimage.draw
 
@@ -59,7 +58,7 @@ class MeasuresJSONEncoder(json.JSONEncoder):
 class Measures(ABC):
   """Eye Diagram Measures collecting metrics from an eye diagram
 
-  Must be derrived to support proper signal encoding
+  Must be derived to support proper signal encoding
 
   All images are base64 encoded PNGs, use save_images to save to disk
 
@@ -286,7 +285,7 @@ class Measures(ABC):
 class Config():
   """EyeDiagram configuration
 
-  Extend for additional configuration specific to derrived EyeDiagram
+  Extend for additional configuration specific to derived EyeDiagram
 
   Properties:
     hysteresis: float, difference between rising and falling thresholds
@@ -359,7 +358,7 @@ class Config():
 class EyeDiagram(ABC):
   """Eye Diagram to layer repeated waveforms and measure the resultant heat map
 
-  Must be derrived to support proper signal encoding
+  Must be derived to support proper signal encoding
   """
 
   def __init__(self,
@@ -525,7 +524,7 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # Derrived classes set these parameters
+    # Derived classes set these parameters
     self._y_zero = 0.0  # pragma: no cover
     self._y_ua = 0.0  # pragma: no cover
 
@@ -568,6 +567,9 @@ class EyeDiagram(ABC):
     self._t_sym = t_sym.value
 
     if debug_plots is not None:
+      # Defer import since it is a large package that initializes at import
+      from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
+
       debug_plots += ".step2.png"
 
       def tick_formatter_t(t, _):
@@ -642,6 +644,9 @@ class EyeDiagram(ABC):
       print(f"{'':>{indent}}Completed sampling")
 
     if debug_plots is not None:
+      # Defer import since it is a large package that initializes at import
+      from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
+
       debug_plots += ".step3.png"
 
       def tick_formatter_t(t, _):
@@ -700,7 +705,7 @@ class EyeDiagram(ABC):
       debug_plots: base filename to save debug plots to. None will not save any
         plots.
     """
-    # Derrived classes set these parameters
+    # Derived classes set these parameters
     self._measures = Measures()  # pragma: no cover
     self._offenders = [[]]  # pragma: no cover List[List[indices]]
     self._hits = [[]]  # pragma: no cover List[[t_UI, y_UA]]
@@ -878,7 +883,9 @@ class EyeDiagram(ABC):
     image_max = np.nanmax(image_clean)
     image_clean = image_clean / image_max
 
-    image_clean = pyplot.cm.jet(image_clean)
+    # Defer import since it is a large package that initializes at import
+    from matplotlib import cm  # pylint: disable=import-outside-toplevel
+    image_clean = cm.jet(image_clean)
 
     image_grid = np.zeros(image_clean.shape)
     image_mask = np.zeros(image_clean.shape)
