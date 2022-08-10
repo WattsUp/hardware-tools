@@ -8,7 +8,6 @@ import traceback
 from typing import List, Tuple
 
 import numpy as np
-from matplotlib import pyplot
 
 from hardware_tools import strformat
 from hardware_tools.math import gaussian, lines, stats
@@ -256,6 +255,9 @@ class PAM2(eyediagram.EyeDiagram):
       print(f"{'':>{indent}}Completed PAM2 levels")
 
     if debug_plots is not None:
+      # Defer import since it is a large package that initializes at import
+      from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
+
       debug_plots += ".step1.png"
 
       n = 1000
@@ -550,6 +552,9 @@ class PAM2(eyediagram.EyeDiagram):
       print(f"{'':>{indent}}Completed PAM2 measuring")
 
     if debug_plots is not None:
+      # Defer import since it is a large package that initializes at import
+      from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
+
       debug_plots += ".step4.png"
 
       def tick_formatter_t(t, _):

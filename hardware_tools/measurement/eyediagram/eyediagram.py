@@ -14,7 +14,6 @@ from typing import Any, List, Union
 
 import colorama
 from colorama import Fore
-from matplotlib import pyplot
 import numpy as np
 import skimage.draw
 
@@ -568,6 +567,9 @@ class EyeDiagram(ABC):
     self._t_sym = t_sym.value
 
     if debug_plots is not None:
+      # Defer import since it is a large package that initializes at import
+      from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
+
       debug_plots += ".step2.png"
 
       def tick_formatter_t(t, _):
@@ -642,6 +644,9 @@ class EyeDiagram(ABC):
       print(f"{'':>{indent}}Completed sampling")
 
     if debug_plots is not None:
+      # Defer import since it is a large package that initializes at import
+      from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
+
       debug_plots += ".step3.png"
 
       def tick_formatter_t(t, _):
@@ -878,7 +883,9 @@ class EyeDiagram(ABC):
     image_max = np.nanmax(image_clean)
     image_clean = image_clean / image_max
 
-    image_clean = pyplot.cm.jet(image_clean)
+    # Defer import since it is a large package that initializes at import
+    from matplotlib import cm  # pylint: disable=import-outside-toplevel
+    image_clean = cm.jet(image_clean)
 
     image_grid = np.zeros(image_clean.shape)
     image_mask = np.zeros(image_clean.shape)
