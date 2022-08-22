@@ -2,6 +2,7 @@
 """
 
 import os
+import sys
 import unittest
 
 import autodict
@@ -39,5 +40,6 @@ def post_tests():
 
 
 pre_tests()
-unittest.main(module=None, exit=False)
+m = unittest.main(module=None, exit=False)
 post_tests()
+sys.exit(not m.result.wasSuccessful())

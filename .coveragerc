@@ -3,6 +3,8 @@
 command_line = tests discover -s tests -t . --locals
 branch = True
 source = hardware_tools
+omit =
+  hardware_tools/version.py
 
 [report]
 exclude_lines =

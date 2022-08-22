@@ -289,7 +289,7 @@ class Config():
 
   Properties:
     hysteresis: float, difference between rising and falling thresholds
-    hysteresis_ua: float,  units of normalized amplitude, lower priority
+    hysteresis_ua: float, units of normalized amplitude, lower priority
     levels_n_max: int, Maximum of points in levels histogram
 
     clock_polarity: EdgePolarity, clock off rising, falling, or both edges

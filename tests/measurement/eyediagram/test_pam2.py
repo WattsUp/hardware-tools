@@ -548,6 +548,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     t_sym = self._RNG.uniform(-1, 1)
     t_0 = self._RNG.uniform(-1, 1)
     t_1 = self._RNG.uniform(-1, 1)
+    t_0_start = self._RNG.uniform(-1, 1)
+    t_1_start = self._RNG.uniform(-1, 1)
     t_rise = self._RNG.uniform(-1, 1)
     t_fall = self._RNG.uniform(-1, 1)
     t_rise_start = self._RNG.uniform(-1, 1)
@@ -593,6 +595,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
     m.t_sym = t_sym
     m.t_0 = t_0
     m.t_1 = t_1
+    m.t_0_start = t_0_start
+    m.t_1_start = t_1_start
     m.t_rise = t_rise
     m.t_fall = t_fall
     m.t_rise_start = t_rise_start
@@ -633,6 +637,8 @@ class TestEyeDiagramMeasuresPAM2(base.TestBase):
         "t_sym": t_sym,
         "t_0": t_0,
         "t_1": t_1,
+        "t_0_start": t_0_start,
+        "t_1_start": t_1_start,
         "t_rise": t_rise,
         "t_fall": t_fall,
         "t_rise_start": t_rise_start,
