@@ -60,6 +60,8 @@ class MeasuresPAM2(eyediagram.Measures):
     t_sym: Mean value of symbol duration
     t_0: Mean value of logical 0 duration (y=50% histogram)
     t_1: Mean value of logical 1 duration (y=50% histogram)
+    t_0_start: Mean value of fa;ling edge center
+    t_1_start: Mean value of rising edge center
     t_rise: Mean value of rising edges lower to upper
     t_fall: Mean value of falling edges upper to lower
     t_rise_start: Mean value of rising edge lower
@@ -103,6 +105,8 @@ class MeasuresPAM2(eyediagram.Measures):
     self.t_sym: stats.UncertainValue = None
     self.t_0: stats.UncertainValue = None
     self.t_1: stats.UncertainValue = None
+    self.t_0_start: stats.UncertainValue = None
+    self.t_1_start: stats.UncertainValue = None
     self.t_rise: stats.UncertainValue = None
     self.t_fall: stats.UncertainValue = None
     self.t_rise_start: stats.UncertainValue = None
@@ -507,6 +511,8 @@ class PAM2(eyediagram.EyeDiagram):
     m.t_sym = t_cross_right - t_cross_left
     m.t_0 = t_rise_half - t_fall_half + t_sym
     m.t_1 = t_fall_half - t_rise_half + t_sym
+    m.t_0_start = t_fall_half
+    m.t_1_start = t_rise_half
     m.t_rise = t_rise_upper - t_rise_lower
     m.t_fall = t_fall_lower - t_fall_upper
     m.t_rise_start = t_rise_lower
