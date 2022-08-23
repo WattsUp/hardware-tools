@@ -47,7 +47,7 @@ class MockMSO4104B(mock_pyvisa.Resource):
         },
         "CONFIGURATION": {
             "ANALOG": {
-                "NUMCHANNELS": 1,
+                "NUMCHANNELS": 2,
                 "BANDWIDTH": 1e9
             },
             "DIGITAL": {
@@ -56,6 +56,20 @@ class MockMSO4104B(mock_pyvisa.Resource):
             "AUXIN": 0
         },
         "CH1": {
+            "BANDWIDTH": (float, 1e9),
+            "DESKEW": (float, 0.0),
+            "COUPLING": (str, "DC"),
+            "SCALE": (float, 1.0),  # Technically 0.1 but 10x probe
+            "OFFSET": (float, 0.0),
+            "POSITION": (lambda x: min(5.0, max(-5.0, float(x))), 0.0),
+            "LABEL": (lambda x: str.strip(x, "'")[:30], ""),
+            "INVERT": (lambda x: x in ["ON", "1"], False),
+            "TERMINATION": (float, 1e6),  # Fixed 1MΩ termination
+            "PROBE": {
+                "GAIN": (float, 10.0)  # Technically 0.1 but 10x probe
+            }
+        },
+        "CH2": {
             "BANDWIDTH": (float, 1e9),
             "DESKEW": (float, 0.0),
             "COUPLING": (str, "DC"),
@@ -93,7 +107,8 @@ class MockMSO4104B(mock_pyvisa.Resource):
             }
         },
         "SELECT": {
-            "CH1": (lambda x: x in ["ON", "1"], True)
+            "CH1": (lambda x: x in ["ON", "1"], True),
+            "CH2": (lambda x: x in ["ON", "1"], True)
         },
         "TRIGGER": {
             "A": {
@@ -351,15 +366,15 @@ class TestMSO4000(base.TestBase):
 
     instrument.query_map["*IDN"] = "FAKE"
     self.assertRaises(ValueError, tektronix.MSO4000Family, address, rm=rm)
-    instrument.query_map["*IDN"] = "TEKTRONIX,MSO2010"
+    instrument.query_map["*IDN"] = "TEKTRONIX,MSO2010,serial number"
     self.assertRaises(ValueError, tektronix.MSO4000Family, address, rm=rm)
 
-    instrument.query_map["*IDN"] = "TEKTRONIX,FAKE012"
+    instrument.query_map["*IDN"] = "TEKTRONIX,FAKE012,serial number"
     self.assertRaises(ValueError, tektronix.MSO4000Family, address, rm=rm)
-    instrument.query_map["*IDN"] = "TEKTRONIX,MSO4104"
+    instrument.query_map["*IDN"] = "TEKTRONIX,MSO4104,serial number"
     e = tektronix.MSO4000Family(address, rm=rm, name="Emulated MSO4104B")
     self.assertEqual(e.max_bandwidth, 1000e6)
-    self.assertListEqual(list(e._channels.keys()), [1])  # pylint: disable=protected-access
+    self.assertListEqual(list(e._channels.keys()), [1, 2])  # pylint: disable=protected-access
     self.assertListEqual(list(e._digitals.keys()), [0])  # pylint: disable=protected-access
 
   def test_configure_generic(self):
@@ -594,10 +609,6 @@ class TestMSO4000(base.TestBase):
     c.offset = value
     self.assertEqual(value, c.offset)
 
-    value = 1e6
-    c.termination = value
-    self.assertEqual(value, c.termination)
-
     value = 0.1
     c.probe_gain = value
     self.assertEqual(value, c.probe_gain)
@@ -606,3 +617,13 @@ class TestMSO4000(base.TestBase):
     value = 0.5
     d.threshold = value
     self.assertEqual(value, d.threshold)
+
+    c = e.ch(2)
+
+    value = 50
+    c.termination = value
+    self.assertEqual(value, c.termination)
+
+    value = 1e6
+    c.termination = value
+    self.assertEqual(value, c.termination)

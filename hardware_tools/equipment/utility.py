@@ -48,13 +48,13 @@ def connect(address: str, rm: pyvisa.ResourceManager = None) -> Equipment:
     else:
       raise NotImplementedError("Only know MessageBasedResource")
   classes = {
-      "TEKTRONIX,MDO4": tektronix.MSO4000Family,
-      "TEKTRONIX,MSO4": tektronix.MSO4000Family,
-      "TEKTRONIX,DPO4": tektronix.MSO4000Family,
-      "TEKTRONIX,MDO3": tektronix.MSO4000Family
+      r"^TEKTRONIX,(MDO(3|4)\d\d\d|MSO4\d\d\d|DPO4\d\d\d)B?,.*":
+          tektronix.MSO4000Family,
+      r"^TEKTRONIX,(MSO(4|5|6)\d(B|LP)?|LPD64),.*":
+          tektronix.MSO456Family,
   }
   for name, c in classes.items():
-    if identity.startswith(name):
+    if re.match(name, identity):
       return c(address, rm=rm)
 
   raise LookupError(f"Unknown equipment identity '{identity}'")
@@ -77,7 +77,19 @@ def parse_scpi(data: str, flat: bool = False, types: dict = None) -> dict:
     Dict of values. If flat, subkeys are prefixed with parents. If not flat,
     parent keys will have a dict of subkeys.
   """
-  data = data.removesuffix(":").strip(";").split(";")
+  data = data.removesuffix(":").strip(";")
+  data_list = []
+  quoted = False
+  for d in data.split(";"):
+    if quoted:
+      data_list[-1] += f";{d}"
+    else:
+      data_list.append(d)
+
+    # Look for an odd number of quotes
+    # The other one got split by ;
+    if (d.count('"') % 2) == 1:
+      quoted = not quoted
 
   def key_match(k: str, d: dict) -> Tuple[str, str]:
     """Match a key in a dict with SCPI short hand rules
@@ -121,8 +133,11 @@ def parse_scpi(data: str, flat: bool = False, types: dict = None) -> dict:
   parent = ":"
   parent_d = values
   types_d = types
-  for d in data:
-    k, v = d.split(" ", maxsplit=1)
+  for d in data_list:
+    try:
+      k, v = d.split(" ", maxsplit=1)
+    except ValueError as e:
+      raise ValueError(f"Failed to parse {data}") from e
     k = k.upper().split(":")
     if k[0] == "":
       parent = ":"
