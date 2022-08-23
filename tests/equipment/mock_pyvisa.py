@@ -61,7 +61,11 @@ class Resource(pyvisa_resources.MessageBasedResource):
     k = command[0]
     if d is not None and k in d:
       if isinstance(d[k], tuple):
-        d[k] = (d[k][0], d[k][0](value))
+        if callable(d[k][1]):
+          # Computed value, just call the set func
+          d[k][0](value)
+        else:
+          d[k] = (d[k][0], d[k][0](value))
       else:
         e = TypeError("Cannot convert read only register: "
                       f"{command_raw} {d[k]}->{value}")

@@ -68,8 +68,8 @@ class _MSO456Channel(Channel):
     self._parent.send("HEADER 1")
     self._parent.send("WAVFRM?")
     data = self._parent.receive()
-    with open("out.wfm", "wb") as file:
-      file.write(data)
+    # with open("out.wfm", "wb") as file:
+    #   file.write(data)
     self._parent.send("HEADER 0")
 
     return common.parse_waveform_query(data, raw=raw, add_noise=add_noise)

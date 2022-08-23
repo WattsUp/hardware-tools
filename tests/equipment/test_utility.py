@@ -113,6 +113,13 @@ class TestEquipmentUtility(base.TestBase):
     self.assertIsInstance(d, dict)
     for v in d.values():
       self.assertNotIsInstance(v, dict)
-    
-    raw = "INCOMPLETE"
+
+    k = "ESCAPED"
+    v = "ch1=4;ch2=4;"
+
+    raw = f"NON{k} {v}"
     self.assertRaises(ValueError, utility.parse_scpi, raw)
+
+    raw = f'{k} "{v}"'
+    d = utility.parse_scpi(raw)
+    self.assertEqual(d[k], f'"{v}"')

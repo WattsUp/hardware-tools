@@ -35,111 +35,153 @@ class MockMSO64(mock_pyvisa.Resource):
     # Taken from Appendix C: Factory Defaults in Programming Manual
     # Tuples are (type [or callable to convert str to value], value)
     self._running = True
+    self._record_length = 10000
     self.query_map = {
         "*IDN": "TEKTRONIX,MSO64",
-        #         "ACQUIRE": {
-        #             "MODE": (tektronix.parse_sample_mode, tektronix.SampleMode.SAMPLE),
-        #             "NUMAVG": (lambda x: int(float(x)), 16),
-        #             "NUMENV": (lambda x: x if x == "INFINITE" else int(x), "INFINITE"),
-        #             "NUMACQ": 0,
-        #             "STATE": (self.acquire_state, self.acquire_state),
-        #             "STOPAFTER": (str, "RUNSTOP")
-        #         },
+        "ACQUIRE": {
+            "MODE": (tektronix.parse_sample_mode, tektronix.SampleMode.SAMPLE),
+            "NUMAVG": (lambda x: int(float(x)), 16),
+            "NUMACQ": 0,
+            "STATE": (self.acquire_state, self.acquire_state),
+            "STOPAFTER": (str, "RUNSTOP")
+        },
         "CONFIGURATION": {
             "ANALOG": {
                 "BANDWIDTH": 4e9
             }
         },
-        #         "CH1": {
-        #             "BANDWIDTH": (float, 1e9),
-        #             "DESKEW": (float, 0.0),
-        #             "COUPLING": (str, "DC"),
-        #             "SCALE": (float, 1.0),  # Technically 0.1 but 10x probe
-        #             "OFFSET": (float, 0.0),
-        #             "POSITION": (lambda x: min(5.0, max(-5.0, float(x))), 0.0),
-        #             "LABEL": (lambda x: str.strip(x, "'")[:30], ""),
-        #             "INVERT": (lambda x: x in ["ON", "1"], False),
-        #             "TERMINATION": (float, 1e6),  # Fixed 1MΩ termination
-        #             "PROBE": {
-        #                 "GAIN": (float, 10.0)  # Technically 0.1 but 10x probe
-        #             }
-        #         },
-        #         "D0": {
-        #             "THRESHOLD": (float, 1.4)
-        #         },
+        "CH1": {
+            "BANDWIDTH": (float, 1e9),
+            "DESKEW": (float, 0.0),
+            "COUPLING": (str, "DC"),
+            "SCALE": (float, 0.1),  # Technically 0.1 but 10x probe
+            "OFFSET": (float, 0.0),
+            "POSITION": (lambda x: min(5.0, max(-5.0, float(x))), 0.0),
+            "LABEL": {
+                "NAME": (lambda x: str.strip(x, "'")[:30], "")
+            },
+            "INVERT": (lambda x: x in ["ON", "1"], False),
+            "TERMINATION": (float, 1e6),  # Fixed 1MΩ termination
+            "PROBE": {
+                "GAIN": (float, 10.0)  # Technically 0.1 but 10x probe
+            }
+        },
+        "CH2": {
+            "BANDWIDTH": (float, 1e9),
+            "DESKEW": (float, 0.0),
+            "COUPLING": (str, "DC"),
+            "SCALE": (float, 0.1),
+            "OFFSET": (float, 0.0),
+            "POSITION": (lambda x: min(5.0, max(-5.0, float(x))), 0.0),
+            "LABEL": {
+                "NAME": (lambda x: str.strip(x, "'")[:30], "")
+            },
+            "INVERT": (lambda x: x in ["ON", "1"], False),
+            "TERMINATION": (float, 1e6),
+            "PROBE": {
+                "GAIN": (float, 1.0)  # 1x probe
+            }
+        },
         "DISPLAY": {
             "GLOBAL": {
                 "CH1": {
                     "STATE": (lambda x: x in ["ON", "1"], True)
+                },
+                "CH2": {
+                    "STATE": (lambda x: x in ["ON", "1"], False)
+                },
+                "REF1": {
+                    "STATE": (lambda x: x in ["ON", "1"], False)
                 }
             }
         },
-        #         "DATA": {
-        #             "ENCDG": (str, "RIBINARY"),
-        #             "SOURCE": (str, "CH1"),
-        #             "START": (lambda x: int(float(x)), 1),
-        #             "STOP": (lambda x: int(float(x)), 10000),
-        #             "WIDTH": (lambda x: int(float(x)), 1)
-        #         },
+        "DATA": {
+            "ENCDG": (str, "RIBINARY"),
+            "SOURCE": (str, "CH1"),
+            "START": (lambda x: int(float(x)), 1),
+            "STOP": (lambda x: int(float(x)), 10000),
+            "WIDTH": (lambda x: int(float(x)), 1)
+        },
         "HEADER": (lambda x: x in ["ON", "1"], False),
         "VERBOSE": (lambda x: x in ["ON", "1"], True),
-        #         "HORIZONTAL": {
-        #             "RECORDLENGTH": (lambda x: int(float(x)), 10000),
-        #             "SAMPLERATE":
-        #                 lambda: (self.query_map["HORIZONTAL"]["RECORDLENGTH"][1] /
-        #                          (10 * self.query_map["HORIZONTAL"]["SCALE"][1])),
-        #             "SCALE": (float, 4e-6),
-        #             "DELAY": {
-        #                 "MODE": (lambda x: x in ["ON", "1"], True),
-        #                 "TIME": (float, 0)
-        #             }
-        #         },
-        #         "SELECT": {
-        #             "CH1": (lambda x: x in ["ON", "1"], True)
-        #         },
-        #         "TRIGGER": {
-        #             "A": {
-        #                 "EDGE": {
-        #                     "SOURCE": (str, "CH1"),
-        #                     "SLOPE": (tektronix.parse_polarity,
-        #                               tektronix.EdgePolarity.RISING),
-        #                     "COUPLING": (str, "DC")
-        #                 },
-        #                 "HOLDOFF": {
-        #                     "TIME": (float, 20e-9),
-        #                 },
-        #                 "LEVEL": {
-        #                     "CH1": (float, 0.0)
-        #                 },
-        #                 "MODE": (str, "AUTO"),
-        #                 "PULSE": {
-        #                     "CLASS": (str, "WIDTH")
-        #                 },
-        #                 "PULSEWIDTH": {
-        #                     "SOURCE": (str, "CH1"),
-        #                     "WIDTH": (float, 8e-9),
-        #                     "HIGHLIMIT": (float, 12e-9),
-        #                     "LOWLIMIT": (float, 8e-9),
-        #                     "POLARITY": (tektronix.parse_polarity,
-        #                                  tektronix.EdgePolarity.RISING),
-        #                     "WHEN":
-        #                         (tektronix.parse_comparison, tektronix.Comparison.LESS)
-        #                 },
-        #                 "TIMEOUT": {
-        #                     "SOURCE": (str, "CH1"),
-        #                     "TIME": (float, 8e-9),
-        #                     "POLARITY": (tektronix.parse_polarity,
-        #                                  tektronix.EdgePolarity.RISING)
-        #                 },
-        #                 "TYPE": (str, "EDGE")
-        #             },
-        #             "STATE": self.trigger_state
-        #         }
+        "HORIZONTAL": {
+            "MODE": (str, "AUTOMATIC"),
+            "RECORDLENGTH": (self.recordlength, self.recordlength),
+            "SAMPLERATE": (float, 25e9),
+            "SCALE": (self.scale, self.scale),
+            "DELAY": {
+                "MODE": (lambda x: x in ["ON", "1"], True),
+                "TIME": (float, 0)
+            }
+        },
+        "TRIGGER": {
+            "A": {
+                "EDGE": {
+                    "SOURCE": (lambda x: "AUXILIARY"
+                               if x == "AUX" else x, "CH1"),
+                    "SLOPE": (tektronix.parse_polarity,
+                              tektronix.EdgePolarity.RISING),
+                    "COUPLING": (str, "DC")
+                },
+                "HOLDOFF": {
+                    "TIME": (float, 20e-9),
+                },
+                "LEVEL": {
+                    "CH1": (float, 0.0)
+                },
+                "MODE": (str, "AUTO"),
+                "PULSEWIDTH": {
+                    "SOURCE": (str, "CH1"),
+                    "WIDTH": (float, 8e-9),
+                    "HIGHLIMIT": (float, 12e-9),
+                    "LOWLIMIT": (float, 8e-9),
+                    "POLARITY": (tektronix.parse_polarity,
+                                 tektronix.EdgePolarity.RISING),
+                    "WHEN":
+                        (tektronix.parse_comparison, tektronix.Comparison.LESS)
+                },
+                "TIMEOUT": {
+                    "SOURCE": (str, "CH1"),
+                    "TIME": (float, 8e-9),
+                    "POLARITY": (tektronix.parse_polarity,
+                                 tektronix.EdgePolarity.RISING)
+                },
+                "TYPE": (str, "EDGE")
+            },
+            "AUXLEVEL": (float, 0.0),
+            "STATE": self.trigger_state
+        }
     }
+
+  def scale(self, scale: str = None) -> float:
+    """Set time scale, preserving samplerate
+
+    Args:
+      scale: Time scale in seconds/div
+
+    Returns:
+      Time scale in seconds/div
+    """
+    f = self.query_map["HORIZONTAL"]["SAMPLERATE"][1]
+    if scale is not None:
+      self._record_length = f * 10 * float(scale)
+    return self._record_length / (10 * f)
+
+  def recordlength(self, length: str = None) -> int:
+    """Set time scale, preserving samplerate
+
+    Args:
+      length: Number of point in record
+    """
+    if length is not None:
+      self._record_length = int(float(length))
+    return self._record_length
 
   def write(self, command: str) -> None:
     if command == "TRIGGER FORCE":
       self.trigger_state(triggered=True)
+      return
+    if command == "HORIZONTAL:MODE:MANUAL:CONFIGURE RECORDLENGTH":
       return
     return super().write(command)
 
@@ -203,106 +245,105 @@ class MockMSO64(mock_pyvisa.Resource):
     else:
       return s
 
+  def trigger_state(self, triggered=False) -> str:
+    if self._running:
+      # Acquisition engine is running
+      t_type = self.query_map["TRIGGER"]["A"]["TYPE"][1]
+      if t_type == "EDGE":
+        src = self.query_map["TRIGGER"]["A"]["EDGE"]["SOURCE"][1]
+        level = self.query_map["TRIGGER"]["A"]["LEVEL"][src][1]
+        if 0 <= level <= 2.5:
+          triggered = True
+      if triggered:
+        self.query_map["ACQUIRE"]["NUMACQ"] += 1
 
-#   def trigger_state(self, triggered=False) -> str:
-#     if self._running:
-#       # Acquisition engine is running
-#       t_type = self.query_map["TRIGGER"]["A"]["TYPE"][1]
-#       if t_type == "EDGE":
-#         src = self.query_map["TRIGGER"]["A"]["EDGE"]["SOURCE"][1]
-#         level = self.query_map["TRIGGER"]["A"]["LEVEL"][src][1]
-#         if 0 <= level <= 2.5:
-#           triggered = True
-#       if triggered:
-#         self.query_map["ACQUIRE"]["NUMACQ"] += 1
+      if self.query_map["ACQUIRE"]["STOPAFTER"][1] == "SEQUENCE":
+        # Single capture will stop acquisition if triggered
+        if triggered:
+          self._running = False
+          return "SAVE"
+        else:
+          return "READY"
+      elif self.query_map["TRIGGER"]["A"]["MODE"][1] == "AUTO":
+        # Auto mode is always AUTO
+        return "AUTO"
+      else:
+        # Normal mode is always READY
+        # (technically ARMED->TRIGGER->READY->ARMED loop)
+        if triggered:
+          return "TRIGGER"
+        else:
+          return "READY"
+    else:
+      return "SAVE"
 
-#       if self.query_map["ACQUIRE"]["STOPAFTER"][1] == "SEQUENCE":
-#         # Single capture will stop acquisition if triggered
-#         if triggered:
-#           self._running = False
-#           return "SAVE"
-#         else:
-#           return "READY"
-#       elif self.query_map["TRIGGER"]["A"]["MODE"][1] == "AUTO":
-#         # Auto mode is always AUTO
-#         return "AUTO"
-#       else:
-#         # Normal mode is always READY
-#         # (technically ARMED->TRIGGER->READY->ARMED loop)
-#         if triggered:
-#           return "TRIGGER"
-#         else:
-#           return "READY"
-#     else:
-#       return "SAVE"
+  def acquire_state(self, value=None) -> Callable:
+    if value is None:
+      # Call trigger_state to update state machine
+      self.trigger_state()
+      return self._running
+    else:
+      self.query_map["ACQUIRE"]["NUMACQ"] = 0
+      self._running = value in ["ON", "1", "RUN"]
 
-#   def acquire_state(self, value=None) -> Callable:
-#     if value is None:
-#       # Call trigger_state to update state machine
-#       self.trigger_state()
-#       return self._running
-#     else:
-#       self.query_map["ACQUIRE"]["NUMACQ"] = 0
-#       self._running = value in ["ON", "1", "RUN"]
+    # Since writes assign the result to the value, need to return this
+    # function so it can be called in the future
+    return self.acquire_state
 
-#     # Since writes assign the result to the value, need to return this
-#     # function so it can be called in the future
-#     return self.acquire_state
+  def read_raw(self) -> bytes:
+    if len(self.queue_rx) > 0 and self.queue_rx[-1] == "WAVFRM?":
+      points = self.query_map["HORIZONTAL"]["RECORDLENGTH"][1]()
+      h_scale = self.query_map["HORIZONTAL"]["SCALE"][1]()
+      h_delay = self.query_map["HORIZONTAL"]["DELAY"]["TIME"][1]
+      fs = points / (10 * h_scale)
 
-#   def read_raw(self) -> bytes:
-#     if len(self.queue_rx) > 0 and self.queue_rx[-1] == "WAVFRM?":
-#       points = self.query_map["HORIZONTAL"]["RECORDLENGTH"][1]
-#       h_scale = self.query_map["HORIZONTAL"]["SCALE"][1]
-#       h_delay = self.query_map["HORIZONTAL"]["DELAY"]["TIME"][1]
-#       fs = points / (10 * h_scale)
+      src = self.query_map["DATA"]["SOURCE"][1]
+      coupling = self.query_map[src]["COUPLING"][1]
+      scale = self.query_map[src]["SCALE"][1]
+      position = self.query_map[src]["POSITION"][1]
+      offset = self.query_map[src]["OFFSET"][1]
+      wf_id = (f"{src}, "
+               f"{coupling} coupling, "
+               f"{scale}V/div, "
+               f"{h_scale}s/div, "
+               f"{points} points")
 
-#       src = self.query_map["DATA"]["SOURCE"][1]
-#       coupling = self.query_map[src]["COUPLING"][1]
-#       scale = self.query_map[src]["SCALE"][1]
-#       position = self.query_map[src]["POSITION"][1]
-#       offset = self.query_map[src]["OFFSET"][1]
-#       wf_id = (f"{src}, "
-#                f"{coupling} coupling, "
-#                f"{scale}V/div, "
-#                f"{h_scale}s/div, "
-#                f"{points} points")
+      x_incr = 1 / fs
+      if (self._cache_x_incr != x_incr or self._cache_n != points):
+        self._cache_x_incr = x_incr
+        self._cache_n = points
+        t = np.linspace(0, x_incr * (points - 1), points) - x_incr * points / 2
+        self._cache_y = (np.mod(t * 1e3, 1) > 0.5) * 2.5
+      y: np.ndarray = self._cache_y.copy()
+      if coupling != "DC":
+        y -= 1.25
 
-#       x_incr = 1 / fs
-#       if (self._cache_x_incr != x_incr or self._cache_n != points):
-#         self._cache_x_incr = x_incr
-#         self._cache_n = points
-#         t = np.linspace(0, x_incr * (points - 1), points) - x_incr * points / 2
-#         self._cache_y = (np.mod(t * 1e3, 1) > 0.5) * 2.5
-#       y: np.ndarray = self._cache_y.copy()
-#       if coupling != "DC":
-#         y -= 1.25
+      # Random takes a long time, doesn't really matter
+      if (self._cache_random is None or self._cache_random.shape[0] != points):
+        self._cache_random = _rng.normal(0, 0.01, points)
+      self._cache_random = np.roll(self._cache_random, 10)
+      y += self._cache_random
 
-#       # Random takes a long time, doesn't really matter
-#       if (self._cache_random is None or self._cache_random.shape[0] != points):
-#         self._cache_random = _rng.normal(0, 0.01, points)
-#       self._cache_random = np.roll(self._cache_random, 10)
-#       y += self._cache_random
+      # Transform real world units to ADC counts
+      x_zero = -x_incr * points / 2 + h_delay
+      y_mult = 10 * scale / 254
+      y_off = position / 10 * 254
+      y_zero = offset
+      y = np.floor((y - y_zero) / y_mult + y_off + 0.5)
+      y = np.clip(y, -127, 127)
 
-#       # Transform real world units to ADC counts
-#       x_zero = -x_incr * points / 2 + h_delay
-#       y_mult = 10 * scale / 254
-#       y_off = position / 10 * 254
-#       y_zero = offset
-#       y = np.floor((y - y_zero) / y_mult + y_off + 0.5)
-#       y = np.clip(y, -127, 127)
+      waveform = y.astype(">b").tobytes()
+      n_bytes = f"{len(waveform)}"
 
-#       waveform = y.astype(">b").tobytes()
-#       n_bytes = f"{len(waveform)}"
-
-#       header = (f':WFMOUTPRE:WFID "{wf_id}";'
-#                 f"NR_PT {points};"
-#                 f'XUNIT "s";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
-#                 f'YUNIT "V";YMULT {y_mult:.4E};'
-#                 f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
-#                 "BYT_OR MSB;BYT_NR 1;BN_FMT RI;"
-#                 f":CURVE #{len(n_bytes)}{n_bytes}")
-#       return header.encode(encoding="ascii") + waveform + b"\n"
-#     return super().read_raw()
+      header = (f':WFMOUTPRE:WFID "{wf_id}";'
+                f"NR_PT {points};"
+                f'XUNIT "s";XINCR {x_incr:.4E};XZERO {x_zero:.4E};'
+                f'YUNIT "V";YMULT {y_mult:.4E};'
+                f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
+                "BYT_OR MSB;BYT_NR 1;BN_FMT RI;"
+                f":CURVE #{len(n_bytes)}{n_bytes}")
+      return header.encode(encoding="ascii") + waveform + b"\n"
+    return super().read_raw()
 
 
 class TestMSO64(base.TestBase):
@@ -311,7 +352,7 @@ class TestMSO64(base.TestBase):
 
   # When true, connect CH1 to probe compensation with fixed 10x probe,
   # and all others open
-  _TRY_REAL_SCOPE = True
+  _TRY_REAL_SCOPE = False
 
   def setUp(self) -> None:
     super().setUp()
@@ -370,7 +411,7 @@ class TestMSO64(base.TestBase):
     instrument.query_map["*IDN"] = "TEKTRONIX,MSO64,serial number"
     e = tektronix.MSO456Family(address, rm=rm, name="Emulated MSO64")
     self.assertEqual(e.max_bandwidth, 4000e6)
-    self.assertListEqual(list(e._channels.keys()), [1])  # pylint: disable=protected-access
+    self.assertListEqual(list(e._channels.keys()), [1, 2])  # pylint: disable=protected-access
     self.assertListEqual(list(e._digitals.keys()), [])  # pylint: disable=protected-access
 
   def test_configure_generic(self):
