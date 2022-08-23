@@ -31,11 +31,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[test]
       - name: Test
-        continue-on-error: true
         run: |
           python -m coverage run &> testing.log
       - name: Upload test configuration
         uses: actions/upload-artifact@v2
+        if: always()
         with:
           name: testing.${{ matrix.python-version }}
           path: |
