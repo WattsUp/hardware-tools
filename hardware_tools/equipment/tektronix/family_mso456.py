@@ -63,7 +63,7 @@ class _MSO456Channel(Channel):
     self._parent.send("DATA:START 1")
     self._parent.send("DATA:STOP 1E9")
     self._parent.send("DATA:WIDTH 1")
-    self._parent.send("DATA:ENCDG FASTEST")  # BINARY, signed
+    self._parent.send("DATA:ENCDG RIBINARY")  # BINARY, signed
 
     self._parent.send("HEADER 1")
     self._parent.send("WAVFRM?")

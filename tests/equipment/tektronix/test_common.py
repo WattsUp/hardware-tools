@@ -17,8 +17,11 @@ class TestCommon(base.TestBase):
   def test_parse_waveform_query(self):
     data = b""
     self.assertRaises(ValueError, common.parse_waveform_query, data)
-    data = (b":WFMOUTPRE:NR_PT 1;XINCR 1;XZERO 0;XUNIT s;WFID empty;BYT_OR MSB;"
-            b"BN_FMT RI;BYT_NR 4;:CURVE #11\0\0\0\0")
+    data = (b":WFMOUTPRE:NR_PT 1;XINCR 1;XZERO 0;XUNIT s;WFID empty;"
+            b"BYT_OR MSB;BN_FMT RI;BYT_NR 4;:CURVE #11\0\0\0\0")
+    self.assertRaises(ValueError, common.parse_waveform_query, data)
+    data = (b":WFMOUTPRE:NR_PT 1;XINCR 1;XZERO 0;XUNIT s;WFID \xc3\x28;"
+            b"BYT_OR MSB;BN_FMT RI;BYT_NR 2;:CURVE #11\0\0")
     self.assertRaises(ValueError, common.parse_waveform_query, data)
 
     # waveform.0 is 16b and has a CSV copy to compare against

@@ -342,7 +342,7 @@ class MockMSO64(mock_pyvisa.Resource):
                 f"YOFF {y_off:.4E};YZERO {y_zero:.4E};"
                 "BYT_OR MSB;BYT_NR 1;BN_FMT RI;"
                 f":CURVE #{len(n_bytes)}{n_bytes}")
-      return header.encode(encoding="ascii") + waveform + b"\n"
+      return header.encode(encoding="utf-8") + waveform + b"\n"
     return super().read_raw()
 
 

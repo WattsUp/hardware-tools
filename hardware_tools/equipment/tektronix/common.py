@@ -217,9 +217,16 @@ def parse_waveform_query(data: bytes,
   if len(data_list) != 2:
     raise ValueError("Missing ';:CURVE '")
 
-  waveform_format = data_list[0].decode(encoding="ascii")
+  try:
+    waveform_format = data_list[0].decode(encoding="utf-8")
+  except UnicodeDecodeError as e:
+    raise ValueError(f"Failed to parse {data_list[0]}") from e
   curve = data_list[1]
 
+  # Tek 4, 5, 6-series has a bug that doesn't close double quotes when a mu is
+  # present. See https://forum.tek.com/viewtopic.php?f=610&t=143134
+  # Not the best regex since it only fixes WFID when before NR_PT...
+  waveform_format = re.sub(r'(?<!["])(;NR_PT)', r'"\1', waveform_format)
   header = utility.parse_scpi(waveform_format, flat=False, types=TEK_TYPES)
   header = header.popitem()[1]  # Remove outer "WFMOutpre|WFMInpre|WFMPre"
 
