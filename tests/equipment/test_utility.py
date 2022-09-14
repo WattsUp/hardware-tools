@@ -46,10 +46,12 @@ class TestEquipmentUtility(base.TestBase):
     address = "USB::0x0000::0x0000:C000000::INSTR"
 
     equipment_types = {
-        "TEKTRONIX,MSO4032": tektronix.MSO4000Family,
-        "TEKTRONIX,MDO4054": tektronix.MSO4000Family,
-        "TEKTRONIX,DPO4104B": tektronix.MSO4000Family,
-        "TEKTRONIX,MDO3104": tektronix.MSO4000Family,
+        "TEKTRONIX,MSO4032,serial number": tektronix.MSO4000Family,
+        "TEKTRONIX,MDO4054,serial number": tektronix.MSO4000Family,
+        "TEKTRONIX,DPO4104B,serial number": tektronix.MSO4000Family,
+        "TEKTRONIX,MDO3104,serial number": tektronix.MSO4000Family,
+        "TEKTRONIX,MSO64B,serial number": tektronix.MSO456Family,
+        "TEKTRONIX,LPD64,serial number": tektronix.MSO456Family,
     }
 
     mock_pyvisa.no_pop = True
@@ -83,6 +85,15 @@ class TestEquipmentUtility(base.TestBase):
         }
         instrument.query_map["HEADER"] = (lambda _: None, "0")
         instrument.query_map["VERBOSE"] = (lambda _: None, "1")
+      elif class_type == tektronix.MSO456Family:
+        instrument.query_map["CONFIGURATION"] = {
+            "ANALOG": {
+                "BANDWIDTH": "1.0000E+9"
+            }
+        }
+        instrument.query_map["DISPLAY"] = ":DISPLAY:GLOBAL:CH1:STATE ON"
+        instrument.query_map["HEADER"] = (lambda _: None, "0")
+        instrument.query_map["VERBOSE"] = (lambda _: None, "1")
 
       e = utility.connect(address, rm=rm)
       self.assertIsInstance(e, class_type)
@@ -102,3 +113,13 @@ class TestEquipmentUtility(base.TestBase):
     self.assertIsInstance(d, dict)
     for v in d.values():
       self.assertNotIsInstance(v, dict)
+
+    k = "ESCAPED"
+    v = "ch1=4;ch2=4;"
+
+    raw = f"NON{k} {v}"
+    self.assertRaises(ValueError, utility.parse_scpi, raw)
+
+    raw = f'{k} "{v}"'
+    d = utility.parse_scpi(raw)
+    self.assertEqual(d[k], f'"{v}"')

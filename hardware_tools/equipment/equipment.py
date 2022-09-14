@@ -46,6 +46,7 @@ class Equipment(ABC):
     if not isinstance(resource, resources.MessageBasedResource):
       raise NotImplementedError("Only know MessageBasedResource")
     self._instrument = resource
+    self._instrument.encoding = "utf-8"
 
   def __del__(self) -> None:
     self.close()

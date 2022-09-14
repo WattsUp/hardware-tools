@@ -439,9 +439,12 @@ class PAM2(eyediagram.EyeDiagram):
     if s_y_0.size < 1 or s_y_1.size < 1:
       m.vecp = stats.UncertainValue(np.nan, np.nan)
     else:
-      a_0 = np.percentile(s_y_1, 0.05,
-                          method="median_unbiased") - np.percentile(
-                              s_y_0, 99.95, method="median_unbiased")
+      kwargs = {"method": "median_unbiased"}
+      if np.lib.NumpyVersion(np.__version__) < "1.22.0":
+        # Not the best method for unknown distribution
+        kwargs = {"interpolation": "linear"}  # pragma: no cover
+      a_0 = (np.percentile(s_y_1, 0.05, **kwargs) -
+             np.percentile(s_y_0, 99.95, **kwargs))
       vecp_linear = m.oma_cross / a_0
       m.vecp = np.log10(vecp_linear) * 10
 

@@ -169,7 +169,7 @@ class MSO4000Family(Scope):
     id_str = self.ask("*IDN?")
     if id_str.startswith("TEKTRONIX,"):
       model = id_str.split(",")[1]
-      if model[3] not in ["3", "4"]:
+      if not re.match(r"^(MDO(3|4)\d\d\dB?|MSO4\d\d\dB?|DPO4\d\d\dB?)$", model):
         e = (f"{self._address} did not connect to a Tektronix "
              "4000/3000 series scope\n"
              f"  '*IDN?' returned '{id_str}'")
@@ -192,7 +192,7 @@ class MSO4000Family(Scope):
 
     self.rf: AnalogChannel = None  # TODO (WattsUp) add RFChannel
 
-    # True indicate scope has auxiliary trigger connector
+    # True indicates scope has auxiliary trigger connector
     self._aux = bool(self.ask("CONFIGURATION:AUXIN?"))
 
     self.max_bandwidth = float(self.ask("CONFIGURATION:ANALOG:BANDWIDTH?"))

@@ -98,7 +98,7 @@ class TestEquipment(base.TestBase):
     instrument: mock_pyvisa.Resource = mock_pyvisa.resources[address]
     command = "*IDN?"
     reply = "FAKE:SERIAL_NUMBER"
-    instrument.query_map[command.removesuffix("?")] = reply
+    instrument.query_map[command[:-1]] = reply
 
     self.assertEqual(reply, e.ask(command))
     self.assertEqual(1, len(instrument.queue_rx))
