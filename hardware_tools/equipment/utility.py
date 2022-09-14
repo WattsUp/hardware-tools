@@ -77,7 +77,9 @@ def parse_scpi(data: str, flat: bool = False, types: dict = None) -> dict:
     Dict of values. If flat, subkeys are prefixed with parents. If not flat,
     parent keys will have a dict of subkeys.
   """
-  data = data.removesuffix(":").strip(";")
+  if data[-1] == ":":
+    data = data[:-1]
+  data = data.strip(";")
   data_list = []
   quoted = False
   for d in data.split(";"):

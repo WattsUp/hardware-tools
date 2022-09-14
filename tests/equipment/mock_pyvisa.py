@@ -90,7 +90,9 @@ class Resource(pyvisa_resources.MessageBasedResource):
       raise pyvisa.VisaIOError(-1073807339)
 
     self.queue_rx.append(command)
-    command = command.removesuffix("?").split(":")
+    if command[-1] == "?":
+      command = command[:-1]
+    command = command.split(":")
     keys = command
     d = self.query_map
     while len(command) > 1:
