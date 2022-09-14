@@ -441,7 +441,8 @@ class PAM2(eyediagram.EyeDiagram):
     else:
       kwargs = {"method": "median_unbiased"}
       if np.lib.NumpyVersion(np.__version__) < "1.22.0":
-        kwargs = {"interpolation": "median_unbiased"}  # pragma: no cover
+        # Not the best method for unknown distribution
+        kwargs = {"interpolation": "linear"}  # pragma: no cover
       a_0 = (np.percentile(s_y_1, 0.05, **kwargs) -
              np.percentile(s_y_0, 99.95, **kwargs))
       vecp_linear = m.oma_cross / a_0
