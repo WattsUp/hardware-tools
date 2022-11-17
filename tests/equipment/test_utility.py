@@ -3,14 +3,14 @@
 
 import pyvisa
 
-from hardware_tools.equipment import utility
+from hardware_tools.equipment import equipment, utility
 from hardware_tools.equipment import tektronix
 
 from tests import base
 from tests.equipment import mock_pyvisa
 
 
-class TestEquipmentUtility(base.TestBase):
+class TestUtility(base.TestBase):
   """Test Equipment Utility
   """
 
@@ -25,6 +25,35 @@ class TestEquipmentUtility(base.TestBase):
     mock_pyvisa.resources = {}
     mock_pyvisa.available = []
     mock_pyvisa.no_pop = False
+
+  def test_install_driver(self):
+
+    class NotDerived:
+      """Class not derived from Equipment
+      """
+      pass
+
+    self.assertRaises(TypeError, utility.install_driver, r"NotDerived",
+                      NotDerived)
+
+    address = "USB::0x0000::0x0000:C000000::INSTR"
+    name = "Derived-7"
+    mock_pyvisa.no_pop = True
+    rm = mock_pyvisa.ResourceManager()
+    instrument = mock_pyvisa.Resource(rm, address)
+    instrument.query_map["*IDN"] = name
+
+    self.assertRaises(LookupError, utility.connect, address, rm=rm)
+
+    class Derived(equipment.Equipment):
+      """Class derived from Equipment
+      """
+      pass
+
+    utility.install_driver(r"Derived-\d", Derived)
+
+    o = utility.connect(address, rm=rm)
+    self.assertIsInstance(o, Derived)
 
   def test_get_available(self):
     mock_pyvisa.available = [
