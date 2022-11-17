@@ -2,13 +2,32 @@
 """
 
 import re
-from typing import Callable, List, Tuple
+from typing import Callable, List, Tuple, Type
 
 import pyvisa
 from pyvisa import resources
 
 from hardware_tools.equipment.equipment import Equipment
 from hardware_tools.equipment import tektronix
+
+_CLASSES = {
+    r"^TEKTRONIX,(MDO(3|4)\d\d\d|MSO4\d\d\d|DPO4\d\d\d)B?,.*":
+        tektronix.MSO4000Family,
+    r"^TEKTRONIX,(MSO(4|5|6)\d(B|LP)?|LPD64),.*":
+        tektronix.MSO456Family,
+}
+
+
+def install_driver(regex: str, driver: Type[Equipment]) -> None:
+  """Install a custom equipment driver for equipment.connect
+
+  Args:
+    regex: Regex string for *IDN? filtering
+    driver: Class derived from Equipment
+  """
+  if not issubclass(driver, Equipment):
+    raise TypeError(f"Driver {driver} is not a subclass of Equipment")
+  _CLASSES[regex] = driver
 
 
 def get_available(rm: pyvisa.ResourceManager = None) -> List[str]:
@@ -47,13 +66,7 @@ def connect(address: str, rm: pyvisa.ResourceManager = None) -> Equipment:
       identity = instrument.query("*IDN?").strip()
     else:
       raise NotImplementedError("Only know MessageBasedResource")
-  classes = {
-      r"^TEKTRONIX,(MDO(3|4)\d\d\d|MSO4\d\d\d|DPO4\d\d\d)B?,.*":
-          tektronix.MSO4000Family,
-      r"^TEKTRONIX,(MSO(4|5|6)\d(B|LP)?|LPD64),.*":
-          tektronix.MSO456Family,
-  }
-  for name, c in classes.items():
+  for name, c in _CLASSES.items():
     if re.match(name, identity):
       return c(address, rm=rm)
 

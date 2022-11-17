@@ -20,8 +20,8 @@ with open("README.md", encoding="utf-8") as readme:
   long_description = readme.read()
 
 required = [
-    "numpy", "pyvisa", "colorama", "matplotlib", "scipy", "sklearn", "Pillow",
-    "scikit-image"
+    "numpy", "pyvisa", "colorama", "matplotlib", "scipy", "scikit-learn",
+    "Pillow", "scikit-image"
 ]
 
 cwd = os.path.dirname(os.path.abspath(__file__))

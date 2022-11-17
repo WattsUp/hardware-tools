@@ -173,7 +173,7 @@ def downsample(y: np.ndarray, n_max: int = 50e3, bin_count=500) -> np.ndarray:
 class UncertainValue:
   """Value with uncertainty
 
-  Properities:
+  Properties:
     value: Value of statistic
     stddev: Standard deviation of statistic
   """
