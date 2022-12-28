@@ -109,7 +109,8 @@ class CDR:
     func = scipy.interpolate.interp1d(data_edges,
                                       ties,
                                       kind="previous",
-                                      fill_value="extrapolate")
+                                      bounds_error=False,
+                                      fill_value=(ties[0], ties[-1]))
     ties_interpolated = func(clk_edges)
 
     return clk_edges, ties_interpolated
@@ -181,6 +182,8 @@ class CDRWithFFTFilter(CDR):
     func = scipy.interpolate.interp1d(out_filtered,
                                       ties_filtered,
                                       kind="next",
-                                      fill_value="extrapolate")
+                                      bounds_error=False,
+                                      fill_value=(ties_filtered[0],
+                                                  ties_filtered[-1]))
     ties_interpolated = func(data_edges)
     return out_filtered[n_trim:-n_trim], ties_interpolated
