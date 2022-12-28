@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import functools
 import time
 
 import numpy as np
@@ -148,14 +149,17 @@ class TestCDR(base.TestBase):
     super().__init__(*args, **kwargs)
     self._cdr = None
 
-  def _plot(self, out, ties, edges, ties_fit=None):
+  def _plot(self, out, ties, edges, ties_fit=None, resample_ties: bool = True):
     from matplotlib import pyplot  # pylint: disable=import-outside-toplevel
-    _, subplots = pyplot.subplots(3, 1)
+    _, subplots = pyplot.subplots(4, 1)
     periods = np.diff(out)
     subplots[0].plot(np.array(periods) / self._t_sym - 1)
     subplots[0].set_ylabel("UI")
     subplots[0].set_title(f"{self._testMethodName}: Period error")
-    subplots[1].plot(edges, ties / self._t_sym)
+    if resample_ties:
+      subplots[1].plot(out, ties / self._t_sym)
+    else:
+      subplots[1].plot(edges, ties / self._t_sym)
     subplots[1].set_title("Time interval error")
     subplots[1].set_ylabel("UI")
     subplots[2].hist(ties / self._t_sym, 50, density=True, alpha=0.5)
@@ -163,13 +167,21 @@ class TestCDR(base.TestBase):
     subplots[2].set_xlabel("UI")
     if ties_fit is not None:
       subplots[2].plot(ties_fit[0], ties_fit[1])
+
+    t_sym_recovered = ((out[-1] - out[0]) / (len(out) - 1))
+    fft = np.abs(np.fft.rfft(ties, norm="forward")) * 2
+    freqs = np.fft.rfftfreq(len(ties), d=t_sym_recovered)
+    subplots[3].plot(freqs, fft)
     pyplot.tight_layout()
     pyplot.show()
 
-  def _validate_quality(self, out, ties):
+  def _validate_quality(self, out, ties, resample_ties: bool = True):
     # Lock on within 1000 clocks
     self.assertGreaterEqual(len(out), self._n_sym - 1000)
-    self.assertEqual(len(ties), self._n_data_edges)
+    if resample_ties:
+      self.assertEqual(len(ties), len(out))
+    else:
+      self.assertEqual(len(ties), self._n_data_edges)
 
     periods = np.diff(out)
 
@@ -214,7 +226,15 @@ class TestCDR(base.TestBase):
     self._validate_quality(out, ties)
 
     # Clock center of data
-    self.assertEqualWithinError(edges[0] + self._t_sym / 2, out[0], 0.01)
+    # Search for edge since CDR might trim some at start/end
+    clock_edge = out[10] - self._t_sym / 2
+    valid_min = clock_edge - self._t_sym / 2
+    valid_max = clock_edge + self._t_sym / 2
+    for data_edge in edges:
+      if valid_min < data_edge < valid_max:
+        self.assertEqualWithinError(data_edge, clock_edge, 0.01)
+        return
+    self.fail(msg="No matching data edge for clock edge")
 
   def test_fewer_edges(self):
     edges = clock.edges(t_sym=self._t_sym, n=self._n_sym)
@@ -285,8 +305,8 @@ class TestCDR(base.TestBase):
     edges = clock.edges(t_sym=self._t_sym, n=self._n_sym, t_rj=t_rj)
     edges = self._adjust_edges(edges)
 
-    out, ties = self._cdr.run(edges)
-    self._validate_quality(out, ties)
+    out, ties = self._cdr.run(edges, resample_ties=False)
+    self._validate_quality(out, ties, resample_ties=False)
 
     # Check TIEs is gaussian of proper width
     self.assertEqualWithinSampleError(t_rj, ties.std(), len(ties))
@@ -296,8 +316,8 @@ class TestCDR(base.TestBase):
     edges = clock.edges(t_sym=self._t_sym, n=self._n_sym, t_uj=t_uj)
     edges = self._adjust_edges(edges)
 
-    out, ties = self._cdr.run(edges)
-    self._validate_quality(out, ties)
+    out, ties = self._cdr.run(edges, resample_ties=False)
+    self._validate_quality(out, ties, resample_ties=False)
 
     # Check TIEs is uniform of proper width
     self.assertEqualWithinSampleError(t_uj, ties.ptp(), len(ties))
@@ -318,11 +338,22 @@ class TestCDR(base.TestBase):
 
     # FFT does not work due to uneven sample spacing
     # Use Lomb-Scargle periodogram instead
-    duration = edges.ptp()
-    freqs = np.linspace(1 / duration, self._n_data_edges / duration, 1000)
-    periodogram = signal.lombscargle(edges, ties, freqs)
-    freq = freqs[periodogram.argmax()] / (2 * np.pi)
+    # duration = edges.ptp()
+    # freqs = np.linspace(1 / duration, self._n_data_edges / duration, 1000)
+    # periodogram = signal.lombscargle(edges, ties, freqs)
+    # freq = freqs[periodogram.argmax()] / (2 * np.pi)
+
+    # Resampled TIEs allows FFT
+    t_sym_recovered = ((out[-1] - out[0]) / (len(out) - 1))
+    fft = np.abs(np.fft.rfft(ties, norm="forward")) * 2
+    freqs = np.fft.rfftfreq(len(ties), d=t_sym_recovered)
+
+    argmax = fft.argmax()
+    freq = freqs[argmax]
     self.assertEqualWithinError(f_sj, freq, 0.01)
+    # Sum the power nearby in case the peak is between buckets
+    power = np.sum(fft[argmax - 1:argmax + 2])
+    self.assertEqualWithinError(t_sj, power, 0.05)
 
   def test_dcd(self):
     dcd = 0.1
@@ -370,7 +401,7 @@ class TestCDR(base.TestBase):
 
   def test_real_optical_1e8(self):
     if self._skip_real:
-      return
+      self.skipTest("Real waveform not being tested")
     data_path = str(self._DATA_ROOT.joinpath("pam2-optical-1e8.npz"))
     with np.load(data_path) as file_zip:
       waveforms = file_zip[file_zip.files[0]]
@@ -405,7 +436,7 @@ class TestCDR(base.TestBase):
 
   def test_real_optical_1e9(self):
     if self._skip_real:
-      return
+      self.skipTest("Real waveform not being tested")
     data_path = str(self._DATA_ROOT.joinpath("pam2-optical-1e9.npz"))
     with np.load(data_path) as file_zip:
       waveforms = file_zip[file_zip.files[0]]
@@ -427,3 +458,54 @@ class TestCDR(base.TestBase):
 
     # Average TIE should be zero due to de-trending
     self.assertEqualWithinError(0, ties.mean(), 100e-6)
+
+
+class TestCDRWithFFTFilter(TestCDR):
+  """CDRWithFFTFilter testing class
+  """
+
+  def setUp(self):
+    super().setUp()
+    self._bw = 0.01 / self._t_sym
+    self._order = 1
+    self._ojtf = functools.partial(cdr.CDRWithFFTFilter.high_pass_butter,
+                                   bandwidth=self._bw,
+                                   order=self._order)
+    self._cdr = cdr.CDRWithFFTFilter(t_sym=self._t_sym, ojtf=self._ojtf)
+    self._skip_real = False
+
+  def test_fixed_period(self):
+    self.skipTest("Filtered CDR will never have a fixed period")
+
+  def test_random_jitter(self):
+    # Remove filter since the filter will change the std.dev
+    self._cdr._ojtf = lambda _: 1  # pylint: disable=protected-access
+    return super().test_random_jitter()
+
+  def test_uniform_jitter(self):
+    # Remove filter since the filter will change the std.dev
+    self._cdr._ojtf = lambda _: 1  # pylint: disable=protected-access
+    return super().test_uniform_jitter()
+
+  def test_sinusoidal_jitter(self):
+    # Remove filter since the filter will change the std.dev
+    self._cdr._ojtf = lambda _: 1  # pylint: disable=protected-access
+    super().test_sinusoidal_jitter()
+
+    # Revert filter
+    self._cdr._ojtf = self._ojtf  # pylint: disable=protected-access
+
+    # Test sj is attenuated proper amount
+    for f_sj in [0.5 * self._bw, self._bw, 2 * self._bw]:
+      t_sj = 0.002 * self._t_sym
+      edges = clock.edges(t_sym=self._t_sym,
+                          n=self._n_sym,
+                          t_sj=t_sj,
+                          f_sj=f_sj)
+      edges = self._adjust_edges(edges)
+
+      out, ties = self._cdr.run(edges)
+      self._validate_quality(out, ties)
+
+      g = self._ojtf(np.array([f_sj]))[0]
+      self.assertEqualWithinSampleError(t_sj * 2 * g, ties.ptp(), len(ties))
