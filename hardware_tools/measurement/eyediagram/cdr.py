@@ -36,15 +36,19 @@ class CDR:
     self._max_correctable_disjoints = 100
     self._fixed_period = fixed_period
 
-  def run(self, data_edges: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+  def run(self,
+          data_edges: np.ndarray,
+          resample_ties: bool = True) -> Tuple[np.ndarray, np.ndarray]:
     """Run CDR to generate clock edges from data edges
 
     The number of clock edges may be less than expected due to delay in locking
     on to the recovered clock. The number of TIEs will match the number of data
-    edges.
+    edges when resample_ties == False, else number of clock edges.
 
     Args:
       data_edges: List of data edges in time domain
+      resample_ties: True will resample TIEs at fixed frequency to allow FFT,
+        False will sample at each data edge
 
     Returns:
       List of clock edges in the time domain.
@@ -97,7 +101,18 @@ class CDR:
     n = int(np.ceil((data_edges[-1] - data_edges[0]) / t_sym))
     clk_edges = np.linspace(0, t_sym * (n - 1), n) + t_start + t_sym / 2
 
-    return clk_edges, ties
+    if not resample_ties:
+      return clk_edges, ties
+
+    # Step 6: Resample TIEs at fixed frequency (every clock edge)
+    # When missing an edge, use previous TIE
+    func = scipy.interpolate.interp1d(data_edges,
+                                      ties,
+                                      kind="previous",
+                                      fill_value="extrapolate")
+    ties_interpolated = func(clk_edges)
+
+    return clk_edges, ties_interpolated
 
 
 class CDRWithFFTFilter(CDR):
@@ -133,35 +148,39 @@ class CDRWithFFTFilter(CDR):
     """
     g = 1 / np.sqrt(1 +
                     np.power(freqs / bandwidth, -2 * order, where=(freqs != 0)))
-    g[0] = 0  # Fix DC
+    g[freqs == 0] = 0  # Fix DC
     return g
 
-  def run(self, data_edges: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    out_constant, ties_constant = super().run(data_edges)
+  def run(self,
+          data_edges: np.ndarray,
+          resample_ties: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    out_constant, ties_constant = super().run(data_edges, resample_ties=True)
     t_sym_recovered = ((out_constant[-1] - out_constant[0]) /
                        (len(out_constant) - 1))
 
     # Trim to n=even for rfft
     n_fft = (len(out_constant) // 2) * 2
     out_constant = out_constant[:n_fft]
-
-    # Resample TIEs at every out, to be fixed frequency
-    # Ties are (edges, ties) want (out, ties_interpolated)
-    # When missing an edge, use previous TIE
-    func = scipy.interpolate.interp1d(data_edges,
-                                      ties_constant,
-                                      kind="previous",
-                                      fill_value="extrapolate")
-    ties_interpolated = func(out_constant)
+    ties_constant = ties_constant[:n_fft]
 
     # Use FFT to change amplitude without adding an group delay
-    fft_ties = np.fft.rfft(ties_interpolated, norm="forward")
+    fft_ties = np.fft.rfft(ties_constant, norm="forward")
     fft_freq = np.fft.rfftfreq(n_fft, d=t_sym_recovered)
 
     # Apply (1 - filter_gain) and irfft to get the edge adjustment
     g = self._ojtf(fft_freq)
     edge_adj = np.fft.irfft(fft_ties * (1 - np.abs(g)), norm="forward")
 
-    ties_filtered = ties_interpolated - edge_adj
+    ties_filtered = ties_constant - edge_adj
     out_filtered = out_constant + edge_adj
-    return out_filtered, ties_filtered
+    n_trim = 100  # Remove edges near start/stop to remove FFT alias
+    if resample_ties:
+      return out_filtered[n_trim:-n_trim], ties_filtered[n_trim:-n_trim]
+
+    # Undo resample
+    func = scipy.interpolate.interp1d(out_filtered,
+                                      ties_filtered,
+                                      kind="next",
+                                      fill_value="extrapolate")
+    ties_interpolated = func(data_edges)
+    return out_filtered[n_trim:-n_trim], ties_interpolated
