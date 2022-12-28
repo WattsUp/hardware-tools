@@ -40,8 +40,8 @@ class TestCommon(base.TestBase):
           "x_unit": "s",
           "y_incr": 7.8125e-05,
           "y_unit": "V",
-          "y_clip_min": -0.559921875,
-          "y_clip_max": 4.559921875
+          "y_clip_min": -0.54,
+          "y_clip_max": 4.54
       }
       self.assertDictEqual(target, info)
 
@@ -57,8 +57,8 @@ class TestCommon(base.TestBase):
           "x_unit": "s",
           "y_incr": 7.8125e-05,
           "y_unit": "V",
-          "y_clip_min": -0.559921875,
-          "y_clip_max": 4.559921875
+          "y_clip_min": -0.54,
+          "y_clip_max": 4.54
       }
       self.assertDictEqual(target, info)
 
