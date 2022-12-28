@@ -2,9 +2,10 @@
 """
 
 import traceback
-from typing import Tuple
+from typing import Callable, Tuple
 
 import numpy as np
+import scipy.interpolate
 
 try:
   from hardware_tools.measurement.eyediagram import _cdr
@@ -97,3 +98,70 @@ class CDR:
     clk_edges = np.linspace(0, t_sym * (n - 1), n) + t_start + t_sym / 2
 
     return clk_edges, ties
+
+
+class CDRWithFFTFilter(CDR):
+  """CDR with a FFT based filter for selectively removing jitter
+  """
+
+  def __init__(self, t_sym: float, ojtf: Callable[[np.ndarray],
+                                                  np.ndarray]) -> None:
+    """Initialize CDR
+
+    Phase is removed from OJTF such that the filter's group delay is zero
+
+    Args:
+      t_sym: Initial PLL period for a single symbol
+      ojtf: Observed jitter transfer function, see high_pass_butter
+    """
+    super().__init__(t_sym, fixed_period=False)
+    self._ojtf = ojtf
+
+  @staticmethod
+  def high_pass_butter(freqs: np.ndarray, bandwidth: float,
+                       order: int) -> np.ndarray:
+    """High pass Butterworth OJTF, jitter below bandwidth will be absorbed by
+    the CDR and thus not observed on the output TIEs
+
+    Args:
+      freqs: Frequencies the FFT was taken at, in Hz
+      bandwidth: -3dB cutoff frequency, in Hz
+      order: filter order
+
+    Returns:
+      Gain of OJTF at each frequency
+    """
+    g = 1 / np.sqrt(1 +
+                    np.power(freqs / bandwidth, -2 * order, where=(freqs != 0)))
+    g[0] = 0  # Fix DC
+    return g
+
+  def run(self, data_edges: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    out_constant, ties_constant = super().run(data_edges)
+    t_sym_recovered = ((out_constant[-1] - out_constant[0]) /
+                       (len(out_constant) - 1))
+
+    # Trim to n=even for rfft
+    n_fft = (len(out_constant) // 2) * 2
+    out_constant = out_constant[:n_fft]
+
+    # Resample TIEs at every out, to be fixed frequency
+    # Ties are (edges, ties) want (out, ties_interpolated)
+    # When missing an edge, use previous TIE
+    func = scipy.interpolate.interp1d(data_edges,
+                                      ties_constant,
+                                      kind="previous",
+                                      fill_value="extrapolate")
+    ties_interpolated = func(out_constant)
+
+    # Use FFT to change amplitude without adding an group delay
+    fft_ties = np.fft.rfft(ties_interpolated, norm="forward")
+    fft_freq = np.fft.rfftfreq(n_fft, d=t_sym_recovered)
+
+    # Apply (1 - filter_gain) and irfft to get the edge adjustment
+    g = self._ojtf(fft_freq)
+    edge_adj = np.fft.irfft(fft_ties * (1 - np.abs(g)), norm="forward")
+
+    ties_filtered = ties_interpolated - edge_adj
+    out_filtered = out_constant + edge_adj
+    return out_filtered, ties_filtered
