@@ -63,6 +63,7 @@ def connect(address: str, rm: pyvisa.ResourceManager = None) -> Equipment:
     rm = pyvisa.ResourceManager()
   with rm.open_resource(address) as instrument:
     if isinstance(instrument, resources.MessageBasedResource):
+      instrument.write("*IDN?")  # Write without read to reset the output queue
       identity = instrument.query("*IDN?").strip()
     else:
       raise NotImplementedError("Only know MessageBasedResource")

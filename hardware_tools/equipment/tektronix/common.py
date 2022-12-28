@@ -257,11 +257,15 @@ def parse_waveform_query(data: bytes,
   # float32 is not accurate enough for 1e6 points (only ~7digits of precision)
 
   if byte_size == 1:
-    min_val = -127
     max_val = 127
+    min_val = -max_val
   elif byte_size == 2:
-    min_val = -32767
-    max_val = 32767
+    # MSO64 in 8b sample will clip at 32512
+    # MSO64 in 12b sample will clip at 32767
+    # No easy way to tell without requesting more information so just say
+    # clipping starts at 32512 (most implementations will adjust scale)
+    max_val = 32768 * 127 // 128
+    min_val = -max_val
   else:
     raise ValueError("Unknown number of bytes")
 

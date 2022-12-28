@@ -62,11 +62,14 @@ class _MSO456Channel(Channel):
     self._parent.send(f"DATA:SOURCE {self._alias}")
     self._parent.send("DATA:START 1")
     self._parent.send("DATA:STOP 1E9")
-    self._parent.send("DATA:WIDTH 1")
+    self._parent.send("DATA:WIDTH 2")
     self._parent.send("DATA:ENCDG RIBINARY")  # BINARY, signed
 
     self._parent.send("HEADER 1")
     self._parent.send("WAVFRM?")
+    time.sleep(0.1)  # Give time to fill the buffer
+    # Without it, about 5% of the time only WFMOUTPRE? is received
+    # With it, no observed failures, n=1000 @ min/max buffer length, MSO64
     data = self._parent.receive()
     # with open("out.wfm", "wb") as file:
     #   file.write(data)
